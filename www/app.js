@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.7.0', APP_BUILD = 3;
+const APP_VERSION = '1.8.0', APP_BUILD = 4;
 const CHANGELOG = [
+  { v: '1.8.0', d: '2026-11-16', items: ['Pemberitahuan versi baru dengan tombol Update di aplikasi mobile'] },
   { v: '1.7.0', d: '2026-11-16', items: ['Tombol mengambang Tanya SaKu dengan maskot dan sapaan', 'Layar sambutan Selamat datang di SaKu setiap kali dibuka'] },
   { v: '1.6.0', d: '2026-11-16', items: ['Catat dengan suara: ucapkan transaksi, formulir terisi otomatis', 'Tanya SaKu: asisten keuangan interaktif dari data Anda sendiri', 'Menu Laporan terpisah: unduh PDF, Excel, dan CSV dengan pilihan periode', 'Nomor versi tampil di bagian bawah aplikasi'] },
   { v: '1.5.0', d: '2026-11-16', items: ['Laporan PDF dan Excel baru dengan logo SaKu, kesehatan keuangan, persentase pemakaian rekening, budget kategori, dan rencana', 'Budget per Kategori sebagai pecahan dari batas pengeluaran', 'Teman: kode teman dan berbagi data hanya-baca', 'Nomor versi dan riwayat perubahan di Pengaturan'] }
@@ -4160,6 +4161,7 @@ const I18N_EN = {
   "catatan…": "entries…",
   "Catatannya dihitung sebagai tunai.": "Its entries now count as cash.",
   "Cek Email Anda": "Check Your Email",
+  "Cek pembaruan": "Check for updates",
   "Charge EV": "EV Charging",
   "cicil": "installment",
   "Cicil": "Pay Installment",
@@ -5252,6 +5254,7 @@ const I18N_EN = {
   "paket": "package",
   "Pantau akun, tanpa membuka catatan keuangan": "Monitor accounts without opening financial entries",
   "Parkir": "Parking",
+  "Pasang versi terbaru untuk mendapatkan pembaruan ini.": "Install the latest version to get this update.",
   "pasar": "market",
   "Pastikan berkas SQL migrasi sudah dijalankan di": "Make sure the SQL migration file has been run in",
   "Pastikan fungsi": "Make sure the function",
@@ -5281,6 +5284,7 @@ const I18N_EN = {
   "Pembayaran": "Payment",
   "Pembayaran dicatat": "Payment recorded",
   "Pemberi cicilan": "Lender",
+  "Pemberitahuan versi baru dengan tombol Update di aplikasi mobile": "New-version notice with an Update button in the mobile app",
   "Pemilik halaman ini perlu membukanya lebih dulu untuk membuat akun administrator.": "The owner of this page needs to open it first to create an administrator account.",
   "Pemisah desimal:": "Decimal separator:",
   "Pemulihan selesai:": "Restore complete:",
@@ -5617,6 +5621,7 @@ const I18N_EN = {
   "SaKu · {1} · Bulan laporan: {2}": "SaKu · {1} · Report month: {2}",
   "SaKu · {1} · Bulan laporan: {2} · Dibuat": "SaKu · {1} · Report month: {2} · Created",
   "SaKu · {1} · Bulan laporan: {2} · Dibuat {3}": "SaKu · {1} · Report month: {2} · Created {3}",
+  "SaKu Anda sudah versi terbaru.": "Your SaKu is already up to date.",
   "SaKu Masih Kosong": "SaKu Is Still Empty",
   "SaKu memakai Firebase milik Anda sebagai server: akun dan catatan tersimpan di sana dan sinkron di semua perangkat. Siapkan sekali saja (gratis di paket Spark).": "SaKu uses your own Firebase as its server: accounts and entries are stored there and sync across all devices. Set it up once (free on the Spark plan).",
   "SaKu memakai Supabase milik Anda sebagai server: akun dan catatan tersimpan di sana dan sinkron di semua perangkat. Siapkan sekali saja, lalu masukkan alamat proyeknya di bawah.": "SaKu uses your own Supabase as its server: accounts and entries are stored there and sync across all devices. Set it up once, then enter the project URL below.",
@@ -5746,6 +5751,7 @@ const I18N_EN = {
   "Setelah kode diterima dan disetujui, kalian terhubung. Putuskan kapan saja.": "Once the code is accepted and approved, you are connected. Disconnect any time.",
   "Setelah mengklik tautan, masuk memakai username dan kata sandi tersebut. Belum menerima email? Di layar Masuk pilih Kirim ulang email konfirmasi.": "After clicking the link, sign in with that username and password. No email yet? On the Sign in screen choose Resend confirmation email.",
   "Setelah selesai, tekan": "When done, press",
+  "Setelah unduhan selesai, buka berkasnya lalu pilih Pasang. Data Anda tetap aman di akun.": "When the download finishes, open the file and choose Install. Your data stays safe in your account.",
   "Setiap akhir pekan (Sabtu dan Minggu), pengguna yang belum mencadangkan data minggu itu melihat pengingat “Jangan Lupa Cadangkan Data Anda”. Pengingat hilang sendiri setelah beberapa detik dan muncul lagi tiap minggu.": "Every weekend (Saturday and Sunday), users who haven't backed up their data that week see a \"Don't Forget to Back Up Your Data\" reminder. It disappears on its own after a few seconds and reappears each week.",
   "Setiap akun mendapat kode khusus. Kode ini bukan kata sandi dan tidak membuka data Anda.": "Every account gets a unique code. The code is not a password and does not open your data.",
   "Setiap orang pernah di titik ini. Bedanya, kamu memilih bercermin dan berbenah.": "Everyone has been here. The difference is, you chose to reflect and reset.",
@@ -5804,6 +5810,7 @@ const I18N_EN = {
   "Sisihkan sekitar {1} per bulan agar terkumpul pada {2}.": "Set aside about {1} per month to reach it by {2}.",
   "Sisihkan sekitar {1} per hari agar terkumpul pada {2}.": "Set aside about {1} per day to reach it by {2}.",
   "Sisihkan sekitar {1} per minggu agar terkumpul pada {2}.": "Set aside about {1} per week to reach it by {2}.",
+  "Situs web selalu memakai versi terbaru.": "The website always uses the latest version.",
   "Skincare & Kosmetik": "Skincare & Cosmetics",
   "Soto ayam": "Chicken soto",
   "Sparepart Mobil": "Car Spare Parts",
@@ -6067,6 +6074,7 @@ const I18N_EN = {
   "tidak ada yang jatuh tempo": "nothing due",
   "Tidak ada yang perlu dicatat.": "Nothing to record.",
   "Tidak bisa diproses.": "Can't be processed.",
+  "Tidak bisa memeriksa pembaruan. Periksa koneksi internet Anda.": "Could not check for updates. Check your internet connection.",
   "Tidak bisa menyalin otomatis.": "Couldn't copy automatically.",
   "Tidak bisa menyalin otomatis. Tekan lama pada rincian untuk menyalin.": "Couldn't copy automatically. Press and hold the details to copy.",
   "Tidak bisa terhubung ke server. Periksa koneksi internet.": "Can't connect to the server. Check your internet connection.",
@@ -6199,6 +6207,7 @@ const I18N_EN = {
   "Untuk keamanan, ganti kata sandi memerlukan verifikasi email. Kirim tautan ke email Anda, klik, lalu kembali ke sini.": "For security, changing your password requires email verification. Send a link to your email, click it, then come back here.",
   "Untuk Login": "For Login",
   "untuk:": "for:",
+  "Update": "Update",
   "usaha": "business",
   "Usaha & Sampingan": "Business & Side Hustle",
   "Username 4–20 karakter: huruf kecil dan angka saja, diawali huruf. Contoh: sifulan12.": "Username must be 4–20 characters: lowercase letters and numbers only, starting with a letter. Example: sifulan12.",
@@ -6212,6 +6221,7 @@ const I18N_EN = {
   "Verifikasi email Anda dulu lewat himbauan di atas, lalu ganti kata sandi.": "Verify your email first through the notice above, then change your password.",
   "Verifikasi email dulu: kirim email verifikasi, klik tautannya, lalu ganti kata sandi (berlaku 15 menit).": "Verify your email first: send the verification email, click its link, then change your password (valid for 15 minutes).",
   "Versi {1} · build {2}": "Version {1} · build {2}",
+  "Versi baru tersedia": "New version available",
   "Versi berkas cadangan ini belum didukung.": "This backup file version isn't supported yet.",
   "Visa & Paspor": "Visa & Passport",
   "Vitamin & Suplemen": "Vitamins & Supplements",
@@ -7348,7 +7358,7 @@ function subOpen(k) {
   return !!st[k];
 }
 function verBodyHTML() {
-  return `<p class="desc">Versi ${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p><h3 class="t" style="margin-top:12px">Yang baru</h3>` + CHANGELOG.map(c => `<div class="field"><span class="lbl">v${esc(c.v)} · ${esc(c.d)}</span><ul class="desc" style="margin:4px 0 0 18px">${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('');
+  return `<p class="desc">Versi ${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p>${typeof updNative === 'function' && updNative() ? `<div class="btn-row"><button type="button" class="btn btn-ghost btn-sm" data-act="upd-check">${ic('download', 16)} Cek pembaruan</button></div>` : ''}<h3 class="t" style="margin-top:12px">Yang baru</h3>` + CHANGELOG.map(c => `<div class="field"><span class="lbl">v${esc(c.v)} · ${esc(c.d)}</span><ul class="desc" style="margin:4px 0 0 18px">${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('');
 }
 function subMenu(k, title, hint, body) {
   const on = subOpen(k);
@@ -9803,6 +9813,57 @@ function introShow() {
   setTimeout(introClose, INTRO_MS);
 }
 try { introShow(); } catch (e) { /* sambutan tidak boleh menghalangi aplikasi */ }
+/* ================= Pemberitahuan versi baru (aplikasi Android/iOS) =================
+   Aplikasi membaca version.json dari rilis terbaru di GitHub. Bila versinya lebih baru dari APP_VERSION,
+   muncul kartu "Versi baru tersedia" dengan tombol Update (membuka unduhan APK) dan Nanti. Di situs web tidak aktif:
+   situs selalu memuat versi terbaru saat dibuka. */
+const UPDATE_URL = 'https://github.com/bagaspamungkaswork-svg/sakuapp/releases/latest/download/version.json';
+const UPD_LS = 'saku.upd.later';
+/* Bandingkan versi MAJOR.MINOR.PATCH: >0 bila a lebih baru dari b */
+function verCmp(a, b) {
+  const pa = String(a || '').split('.').map(n => parseInt(n, 10) || 0), pb = String(b || '').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0) ? 1 : -1; }
+  return 0;
+}
+/* Rapikan isi version.json; null bila tidak sah */
+function updClean(d) {
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return null; } }
+  if (!d || typeof d !== 'object' || !/^\d+\.\d+\.\d+$/.test(String(d.version || ''))) return null;
+  const apk = typeof d.apk === 'string' && /^https:\/\/[a-z0-9.-]+\/[^\s"'<>]*$/i.test(d.apk) ? d.apk : '';
+  return { version: String(d.version), build: parseInt(d.build, 10) || 0, date: /^\d{4}-\d{2}-\d{2}$/.test(String(d.date || '')) ? String(d.date) : '', notes: (Array.isArray(d.notes) ? d.notes : []).filter(x => typeof x === 'string' && x.trim()).slice(0, 8).map(x => x.trim().slice(0, 200)), apk };
+}
+function updNative() { const c = window.Capacitor; return c && typeof c.isNativePlatform === 'function' && c.isNativePlatform() ? c : null; }
+async function updFetch() {
+  const c = updNative(); if (!c) return null;
+  const H = c.Plugins && c.Plugins.CapacitorHttp; let d = null;
+  if (H && H.get) { const r = await H.get({ url: UPDATE_URL, headers: { Accept: 'application/json' }, connectTimeout: 10000, readTimeout: 10000 }); if (r && r.status >= 200 && r.status < 300) d = r.data; }
+  else { const r = await fetch(UPDATE_URL, { cache: 'no-store' }); if (r.ok) d = await r.text(); }
+  return updClean(d);
+}
+function updClose() { const e = document.getElementById('upd'); if (e) e.remove(); }
+function updShow(U) {
+  updClose();
+  const ios = updNative() && updNative().getPlatform && updNative().getPlatform() === 'ios';
+  const el = document.createElement('div'); el.id = 'upd'; el.className = 'upd'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'false'); el.setAttribute('aria-labelledby', 'upd-t');
+  el.innerHTML = `<div class="upd-h"><span class="upd-ic" aria-hidden="true">${ic('download', 18)}</span><div><b id="upd-t">Versi baru tersedia</b><small translate="no">SaKu v${esc(U.version)}${U.date ? ' · ' + esc(U.date) : ''}</small></div></div>
+    ${U.notes.length ? `<ul class="upd-l">${U.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+    <p class="upd-n">${ios || !U.apk ? 'Pasang versi terbaru untuk mendapatkan pembaruan ini.' : 'Setelah unduhan selesai, buka berkasnya lalu pilih Pasang. Data Anda tetap aman di akun.'}</p>
+    <div class="btn-row">${ios || !U.apk ? '' : `<a class="btn btn-primary" id="upd-go" href="${esc(U.apk)}" target="_blank" rel="noopener" data-act="upd-go">Update</a>`}<button type="button" class="btn btn-ghost" data-act="upd-later" data-v="${esc(U.version)}">Nanti</button></div>`;
+  document.body.appendChild(el);
+}
+/* manual=true: dari tombol "Cek pembaruan" (selalu memberi kabar). Otomatis: diam bila tidak ada yang baru atau sudah memilih Nanti hari ini. */
+async function updCheck(manual) {
+  if (!updNative()) { if (manual) toast('Situs web selalu memakai versi terbaru.'); return; }
+  let U = null; try { U = await updFetch(); } catch (e) { U = null; }
+  if (!U) { if (manual) toast('Tidak bisa memeriksa pembaruan. Periksa koneksi internet Anda.'); return; }
+  if (verCmp(U.version, APP_VERSION) <= 0) { if (manual) toast('SaKu Anda sudah versi terbaru.'); return; }
+  if (!manual) { try { const l = JSON.parse(localStorage.getItem(UPD_LS) || 'null'); if (l && l.v === U.version && Date.now() - l.t < 864e5) return; } catch (e) { /* abaikan */ } }
+  updShow(U);
+}
+ACT['upd-later'] = el => { try { localStorage.setItem(UPD_LS, JSON.stringify({ v: el.dataset.v, t: Date.now() })); } catch (e) { /* abaikan */ } updClose(); };
+ACT['upd-go'] = () => { setTimeout(updClose, 400); };
+ACT['upd-check'] = () => updCheck(true);
+if (updNative()) setTimeout(() => updCheck(false), 5000);
 /* ================= Rekening bank & e-wallet, pindah saldo, dan kategori buatan sendiri =================
    Rekening disimpan di pengaturan akun: settings.accts = [{ id, kind: 'bank'|'ewallet'|'cash', brand, name, open }], settings.payDefault = id rekening bawaan.
    Setiap transaksi boleh membawa acc (rekening yang dipakai). Topup e-wallet dan Pindah Saldo membawa acc (asal) dan to (tujuan):

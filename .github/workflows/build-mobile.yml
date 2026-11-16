@@ -9,6 +9,8 @@ jobs:
   android:
     name: Android (APK)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
@@ -44,8 +46,52 @@ jobs:
           V=$(node -p "require('../package.json').version")
           sed -i "s/versionName \".*\"/versionName \"$V\"/; s/versionCode [0-9][0-9]*/versionCode ${{ github.run_number }}/" app/build.gradle
           grep -n "versionName\|versionCode" app/build.gradle
+          # Kunci tanda tangan tetap (secret) supaya update bisa dipasang di atas versi lama. Tanpa secret: kunci debug bawaan.
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
+            echo "$KS_B64" | base64 -d > app/saku.keystore
+            cat >> app/build.gradle <<'GRADLE'
+
+          android {
+              signingConfigs {
+                  debug {
+                      storeFile file('saku.keystore')
+                      storeType 'pkcs12'
+                      storePassword System.getenv('KS_PASS')
+                      keyAlias 'saku'
+                      keyPassword System.getenv('KS_PASS')
+                  }
+              }
+          }
+          GRADLE
+            echo "Tanda tangan: kunci tetap SaKu"
+          else
+            echo "::warning::Secret ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD belum diisi. APK memakai kunci debug sementara, jadi update tidak bisa dipasang di atas versi lama."
+          fi
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      - name: Siapkan berkas rilis
+        run: |
+          V=$(node -p "require('./package.json').version")
+          cp android/app/build/outputs/apk/debug/app-debug.apk saku.apk
+          node -e "
+            const fs = require('fs');
+            let j = {}; try { j = JSON.parse(fs.readFileSync('www/version.json', 'utf8')); } catch (e) {}
+            j.version = '$V'; j.build = ${{ github.run_number }};
+            j.apk = 'https://github.com/${{ github.repository }}/releases/latest/download/saku.apk';
+            fs.writeFileSync('version.json', JSON.stringify(j, null, 1) + '\n');
+          "
+          cat version.json
+          echo "V=$V" >> "$GITHUB_ENV"
+      - name: Terbitkan rilis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v$V-b${{ github.run_number }}"
+          NOTES=$(node -e "try { const j = require('./version.json'); console.log((j.notes || []).map(n => '- ' + n).join('\n')); } catch (e) {}")
+          gh release create "$TAG" saku.apk version.json --title "SaKu v$V (build ${{ github.run_number }})" --notes "${NOTES:-Pembaruan SaKu}" --latest
       - uses: actions/upload-artifact@v4
         with:
           name: saku-android-apk
