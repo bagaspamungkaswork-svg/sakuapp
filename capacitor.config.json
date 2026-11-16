@@ -1,0 +1,12 @@
+{
+  "appId": "id.saku.keuangan",
+  "appName": "SaKu",
+  "webDir": "www",
+  "backgroundColor": "#F3F6FC",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "never"
+  }
+}
