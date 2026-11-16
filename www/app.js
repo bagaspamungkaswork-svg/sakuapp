@@ -1,6 +1,13 @@
 (function () {
 'use strict';
 /* ================= Konstanta & util ================= */
+/* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
+const APP_VERSION = '1.7.0', APP_BUILD = 3;
+const CHANGELOG = [
+  { v: '1.7.0', d: '2026-11-16', items: ['Tombol mengambang Tanya SaKu dengan maskot dan sapaan', 'Layar sambutan Selamat datang di SaKu setiap kali dibuka'] },
+  { v: '1.6.0', d: '2026-11-16', items: ['Catat dengan suara: ucapkan transaksi, formulir terisi otomatis', 'Tanya SaKu: asisten keuangan interaktif dari data Anda sendiri', 'Menu Laporan terpisah: unduh PDF, Excel, dan CSV dengan pilihan periode', 'Nomor versi tampil di bagian bawah aplikasi'] },
+  { v: '1.5.0', d: '2026-11-16', items: ['Laporan PDF dan Excel baru dengan logo SaKu, kesehatan keuangan, persentase pemakaian rekening, budget kategori, dan rencana', 'Budget per Kategori sebagai pecahan dari batas pengeluaran', 'Teman: kode teman dan berbagi data hanya-baca', 'Nomor versi dan riwayat perubahan di Pengaturan'] }
+];
 const DEFAULT_PW = 'catatuang123';
 const MIN_PW = 5;
 const SALT = 'catatuang::';
@@ -174,6 +181,7 @@ const ICONS = {
   chart: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
   list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v4"/><path d="M8 22h8"/>',
   camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/>',
@@ -796,7 +804,8 @@ function periodModel(list, P, A, meta) {
     bk, weeks: P === 'month' ? weekChunks(bk) : null, outCats: withPct(outRows, tout), inCats: withPct(inRows, tin),
     slotsOut: assignSlots(outRows, 5), slotsIn: assignSlots(inRows, 8),
     biggest: items.filter(t => t.type === 'out').sort((a, b) => b.amount - a.amount).slice(0, 6),
-    budget: bm.budget, bud: bm, pocket: pk, avg: avgModel(list, now), cmp: compareModel(list, monthAnchor, now)
+    budget: bm.budget, bud: bm, pocket: pk, avg: avgModel(list, now), cmp: compareModel(list, monthAnchor, now),
+    x: reportExtra(list, A, meta, s, e), health: Object.assign(reportHealth(items, tin, tout, rg, now), { prevPerDay: (dayDiff(startOfDay(pr.start), startOfDay(pr.end)) + 1) > 0 ? sumType(prevItems.filter(t => !isXfer(t)), 'out') / (dayDiff(startOfDay(pr.start), startOfDay(pr.end)) + 1) : 0 })
   };
 }
 
@@ -955,6 +964,62 @@ function catBudgetModel(list, A, settings, now) {
   rows.sort((a, b) => b.amt - a.amt || (a.id < b.id ? -1 : 1));
   return { rows, alloc, base, free: base - alloc, other: Math.max(0, bm.outM - inBud), outM: bm.outM, label: bm.label, has: rows.length > 0, overCount: rows.filter(r => r.over).length };
 }
+
+/* ---------- Data tambahan untuk laporan PDF dan Excel ----------
+   Fungsi murni (tanpa S) supaya bisa diuji. ctx = { accts, plan, settings, now }. s,e = rentang periode (yyyy-mm-dd). */
+function reportExtra(list, A, ctx, s, e) {
+  ctx = ctx || {}; const now = ctx.now || new Date(), settings = ctx.settings || {}, accts = Array.isArray(ctx.accts) ? ctx.accts : [], plan = ctx.plan || {};
+  const out = { acc: null, catBud: null, plan: null };
+  /* rekening: masuk, keluar, persentase keluar, kategori terbesar, saldo akhir (pindah saldo tidak dihitung masuk/keluar) */
+  const ids = {}; accts.forEach(a => { ids[a.id] = a; }); out.names = {}; accts.forEach(a => { out.names[a.id] = a.name; });
+  if (accts.length) {
+    const m = {}, get = id => m[id] || (m[id] = { id, in: 0, out: 0, xin: 0, xout: 0, mv: 0, sIn: 0, sOut: 0, n: 0, cat: {} });
+    accts.forEach(a => get(a.id)); get('');
+    for (const t of list) {
+      const a = Number(t.amount) || 0, inP = t.date >= s && t.date <= e, r = get(t.acc && ids[t.acc] ? t.acc : '');
+      if (accXf(t)) { const q = get(t.to && ids[t.to] ? t.to : ''); r.xout += a; q.xin += a; if (inP) { r.pxo = (r.pxo || 0) + a; q.pxi = (q.pxi || 0) + a; } continue; }
+      if (isXfer(t)) { r.mv += cashOf(t); continue; }
+      if (t.type === 'in') { r.in += a; if (inP) r.sIn += a; } else { r.out += a; if (inP) { r.sOut += a; r.cat[t.cat] = (r.cat[t.cat] || 0) + a; } }
+      if (inP) r.n++;
+    }
+    const rows = accts.map(a => ({ id: a.id, name: a.name, kind: a.kind, open: Number(a.open) || 0 })).concat(m[''].n || m[''].in || m[''].out ? [{ id: '', name: 'Tunai / Tanpa rekening', kind: 'cash', open: 0 }] : []);
+    const totOut = rows.reduce((x, a) => x + m[a.id].sOut, 0);
+    rows.forEach(a => {
+      const r = m[a.id], top = Object.keys(r.cat).sort((x, y) => r.cat[y] - r.cat[x])[0];
+      a.in = r.sIn; a.out = r.sOut; a.pct = totOut > 0 ? r.sOut / totOut * 100 : 0; a.top = top || ''; a.topV = top ? r.cat[top] : 0; a.xnet = (r.pxi || 0) - (r.pxo || 0); a.n = r.n;
+      a.saldo = a.open + r.in - r.out + r.mv + r.xin - r.xout;
+    });
+    rows.sort((x, y) => y.out - x.out);
+    out.acc = { rows, totIn: rows.reduce((x, a) => x + a.in, 0), totOut, totSaldo: rows.reduce((x, a) => x + a.saldo, 0), totOpen: rows.reduce((x, a) => x + a.open, 0) };
+  }
+  /* budget per kategori */
+  const cbm = catBudgetModel(list, A, settings, now);
+  if (cbm.has) {
+    out.catBud = { base: cbm.base, alloc: cbm.alloc, free: cbm.free, other: cbm.other, label: cbm.label, rows: cbm.rows.map(r => Object.assign({ label: catOf(r.id).label, st: r.over ? 'Lewat' : r.used >= 85 ? 'Hampir habis' : 'Aman' }, r)), spent: cbm.rows.reduce((x, r) => x + r.spent, 0) };
+  }
+  /* rencana dan komitmen */
+  const tk = ymd(now), refs = refIndex(list), pl = { due: [], hutang: [], target: [], wish: [], trip: [], ramean: [], hutangLeft: 0 };
+  try {
+    const avg = avgModel(list, now), avgOut = avg && avg.has ? (avg.perMonth != null ? avg.perMonth : avg.perMonthEst || 0) : 0;
+    pl.due = dueModel({ cicilan: plan.cicilan || [], hutang: plan.hutang || [] }, list, now).all.slice(0, 8).map(x => ({ title: x.title, sub: x.sub, due: x.due, amount: x.amount, st: x.st, k: x.k }));
+    (plan.hutang || []).forEach(h => { const M = hutangModel(h, refs, tk); if (M.lunas) return; pl.hutang.push({ who: h.who, dir: h.dir, amount: h.amount, paid: M.paid, left: M.left, pct: M.pct, next: M.next ? M.next.due : '' }); if (h.dir === 'hutang') pl.hutangLeft += M.left; });
+    (plan.cicilan || []).forEach(c => { const M = cicilanModel(c, refs, tk); if (M.finished) return; pl.hutang.push({ who: c.name, dir: 'cicilan', amount: M.total, paid: M.paidRp, left: M.left, pct: M.pct, next: M.next ? M.next.due : '' }); pl.hutangLeft += M.left; });
+    (plan.target || []).forEach(g => { const M = targetModel(g, refs, tk, avgOut); pl.target.push({ name: g.name, kind: M.K.label, goal: M.goal, saved: M.saved, pct: M.pct, left: M.left, status: M.status, need: M.planMonthly || M.needMonthly, deadline: g.deadline || '' }); });
+    (plan.wish || []).forEach(w => { if (w.done) return; const need = Math.max(0, w.cost - w.saved); pl.wish.push({ name: w.name, kind: w.kind, cost: w.cost, saved: w.saved, pct: w.cost > 0 ? Math.min(100, w.saved / w.cost * 100) : 0, left: need, date: w.date || '' }); });
+    (plan.trip || []).forEach(t => { const d = t.data || {}; pl.trip.push({ name: t.name, route: [d.from, d.to].filter(Boolean).join(' - '), date: t.date || '', budget: t.budget || 0 }); });
+    (plan.ramean || []).forEach(r => { const M = rameanModel(r); if (M.ready) pl.ramean.push({ name: r.name, total: M.total, n: M.n, mine: M.mine, budget: M.budget }); });
+  } catch (err) { /* data rencana tidak lengkap: bagian ini dilewati */ }
+  if (pl.due.length || pl.hutang.length || pl.target.length || pl.wish.length || pl.trip.length || pl.ramean.length) out.plan = pl;
+  return out;
+}
+/* Kesehatan keuangan satu periode: tingkat tabungan, rata-rata harian, proyeksi, hari berpengeluaran, hari terboros */
+function reportHealth(items, tin, tout, rg, now, prevOut) {
+  const s0 = startOfDay(rg.start), e0 = startOfDay(rg.end), today = startOfDay(now), N = dayDiff(s0, e0) + 1, cur = today >= s0 && today <= e0, el = cur ? dayDiff(s0, today) + 1 : today > e0 ? N : 0;
+  const outs = items.filter(t => t.type === 'out'), days = {}, dow = [0, 0, 0, 0, 0, 0, 0];
+  outs.forEach(t => { const a = Number(t.amount) || 0; days[t.date] = (days[t.date] || 0) + a; dow[parseYmd(t.date).getDay()] += a; });
+  const perDay = el > 0 ? tout / el : 0, top = dow.indexOf(Math.max.apply(null, dow));
+  return { rate: tin > 0 ? (tin - tout) / tin * 100 : null, perDay, prevPerDay: null, N, el, cur, proj: cur && el > 0 ? Math.round(perDay * N) : null, spendDays: Object.keys(days).length, topDay: Math.max.apply(null, dow) > 0 ? top : -1, topDayV: Math.max.apply(null, dow) };
+}
 /* ================= PDF (vektor, tanpa pustaka) ================= */
 const CP1252 = { 0x20AC: 128, 0x201A: 130, 0x0192: 131, 0x201E: 132, 0x2026: 133, 0x2020: 134, 0x2021: 135, 0x02C6: 136, 0x2030: 137, 0x0160: 138, 0x2039: 139, 0x0152: 140, 0x017D: 142, 0x2018: 145, 0x2019: 146, 0x201C: 147, 0x201D: 148, 0x2022: 149, 0x2013: 150, 0x2014: 151, 0x02DC: 152, 0x2122: 153, 0x0161: 154, 0x203A: 155, 0x0153: 156, 0x017E: 158, 0x0178: 159 };
 function pdfStr(s) {
@@ -994,6 +1059,7 @@ function fitSize(s, maxW, size, bold, min) {
   while (size > (min || 8) && tw(s, size, bold) > maxW) size -= 0.25;
   return size;
 }
+const SAKU_LOGO = { w: 400, h: 134, b64: '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' };
 class PdfPage {
   constructor(doc) { this.d = doc; this.o = []; }
   yy(v) { return f2(this.d.H - v); }
@@ -1035,6 +1101,7 @@ class PdfPage {
     o = o || {}; const k = r * 0.5523, X = cx, Y = this.d.H - cy, n = f2;
     this.o.push('q ' + this.style(o) + [n(X + r) + ' ' + n(Y) + ' m', n(X + r) + ' ' + n(Y + k) + ' ' + n(X + k) + ' ' + n(Y + r) + ' ' + n(X) + ' ' + n(Y + r) + ' c', n(X - k) + ' ' + n(Y + r) + ' ' + n(X - r) + ' ' + n(Y + k) + ' ' + n(X - r) + ' ' + n(Y) + ' c', n(X - r) + ' ' + n(Y - k) + ' ' + n(X - k) + ' ' + n(Y - r) + ' ' + n(X) + ' ' + n(Y - r) + ' c', n(X + k) + ' ' + n(Y - r) + ' ' + n(X + r) + ' ' + n(Y - k) + ' ' + n(X + r) + ' ' + n(Y) + ' c h'].join(' ') + ' ' + this.paint(o) + ' Q');
   }
+  image(x, y, w, h) { this.d.useLogo = true; this.o.push('q ' + f2(w) + ' 0 0 ' + f2(h) + ' ' + f2(x) + ' ' + this.yy(y + h) + ' cm /Im1 Do Q'); }
   text(str, x, y, o) {
     o = o || {}; const size = o.size || 10, s = pdfStr(i18n(str)); if (!s) return;
     const w = tw(s, size, o.bold) + (o.spacing ? o.spacing * s.length : 0);
@@ -1053,11 +1120,12 @@ class PdfDoc {
     add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
     const dt = new Date(), inf = this.info;
     add('<< /Title (' + pdfEsc(pdfStr(inf.title || '')) + ') /Author (' + pdfEsc(pdfStr(inf.author || '')) + ') /Producer (SaKu) /CreationDate (D:' + dt.getFullYear() + pad(dt.getMonth() + 1) + pad(dt.getDate()) + pad(dt.getHours()) + pad(dt.getMinutes()) + pad(dt.getSeconds()) + ') >>');
-    const kids = [];
+    const kids = []; let imgRef = '';
+    if (this.useLogo) { const bin = atob(SAKU_LOGO.b64); imgRef = ' /XObject << /Im1 ' + add('<< /Type /XObject /Subtype /Image /Width ' + SAKU_LOGO.w + ' /Height ' + SAKU_LOGO.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ' + bin.length + ' >>\nstream\n' + bin + '\nendstream') + ' 0 R >>'; }
     this.pages.forEach(pg => {
       const content = pg.o.join('\n');
       const cn = add('<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream');
-      const pn = add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + f2(this.W) + ' ' + f2(this.H) + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + cn + ' 0 R >>');
+      const pn = add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + f2(this.W) + ' ' + f2(this.H) + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>' + imgRef + ' >> /Contents ' + cn + ' 0 R >>');
       kids.push(pn + ' 0 R');
     });
     objs[0] = '<< /Type /Catalog /Pages 2 0 R >>';
@@ -1074,7 +1142,7 @@ class PdfDoc {
 }
 
 /* ---------- Tata letak laporan ---------- */
-const PC = { ink: '#10241D', ink2: '#41544B', ink3: '#64756C', line: '#DAE2DB', line2: '#C4D0C6', deep: '#0F2A24', deepInk2: '#A9BDB3', accent: '#F2B01E', accentSoft: '#FBEBC3', inC: '#17794F', outC: '#C2391F', inBar: '#2FA36B', outBar: '#E2593C', sunken: '#EEF2EE', white: '#FFFFFF', s: ['#98A69E', '#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'] };
+const PC = { ink: '#14202E', ink2: '#3F4F66', ink3: '#62728A', line: '#DCE3EE', line2: '#C3CDDD', deep: '#0E2347', deepInk2: '#A9BCDD', accent: '#2F6BED', accentSoft: '#E4ECFD', inC: '#14805F', outC: '#C23B3B', inBar: '#1E9E78', outBar: '#E0584F', sunken: '#EDF1F8', white: '#FFFFFF', warn: '#D99A1E', s: ['#98A69E', '#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'] };
 
 function buildReportPdf(M) {
   const doc = new PdfDoc(), W = doc.W, L = 40, R = W - 40, CW = R - L, BOT = 792;
@@ -1083,19 +1151,18 @@ function buildReportPdf(M) {
   const hhmm = pad(M.now.getHours()) + '.' + pad(M.now.getMinutes());
 
   function band() {
-    p.rect(0, 0, W, 112, { fill: PC.deep }); p.rect(0, 112, W, 4, { fill: PC.accent });
-    p.rect(L, 34, 36, 36, { fill: PC.accent, r: 10 });
-    p.line(L + 11, 41, L + 11, 63, { color: '#9A6F08', lw: 1.2, cap: 1 });
-    p.line(L + 16, 46, L + 29, 46, { color: PC.deep, lw: 2.2, cap: 1 }); p.line(L + 16, 52, L + 29, 52, { color: PC.deep, lw: 2.2, cap: 1 }); p.line(L + 16, 58, L + 24, 58, { color: PC.deep, lw: 2.2, cap: 1 });
-    p.text('Laporan Keuangan', L + 50, 53, { size: 21, bold: true, color: '#FFFFFF' });
-    p.text('SaKu  \xB7  ' + M.user, L + 50, 71, { size: 9.5, color: PC.deepInk2 });
-    p.text('REKAP ' + M.periodName.toUpperCase(), R, 41, { size: 7.5, bold: true, color: PC.accent, align: 'r', spacing: 1.2 });
-    p.text(M.label, R, 59, { size: 13, bold: true, color: '#FFFFFF', align: 'r' });
-    p.text('Dibuat ' + fmtDateLong(M.now) + ', ' + hhmm, R, 76, { size: 8.5, color: PC.deepInk2, align: 'r' });
+    p.rect(0, 0, W, 108, { fill: PC.white });
+    p.image(L, 28, 120, 120 * SAKU_LOGO.h / SAKU_LOGO.w);
+    p.text('Laporan Keuangan', L, 94, { size: 13, bold: true, color: PC.deep });
+    p.text(M.user, L + 124, 94, { size: 9.5, color: PC.ink3 });
+    p.text('REKAP ' + M.periodName.toUpperCase(), R, 44, { size: 7.5, bold: true, color: PC.accent, align: 'r', spacing: 1.2 });
+    p.text(M.label, R, 64, { size: 15, bold: true, color: PC.deep, align: 'r' });
+    p.text('Dibuat ' + fmtDateLong(M.now) + ', ' + hhmm, R, 82, { size: 8.5, color: PC.ink3, align: 'r' });
+    p.rect(0, 108, W * 0.62, 4, { fill: '#2F6BED' }); p.rect(W * 0.62, 108, W * 0.38, 4, { fill: '#22C08A' });
     y = 138;
   }
   function miniHead() {
-    p.text('SaKu', L, 36, { size: 9.5, bold: true, color: PC.ink });
+    p.image(L, 22, 52, 52 * SAKU_LOGO.h / SAKU_LOGO.w);
     p.text('Laporan ' + M.label, R, 36, { size: 9, color: PC.ink3, align: 'r' });
     p.line(L, 46, R, 46, { color: PC.line }); y = 70;
   }
@@ -1119,7 +1186,7 @@ function buildReportPdf(M) {
     ['PEMASUKAN', fmtRp(M.tin), M.nIn + ' catatan masuk', PC.inBar],
     ['PENGELUARAN', fmtRp(M.tout), dOut == null ? M.nOut + ' catatan keluar' : (dOut >= 0 ? 'Naik ' : 'Turun ') + fmtPct(Math.abs(dOut)) + ' dari ' + M.prevLabel, PC.outBar],
     ['SELISIH', (M.net > 0 ? '+' : '') + fmtRp(M.net), M.net >= 0 ? 'Surplus' + (M.tin > 0 ? ' ' + fmtPct(M.net / M.tin * 100) + ' dari pemasukan' : '') : 'Defisit', M.net >= 0 ? PC.inBar : PC.outBar],
-    ['SALDO KESELURUHAN', fmtRp(M.saldo), 'Semua catatan', PC.accent]
+    ['TINGKAT TABUNGAN', M.health.rate == null ? '-' : fmtPct(M.health.rate), M.health.rate == null ? 'Belum ada pemasukan' : M.health.rate >= 0 ? 'dari pemasukan' : 'pengeluaran melebihi pemasukan', M.health.rate == null ? PC.line2 : M.health.rate >= 20 ? PC.inBar : M.health.rate >= 0 ? PC.warn : PC.outBar]
   ];
   cards.forEach((c, i) => {
     const x = L + i * (cw + 10);
@@ -1129,7 +1196,25 @@ function buildReportPdf(M) {
     p.text(c[1], x + 12, y + 45, { size: fitSize(c[1], cw - 22, 13.5, true, 8.5), bold: true, color: PC.ink });
     p.text(fitText(c[2], cw - 22, 6.8, false), x + 12, y + 57, { size: 6.8, color: PC.ink3 });
   });
-  y += ch + 16;
+  y += ch + 30;
+  {
+    const H = M.health, rr0 = n => fmtRp(Math.round(n)), capB = M.bud && M.bud.cap > 0 && M.P === 'month' ? M.bud.cap : 0;
+    section('Kesehatan keuangan', H.cur ? 'per ' + fmtDateLong(M.now) : null);
+    const tiles = [
+      ['RATA-RATA PER HARI', H.el > 0 ? rr0(H.perDay) : '-', H.prevPerDay > 0 ? M.prevLabel + ': ' + rr0(H.prevPerDay) : 'Pengeluaran / hari'],
+      ['PROYEKSI AKHIR PERIODE', H.proj != null && M.P === 'month' ? fmtRp(H.proj) : '-', H.proj != null && M.P === 'month' ? (capB ? (H.proj > capB ? 'Lewat batas ' + fmtRp(capB) : 'Dalam batas ' + fmtRp(capB)) : 'Dari rata-rata harian') : 'Hanya untuk bulan berjalan'],
+      ['HARI BERPENGELUARAN', H.spendDays + ' dari ' + (H.el || H.N), H.topDay >= 0 ? 'Terboros: ' + DAYS[H.topDay] : 'Belum ada pengeluaran'],
+      ['SALDO KESELURUHAN', fmtRp(M.saldo), 'Semua catatan']
+    ];
+    tiles.forEach((c, i) => {
+      const x = L + i * (cw + 10);
+      p.rect(x, y - 4, cw, 52, { fill: PC.sunken, r: 8 });
+      p.text(c[0], x + 10, y + 10, { size: 6.4, bold: true, color: PC.ink3, spacing: 0.6 });
+      p.text(fitText(c[1], cw - 18, 11, true), x + 10, y + 26, { size: fitSize(c[1], cw - 18, 11, true, 8), bold: true, color: PC.ink });
+      p.text(fitText(c[2], cw - 18, 6.6, false), x + 10, y + 39, { size: 6.6, color: PC.ink3 });
+    });
+    y += 66;
+  }
   if (M.bud && M.bud.cap > 0 && M.P === 'month') {
     const used = M.bud.outM / M.bud.cap * 100;
     p.text((M.bud.basis === 'anggaran' ? 'Anggaran bulanan  ' : 'Dana tersedia  ') + fmtRp(M.bud.outM) + ' dari ' + fmtRp(M.bud.cap) + (M.bud.add > 0 ? ' (termasuk tambahan ' + fmtRp(M.bud.add) + ')' : ''), L, y + 8, { size: 8.5, bold: true, color: PC.ink2 });
@@ -1149,7 +1234,7 @@ function buildReportPdf(M) {
     nt.push('Tabungan & investasi periode ini: ' + pr.join(' · ') + '. Bukan pengeluaran atau pemasukan, hanya menggeser saldo.');
   }
   nt.forEach(s => { p.text(fitText(s, CW, 7.6, false), L, y + 6, { size: 7.6, color: PC.ink3 }); y += 13; });
-  if (nt.length) y += 5;
+  if (nt.length) y += 16;
 
   if (M.items.length === 0) {
     p.rect(L, y, CW, 70, { fill: PC.sunken, r: 12 });
@@ -1205,12 +1290,68 @@ function buildReportPdf(M) {
     }
     const ml = wrapText(msg, CW - 24, 9, true).slice(0, 3), bh = 14 + ml.length * 12;
     p.rect(L, y - 12, CW, bh, { fill: PC.accentSoft, r: 8 });
-    ml.forEach((l, i) => p.text(l, L + 12, y + 3 + i * 12, { size: 9, bold: true, color: '#3D2F06' }));
+    ml.forEach((l, i) => p.text(l, L + 12, y + 3 + i * 12, { size: 9, bold: true, color: '#14305E' }));
     y += bh + 8;
   }
 
   /* --- halaman berikutnya --- */
   if (M.items.length) {
+    const dmS = d => d ? d.slice(8) + ' ' + MONTHS_S[Number(d.slice(5, 7)) - 1] : '-';
+    /* tabel generik: judul, kolom, baris, baris total (bisa terpotong ke halaman berikut bila panjang) */
+    const block = (title, right, cols, rows, foot) => {
+      const rh = 19; ensure(40 + rh * Math.min(rows.length + 2, 4)); section(title, right);
+      let i = 0;
+      for (;;) {
+        let room = Math.floor((BOT - y) / rh) - 1;
+        if (room < 3) { p = doc.addPage(); miniHead(); room = Math.floor((BOT - y) / rh) - 1; }
+        const left = rows.length - i, fitsAll = left + (foot ? 1 : 0) <= room, take = fitsAll ? left : Math.min(room, left);
+        table(p, L, y, CW, cols, rows.slice(i, i + take), fitsAll && foot ? [foot] : null, rh);
+        y += rh * (1 + take + (fitsAll && foot ? 1 : 0)) + 22; i += take;
+        if (fitsAll) break;
+        p = doc.addPage(); miniHead();
+      }
+    };
+    const pctC = u => u > 100 ? PC.outC : u >= 85 ? '#9A6A0B' : PC.inC;
+    /* budget per kategori */
+    const CB = M.x && M.x.catBud;
+    if (CB && M.P === 'month') {
+      block('Budget per kategori', 'Pecahan dari batas ' + fmtRp(CB.base), [['Kategori', 0.28, 'l'], ['Terpakai', 0.19, 'r'], ['Budget', 0.19, 'r'], ['Sisa', 0.17, 'r'], ['Status', 0.17, 'r']],
+        CB.rows.map(r => [r.label, fmtRp(r.spent), fmtRp(r.amt), r.left < 0 ? ['-' + fmtRp(-r.left), PC.outC] : fmtRp(r.left), [r.st + ' ' + Math.round(r.used) + '%', pctC(r.used)]]),
+        ['Total dibagi', fmtRp(CB.spent), fmtRp(CB.alloc), CB.alloc - CB.spent < 0 ? ['-' + fmtRp(CB.spent - CB.alloc), PC.outC] : fmtRp(CB.alloc - CB.spent), '']);
+      y -= 10; p.text(fitText('Di luar kategori berbudget: ' + fmtRp(CB.other) + (CB.free > 0 ? '  \xB7  Belum dibagi dari batas: ' + fmtRp(CB.free) : ''), CW, 7.6, false), L, y, { size: 7.6, color: PC.ink3 }); y += 20;
+    }
+    /* rekening: masuk, keluar, persentase keluar, saldo akhir */
+    const AC = M.x && M.x.acc;
+    if (AC && AC.rows.length) {
+      const rh = 22, n = AC.rows.length; ensure(60 + rh * (n + 2) + 40); section('Rekening dan kantong', 'pindah saldo antar rekening tidak dihitung');
+      const cw2 = [0.27, 0.17, 0.17, 0.22, 0.17], xs = []; let cx = L; cw2.forEach(f => { xs.push(cx); cx += CW * f; });
+      p.rect(L, y, CW, rh, { fill: PC.deep, r: 6 });
+      ['Rekening', 'Masuk', 'Keluar', '% dari total keluar', 'Saldo akhir'].forEach((h, i) => p.text(h, i === 0 || i === 3 ? xs[i] + 8 : xs[i] + CW * cw2[i] - 8, y + 14, { size: 7.8, bold: true, color: '#FFFFFF', align: i === 0 || i === 3 ? 'l' : 'r' }));
+      AC.rows.forEach((a, i) => {
+        const ry = y + rh * (i + 1);
+        if (i % 2 === 1) p.rect(L, ry, CW, rh, { fill: '#F6F8FC' });
+        p.text(fitText(a.name, CW * cw2[0] - 14, 8.5, true), xs[0] + 8, ry + 14, { size: 8.5, bold: true, color: PC.ink });
+        p.text(a.in > 0 ? fmtRp(a.in) : '-', xs[1] + CW * cw2[1] - 8, ry + 14, { size: 8.5, color: a.in > 0 ? PC.inC : PC.ink3, align: 'r' });
+        p.text(a.out > 0 ? fmtRp(a.out) : '-', xs[2] + CW * cw2[2] - 8, ry + 14, { size: 8.5, color: a.out > 0 ? PC.outC : PC.ink3, align: 'r' });
+        const bw = CW * cw2[3] - 64; p.rect(xs[3] + 8, ry + 8, bw, 6, { fill: PC.sunken, r: 3 }); if (a.pct > 0) p.rect(xs[3] + 8, ry + 8, Math.max(3, bw * a.pct / 100), 6, { fill: i === 0 ? PC.outBar : PC.accent, r: 3 });
+        p.text(fmtPct(a.pct), xs[3] + 8 + bw + 36, ry + 14, { size: 8.5, bold: true, color: PC.ink, align: 'r' });
+        p.text(saldoTxt0(a.saldo), xs[4] + CW * cw2[4] - 8, ry + 14, { size: 8.5, bold: true, color: a.saldo < 0 ? PC.outC : PC.ink, align: 'r' });
+        p.line(L, ry + rh, R, ry + rh, { color: PC.line, lw: 0.4 });
+      });
+      const ty = y + rh * (n + 1); p.rect(L, ty, CW, rh, { fill: PC.sunken });
+      p.text('Total', xs[0] + 8, ty + 14, { size: 8.5, bold: true, color: PC.ink });
+      p.text(fmtRp(AC.totIn), xs[1] + CW * cw2[1] - 8, ty + 14, { size: 8.5, bold: true, color: PC.ink, align: 'r' }); p.text(fmtRp(AC.totOut), xs[2] + CW * cw2[2] - 8, ty + 14, { size: 8.5, bold: true, color: PC.ink, align: 'r' });
+      p.text(AC.totOut > 0 ? '100%' : '-', xs[3] + 8, ty + 14, { size: 8.5, bold: true, color: PC.ink }); p.text(saldoTxt0(AC.totSaldo), xs[4] + CW * cw2[4] - 8, ty + 14, { size: 8.5, bold: true, color: PC.ink, align: 'r' });
+      y = ty + rh + 14;
+      const top = AC.rows[0];
+      if (top && top.out > 0) {
+        const msg = 'Uang paling banyak keluar dari ' + top.name + ': ' + fmtPct(top.pct) + ' (' + fmtRp(top.out) + ')' + (top.top ? ', terbesar untuk ' + catOf(top.top).label + ' ' + fmtRp(top.topV) : '') + '.';
+        const ml = wrapText(msg, CW - 24, 9, true).slice(0, 3), bh = 14 + ml.length * 12;
+        ensure(bh + 10); p.rect(L, y - 8, CW, bh, { fill: PC.accentSoft, r: 8 });
+        ml.forEach((l, i) => p.text(l, L + 12, y + 7 + i * 12, { size: 9, bold: true, color: '#14305E' }));
+        y += bh + 14;
+      }
+    }
     /* rincian */
     const rows = M.P === 'month' && M.weeks
       ? M.weeks.map(r => ({ label: ymd(r.from) === ymd(r.to) ? r.from.getDate() + ' ' + MONTHS_S[r.to.getMonth()] : r.from.getMonth() === r.to.getMonth() ? r.from.getDate() + '-' + r.to.getDate() + ' ' + MONTHS_S[r.to.getMonth()] : r.from.getDate() + ' ' + MONTHS_S[r.from.getMonth()] + '-' + r.to.getDate() + ' ' + MONTHS_S[r.to.getMonth()], in: r.in, out: r.out }))
@@ -1261,10 +1402,25 @@ function buildReportPdf(M) {
         M.biggest.map(t => [t.date.slice(8) + ' ' + MONTHS_S[Number(t.date.slice(5, 7)) - 1], catOf(t.cat).label, t.note || (t.items && t.items[0] ? t.items[0].n : ''), fmtRp(t.amount)]), null, 19);
       y += 19 * (M.biggest.length + 1) + 22;
     }
+    /* rencana dan komitmen */
+    const PL = M.x && M.x.plan;
+    if (PL) {
+      if (PL.due.length) block('Tagihan terdekat', 'cicilan dan hutang', [['Jatuh tempo', 0.17, 'l'], ['Tagihan', 0.45, 'l'], ['Jumlah', 0.2, 'r'], ['Status', 0.18, 'r']],
+        PL.due.slice(0, 6).map(d => [dmS(d.due), d.title, fmtRp(d.amount), d.st === 'telat' ? ['Terlambat', PC.outC] : d.st === 'hariini' ? ['Hari ini', '#9A6A0B'] : 'Segera']), null);
+      if (PL.hutang.length) block('Hutang dan cicilan', 'sisa ' + fmtRp(PL.hutangLeft) + ' yang masih harus dibayar', [['Nama', 0.3, 'l'], ['Total', 0.19, 'r'], ['Terbayar', 0.19, 'r'], ['Sisa', 0.16, 'r'], ['Berikutnya', 0.16, 'r']],
+        PL.hutang.slice(0, 8).map(h => [(h.dir === 'piutang' ? 'Piutang: ' : h.dir === 'hutang' ? 'Hutang: ' : 'Cicilan: ') + h.who, fmtRp(h.amount), fmtRp(h.paid), fmtRp(h.left), dmS(h.next)]), null);
+      if (PL.target.length) block('Target keuangan', null, [['Target', 0.3, 'l'], ['Terkumpul', 0.2, 'r'], ['Sasaran', 0.2, 'r'], ['Progres', 0.14, 'r'], ['Status', 0.16, 'r']],
+        PL.target.slice(0, 8).map(g => [g.name, fmtRp(g.saved), g.goal > 0 ? fmtRp(g.goal) : '-', g.goal > 0 ? fmtPct(g.pct) : '-', g.status === 'tercapai' ? ['Tercapai', PC.inC] : g.status === 'tertinggal' || g.status === 'lewat' ? ['Tertinggal', PC.outC] : g.status === 'ditutup' ? 'Ditutup' : 'Sesuai']), null);
+      if (PL.wish.length) block('Wishlist', null, [['Keinginan', 0.34, 'l'], ['Biaya', 0.22, 'r'], ['Terkumpul', 0.22, 'r'], ['Kurang', 0.22, 'r']],
+        PL.wish.slice(0, 8).map(w => [w.name, fmtRp(w.cost), fmtRp(w.saved), fmtRp(w.left)]), null);
+      const tp = PL.trip.map(t => [t.name, 'Perjalanan', [t.route, t.date ? dmS(t.date) : ''].filter(Boolean).join(' \xB7 '), t.budget > 0 ? fmtRp(t.budget) : '-']).concat(PL.ramean.map(r => [r.name, 'Patungan', r.n + ' orang \xB7 bagian Anda ' + fmtRp(r.mine), fmtRp(r.total)]));
+      if (tp.length) block('Perjalanan dan patungan', null, [['Nama', 0.28, 'l'], ['Jenis', 0.16, 'l'], ['Keterangan', 0.36, 'l'], ['Jumlah', 0.2, 'r']], tp.slice(0, 8), null);
+    }
     /* daftar transaksi */
     ensure(80);
     section('Daftar transaksi', M.items.length + ' catatan');
-    const cols = [['Tanggal', 0.14, 'l'], ['Kategori', 0.24, 'l'], ['Catatan / barang', 0.38, 'l'], ['Jumlah', 0.24, 'r']];
+    const NM = M.x && M.x.names && Object.keys(M.x.names).length ? M.x.names : null;
+    const cols = NM ? [['Tanggal', 0.11, 'l'], ['Kategori', 0.19, 'l'], ['Rekening', 0.14, 'l'], ['Catatan / barang', 0.34, 'l'], ['Jumlah', 0.22, 'r']] : [['Tanggal', 0.14, 'l'], ['Kategori', 0.24, 'l'], ['Catatan / barang', 0.38, 'l'], ['Jumlah', 0.24, 'r']];
     let i = 0;
     while (i < M.items.length) {
       const room = Math.floor((BOT - y - 22) / 19) - 1;
@@ -1272,7 +1428,8 @@ function buildReportPdf(M) {
       const chunk = M.items.slice(i, i + room);
       table(p, L, y, CW, cols, chunk.map(t => {
         const its = (t.items || []).map(x => (x.q > 1 ? x.q + 'x ' : '') + x.n).join(', ');
-        return [t.date.slice(8) + ' ' + MONTHS_S[Number(t.date.slice(5, 7)) - 1], catOf(t.cat).label, [t.note, its].filter(Boolean).join(' - '), (t.type === 'in' ? '+' : '-') + fmtRp(t.amount).replace('-', ''), t.type];
+        const dt = t.date.slice(8) + ' ' + MONTHS_S[Number(t.date.slice(5, 7)) - 1], nt = [t.note, its].filter(Boolean).join(' - '), jm = (t.type === 'in' ? '+' : '-') + fmtRp(t.amount).replace('-', '');
+        return NM ? [dt, catOf(t.cat).label, t.acc && NM[t.acc] ? NM[t.acc] : 'Tunai', nt, jm, t.type] : [dt, catOf(t.cat).label, nt, jm, t.type];
       }), null, 19);
       i += chunk.length; y += 19 * (chunk.length + 1) + 8;
       if (i < M.items.length) { p = doc.addPage(); miniHead(); }
@@ -1283,12 +1440,13 @@ function buildReportPdf(M) {
   const n = doc.pages.length;
   doc.pages.forEach((pg, i) => {
     pg.line(L, 812, R, 812, { color: PC.line, lw: 0.6 });
-    pg.text('SaKu \xB7 ' + M.user + ' \xB7 ' + M.label, L, 826, { size: 7.5, color: PC.ink3 });
+    pg.text('SaKu v' + APP_VERSION + ' \xB7 ' + M.user + ' \xB7 ' + M.label, L, 826, { size: 7.5, color: PC.ink3 });
     pg.text('Halaman ' + (i + 1) + ' dari ' + n, R, 826, { size: 7.5, color: PC.ink3, align: 'r' });
   });
   return doc.build();
 }
 
+const saldoTxt0 = n => (n < 0 ? '-' : '') + fmtRp(Math.abs(n));
 function table(p, x, y, w, cols, rows, foot, rh) {
   const xs = []; let cx = x;
   cols.forEach(c => { xs.push(cx); cx += w * c[1]; });
@@ -1298,11 +1456,11 @@ function table(p, x, y, w, cols, rows, foot, rh) {
   all.forEach((o, ri) => {
     const ry = y + rh * (ri + 1);
     if (o.foot) p.rect(x, ry, w, rh, { fill: PC.sunken, r: 0 });
-    else if (ri % 2 === 1) p.rect(x, ry, w, rh, { fill: '#F7F9F6' });
+    else if (ri % 2 === 1) p.rect(x, ry, w, rh, { fill: '#F6F8FC' });
     cols.forEach((c, i) => {
       const cell = o.r[i], pair = Array.isArray(cell), raw = pair ? cell[0] : cell;
       const txt = fitText(String(raw == null ? '' : raw), w * c[1] - 14, 8.5, o.foot);
-      const colr = pair && cell[1] ? cell[1] : c[2] === 'r' && i === cols.length - 1 && o.r[4] === 'in' ? PC.inC : PC.ink;
+      const colr = pair && cell[1] ? cell[1] : c[2] === 'r' && i === cols.length - 1 && o.r[cols.length] === 'in' ? PC.inC : PC.ink;
       p.text(txt, c[2] === 'r' ? xs[i] + w * c[1] - 8 : xs[i] + 8, ry + rh / 2 + 3, { size: 8.5, bold: o.foot || (c[2] === 'r' && i === cols.length - 1), color: colr, align: c[2] === 'r' ? 'r' : 'l' });
     });
     if (!o.foot) p.line(x, ry + rh, x + w, ry + rh, { color: PC.line, lw: 0.4 });
@@ -1381,16 +1539,17 @@ const xe = s => String(s == null ? '' : s).replace(/[\u0000-\u0008\u000B\u000C\u
 const colName = c => { let s = ''; while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); } return s; };
 const xlDate = s => Math.round(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000) + 25569;
 
+const SAKU_LOGO_PNG = { w: 400, h: 134, b64: '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' };
 /* gaya sel */
-const XS = { def: 0, hdr: 1, hdrL: 2, txt: 3, money: 4, pct: 5, date: 6, int: 7, totL: 8, totM: 9, totP: 10, banner: 11, sub: 12, kLab: 13, kVal: 14, kCap: 15, sec: 16, moneyNeg: 17, note: 18, wrap: 19, kValNeg: 20, totI: 21 };
+const XS = { def: 0, hdr: 1, hdrL: 2, txt: 3, money: 4, pct: 5, date: 6, int: 7, totL: 8, totM: 9, totP: 10, banner: 11, sub: 12, kLab: 13, kVal: 14, kCap: 15, sec: 16, moneyNeg: 17, note: 18, wrap: 19, kValNeg: 20, totI: 21, kPct: 22, stripe: 23 };
 function stylesXml() {
   const font = (sz, o) => '<font>' + (o.b ? '<b/>' : '') + (o.i ? '<i/>' : '') + '<sz val="' + sz + '"/><color rgb="FF' + o.c + '"/><name val="Calibri"/><family val="2"/></font>';
-  const fonts = [font(11, { c: '10241D' }), font(11, { c: 'FFFFFF', b: 1 }), font(22, { c: 'FFFFFF', b: 1 }), font(10, { c: 'A9BDB3' }), font(9, { c: '64756C', b: 1 }), font(20, { c: '10241D', b: 1 }), font(9, { c: '64756C' }), font(13, { c: '10241D', b: 1 }), font(11, { c: '10241D', b: 1 }), font(10, { c: '64756C', i: 1 })];
+  const fonts = [font(11, { c: '14202E' }), font(11, { c: 'FFFFFF', b: 1 }), font(22, { c: '0E2347', b: 1 }), font(10, { c: '62728A' }), font(9, { c: '62728A', b: 1 }), font(20, { c: '14202E', b: 1 }), font(9, { c: '62728A' }), font(13, { c: '14202E', b: 1 }), font(11, { c: '14202E', b: 1 }), font(10, { c: '62728A', i: 1 })];
   const fill = c => '<fill><patternFill patternType="solid"><fgColor rgb="FF' + c + '"/><bgColor indexed="64"/></patternFill></fill>';
-  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill('0F2A24'), fill('EEF2EE'), fill('FBEBC3'), fill('F2B01E')];
+  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill('0E2347'), fill('EDF1F8'), fill('E4ECFD'), fill('2F6BED')];
   const side = (n, st, c) => '<' + n + (st ? ' style="' + st + '"><color rgb="FF' + c + '"/></' + n + '>' : '/>');
   const border = (b, t) => '<border><left/><right/>' + side('top', t && t[0], t && t[1]) + side('bottom', b && b[0], b && b[1]) + '<diagonal/></border>';
-  const borders = [border(), border(['thin', 'DAE2DB']), border(['medium', 'F2B01E']), border(null, ['thin', 'C4D0C6'])];
+  const borders = [border(), border(['thin', 'DCE3EE']), border(['medium', '2F6BED']), border(null, ['thin', 'C3CDDD'])];
   const cq = '"' + (curSym() + (CURRENCIES[CUR].sp ? ' ' : '')).replace(/"/g, '""') + '"';
   const nf = [[164, cq + '#,##0;\\-' + cq + '#,##0;"-"'], [165, cq + '#,##0;[Red]\\-' + cq + '#,##0;"-"'], [166, '0.0%'], [167, 'dd mmm yyyy'], [168, '#,##0']];
   const xf = (font, fill, bd, num, al) => '<xf numFmtId="' + (num || 0) + '" fontId="' + font + '" fillId="' + fill + '" borderId="' + bd + '" xfId="0"' + (num ? ' applyNumberFormat="1"' : '') + ' applyFont="1"' + (fill ? ' applyFill="1"' : '') + (bd ? ' applyBorder="1"' : '') + (al ? ' applyAlignment="1"><alignment ' + al + '/></xf>' : '/>');
@@ -1398,19 +1557,20 @@ function stylesXml() {
   const xfs = [
     xf(0, 0, 0, 0, V), xf(1, 2, 0, 0, 'horizontal="center" ' + V + ' wrapText="1"'), xf(1, 2, 0, 0, 'horizontal="left" ' + V + ' indent="1"'),
     xf(0, 0, 1, 0, V), xf(0, 0, 1, 164, V), xf(0, 0, 1, 166, V), xf(0, 0, 1, 167, 'horizontal="left" ' + V), xf(0, 0, 1, 168, V),
-    xf(8, 3, 3, 0, V), xf(8, 3, 3, 164, V), xf(8, 3, 3, 166, V), xf(2, 2, 0, 0, 'horizontal="left" ' + V + ' indent="1"'), xf(3, 2, 0, 0, 'horizontal="left" ' + V + ' indent="1"'),
+    xf(8, 3, 3, 0, V), xf(8, 3, 3, 164, V), xf(8, 3, 3, 166, V), xf(2, 0, 0, 0, 'horizontal="left" ' + V + ' indent="1"'), xf(3, 0, 0, 0, 'horizontal="left" ' + V + ' indent="1"'),
     xf(4, 4, 0, 0, 'horizontal="left" ' + V + ' indent="1"'), xf(5, 3, 0, 164, 'horizontal="left" ' + V + ' indent="1"'), xf(6, 3, 0, 0, 'horizontal="left" ' + V + ' indent="1"'),
-    xf(7, 0, 2, 0, V), xf(0, 0, 1, 165, V), xf(9, 0, 0, 0, V), xf(0, 0, 1, 0, V + ' wrapText="1"'), xf(5, 3, 0, 165, 'horizontal="left" ' + V + ' indent="1"'), xf(8, 3, 3, 168, V)
+    xf(7, 0, 2, 0, V), xf(0, 0, 1, 165, V), xf(9, 0, 0, 0, V), xf(0, 0, 1, 0, V + ' wrapText="1"'), xf(5, 3, 0, 165, 'horizontal="left" ' + V + ' indent="1"'), xf(8, 3, 3, 168, V), xf(5, 3, 0, 166, 'horizontal="left" ' + V + ' indent="1"'), xf(0, 5, 0, 0, V)
   ];
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
     '<numFmts count="' + nf.length + '">' + nf.map(n => '<numFmt numFmtId="' + n[0] + '" formatCode="' + xe(n[1]) + '"/>').join('') + '</numFmts>' +
     '<fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts><fills count="' + fills.length + '">' + fills.join('') + '</fills><borders count="' + borders.length + '">' + borders.join('') + '</borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + xfs.length + '">' + xfs.join('') + '</cellXfs>' +
-    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+    '<dxfs count="3">' + [['14805F', 'DDF3EA'], ['8A5F08', 'FBEFD3'], ['C23B3B', 'FBE1E1']].map(d => '<dxf><font><b/><color rgb="FF' + d[0] + '"/></font><fill><patternFill patternType="solid"><fgColor rgb="FF' + d[1] + '"/><bgColor rgb="FF' + d[1] + '"/></patternFill></fill></dxf>').join('') + '</dxfs></styleSheet>';
 }
 
 class XSheet {
-  constructor(name, o) { this.name = name; this.o = o || {}; this.cells = new Map(); this.merges = []; this.cols = []; this.rowH = {}; this.charts = []; this.maxR = 1; this.maxC = 1; }
+  constructor(name, o) { this.name = name; this.o = o || {}; this.cells = new Map(); this.merges = []; this.cols = []; this.rowH = {}; this.charts = []; this.pics = []; this.cf = []; this.maxR = 1; this.maxC = 1; }
   put(r, c, v, s, f) { this.cells.set(r + ',' + c, { r, c, v, s: s || 0, f }); if (r > this.maxR) this.maxR = r; if (c > this.maxC) this.maxC = c; return this; }
   merge(r1, c1, r2, c2, s) {
     this.merges.push(colName(c1) + r1 + ':' + colName(c2) + r2);
@@ -1443,9 +1603,10 @@ class XSheet {
     x += '</sheetData>';
     if (o.filter) x += '<autoFilter ref="' + o.filter + '"/>';
     if (this.merges.length) x += '<mergeCells count="' + this.merges.length + '">' + this.merges.map(m => '<mergeCell ref="' + m + '"/>').join('') + '</mergeCells>';
+    this.cf.forEach((c, i) => { x += '<conditionalFormatting sqref="' + c.ref + '">' + c.rules.map((r, k) => '<cfRule type="expression" dxfId="' + r[1] + '" priority="' + (i * 4 + k + 1) + '"><formula>' + xe(r[0]) + '</formula></cfRule>').join('') + '</conditionalFormatting>'; });
     x += '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>';
     x += '<pageSetup paperSize="9" orientation="' + (o.landscape ? 'landscape' : 'portrait') + '" fitToWidth="1" fitToHeight="0"/>';
-    if (this.charts.length) x += '<drawing r:id="rId1"/>';
+    if (this.charts.length || this.pics.length) x += '<drawing r:id="rId1"/>';
     return x + '</worksheet>';
   }
 }
@@ -1470,27 +1631,29 @@ function chartXml(c) {
     } else if (t === 'bar') x += '<c:spPr>' + solid(s.color) + '</c:spPr><c:invertIfNegative val="0"/>';
     else x += '<c:spPr><a:ln w="19050">' + solid('FFFFFF') + '</a:ln></c:spPr>';
     if (s.ptColors) x += s.ptColors.map((col, k) => '<c:dPt><c:idx val="' + k + '"/>' + (t === 'bar' ? '<c:invertIfNegative val="0"/>' : '') + '<c:bubble3D val="0"/><c:spPr>' + solid(col) + '<a:ln w="19050">' + solid('FFFFFF') + '</a:ln></c:spPr></c:dPt>').join('');
-    if (c.labels) x += '<c:dLbls>' + (c.labels === 'pct' ? '<c:numFmt formatCode="0%" sourceLinked="0"/>' : '<c:numFmt formatCode="' + xe(axfmt()) + '" sourceLinked="0"/>') + '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>' + txPr(900, '10241D', 1) + (c.labels === 'pct' ? '' : '<c:dLblPos val="outEnd"/>') + '<c:showLegendKey val="0"/><c:showVal val="' + (c.labels === 'pct' ? 0 : 1) + '"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="' + (c.labels === 'pct' ? 1 : 0) + '"/><c:showBubbleSize val="0"/>' + (c.labels === 'pct' ? '<c:showLeaderLines val="0"/>' : '') + '</c:dLbls>';
+    if (c.labels) x += '<c:dLbls>' + (c.labels === 'pct' ? '<c:numFmt formatCode="0%" sourceLinked="0"/>' : '<c:numFmt formatCode="' + xe(axfmt()) + '" sourceLinked="0"/>') + '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>' + txPr(900, '14202E', 1) + (c.labels === 'pct' ? '' : '<c:dLblPos val="outEnd"/>') + '<c:showLegendKey val="0"/><c:showVal val="' + (c.labels === 'pct' ? 0 : 1) + '"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="' + (c.labels === 'pct' ? 1 : 0) + '"/><c:showBubbleSize val="0"/>' + (c.labels === 'pct' ? '<c:showLeaderLines val="0"/>' : '') + '</c:dLbls>';
     x += '<c:cat>' + strRef(c.catRef, c.cats) + '</c:cat><c:val>' + numRef(s.valRef, s.vals) + '</c:val>';
     if (t === 'line') x += '<c:smooth val="0"/>';
     return x + '</c:ser>';
   }).join('');
   let plot;
   const axes = (horizontal, line) => {
-    const cat = '<c:catAx><c:axId val="111"/><c:scaling><c:orientation val="' + (horizontal ? 'maxMin' : 'minMax') + '"/></c:scaling><c:delete val="0"/><c:axPos val="' + (horizontal ? 'l' : 'b') + '"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:spPr><a:ln w="9525">' + solid('C4D0C6') + '</a:ln></c:spPr>' + txPr(900, '41544B', 0) + '<c:crossAx val="112"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/>' + (c.tickSkip ? '<c:tickLblSkip val="' + c.tickSkip + '"/>' : '') + '<c:noMultiLvlLbl val="0"/></c:catAx>';
-    const val = '<c:valAx><c:axId val="112"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="' + (horizontal ? 'b' : 'l') + '"/><c:majorGridlines><c:spPr><a:ln w="6350">' + solid('DAE2DB') + '</a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="' + xe(axfmt()) + '" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr>' + txPr(900, '64756C', 0) + '<c:crossAx val="111"/><c:crosses val="' + (horizontal ? 'max' : 'autoZero') + '"/><c:crossBetween val="between"/></c:valAx>';
+    const cat = '<c:catAx><c:axId val="111"/><c:scaling><c:orientation val="' + (horizontal ? 'maxMin' : 'minMax') + '"/></c:scaling><c:delete val="0"/><c:axPos val="' + (horizontal ? 'l' : 'b') + '"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:spPr><a:ln w="9525">' + solid('C3CDDD') + '</a:ln></c:spPr>' + txPr(900, '3F4F66', 0) + '<c:crossAx val="112"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/>' + (c.tickSkip ? '<c:tickLblSkip val="' + c.tickSkip + '"/>' : '') + '<c:noMultiLvlLbl val="0"/></c:catAx>';
+    const val = '<c:valAx><c:axId val="112"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="' + (horizontal ? 'b' : 'l') + '"/><c:majorGridlines><c:spPr><a:ln w="6350">' + solid('DCE3EE') + '</a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="' + xe(axfmt()) + '" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr>' + txPr(900, '62728A', 0) + '<c:crossAx val="111"/><c:crosses val="' + (horizontal ? 'max' : 'autoZero') + '"/><c:crossBetween val="between"/></c:valAx>';
     return cat + val;
   };
   if (t === 'bar') plot = '<c:barChart><c:barDir val="' + (c.horizontal ? 'bar' : 'col') + '"/><c:grouping val="clustered"/><c:varyColors val="0"/>' + serXml + '<c:gapWidth val="' + (c.gap || 60) + '"/>' + (ser.length > 1 ? '<c:overlap val="-8"/>' : '') + '<c:axId val="111"/><c:axId val="112"/></c:barChart>' + axes(c.horizontal, false);
   else if (t === 'line') plot = '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>' + serXml + '<c:marker val="1"/><c:axId val="111"/><c:axId val="112"/></c:lineChart>' + axes(false, true);
   else plot = '<c:doughnutChart><c:varyColors val="1"/>' + serXml + '<c:firstSliceAng val="0"/><c:holeSize val="58"/></c:doughnutChart>';
-  const legend = c.legend === false ? '' : '<c:legend><c:legendPos val="' + (t === 'doughnut' ? 'r' : 'b') + '"/><c:overlay val="0"/>' + txPr(900, '41544B', 0) + '</c:legend>';
-  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<c:chartSpace ' + NSC + '><c:roundedCorners val="0"/><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr>' + rpr(1200, '10241D', 1) + '</a:pPr><a:r><a:rPr lang="id-ID" sz="1200" b="1">' + solid('10241D') + '<a:latin typeface="Calibri"/></a:rPr><a:t>' + xe(i18n(c.title)) + '</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/>' + plot + '<c:spPr><a:noFill/></c:spPr></c:plotArea>' + legend + '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:spPr>' + solid('FFFFFF') + '<a:ln w="9525">' + solid('DAE2DB') + '</a:ln></c:spPr>' + txPr(900, '41544B', 0) + '</c:chartSpace>';
+  const legend = c.legend === false ? '' : '<c:legend><c:legendPos val="' + (t === 'doughnut' ? 'r' : 'b') + '"/><c:overlay val="0"/>' + txPr(900, '3F4F66', 0) + '</c:legend>';
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<c:chartSpace ' + NSC + '><c:roundedCorners val="0"/><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr>' + rpr(1200, '14202E', 1) + '</a:pPr><a:r><a:rPr lang="id-ID" sz="1200" b="1">' + solid('14202E') + '<a:latin typeface="Calibri"/></a:rPr><a:t>' + xe(i18n(c.title)) + '</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/>' + plot + '<c:spPr><a:noFill/></c:spPr></c:plotArea>' + legend + '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:spPr>' + solid('FFFFFF') + '<a:ln w="9525">' + solid('DCE3EE') + '</a:ln></c:spPr>' + txPr(900, '3F4F66', 0) + '</c:chartSpace>';
 }
-function drawingXml(charts) {
+function drawingXml(charts, pics) {
+  pics = pics || [];
+  const picXml = pics.map((q, k) => '<xdr:oneCellAnchor><xdr:from><xdr:col>' + q.a[0] + '</xdr:col><xdr:colOff>76200</xdr:colOff><xdr:row>' + q.a[1] + '</xdr:row><xdr:rowOff>38100</xdr:rowOff></xdr:from><xdr:ext cx="' + Math.round(q.w * 9525) + '" cy="' + Math.round(q.w * SAKU_LOGO_PNG.h / SAKU_LOGO_PNG.w * 9525) + '"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="' + (charts.length + k + 2) + '" name="Logo SaKu" descr="Logo SaKu"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId' + (charts.length + k + 1) + '"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>').join('');
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' + charts.map((c, i) =>
     '<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>' + c.a[0] + '</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>' + c.a[1] + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>' + c.a[2] + '</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>' + c.a[3] + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>' +
-    '<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="' + (i + 2) + '" name="Grafik ' + (i + 1) + '" descr="' + xe(i18n(c.title)) + '"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId' + (i + 1) + '"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>').join('') + '</xdr:wsDr>';
+    '<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="' + (i + 2) + '" name="Grafik ' + (i + 1) + '" descr="' + xe(i18n(c.title)) + '"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId' + (i + 1) + '"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>').join('') + picXml + '</xdr:wsDr>';
 }
 
 /* ---------- model data workbook ---------- */
@@ -1504,13 +1667,15 @@ function xlsxModel(list, A, meta) {
   monthItems.forEach(t => { if (t.type === 'in') dinc[dayDiff(cr.start, parseYmd(t.date)) + 1] += Number(t.amount) || 0; });
   const dow = [0, 0, 0, 0, 0, 0, 0], dowN = [0, 0, 0, 0, 0, 0, 0];
   list.forEach(t => { if (t.type === 'out' && !isXfer(t)) { const i = (parseYmd(t.date).getDay() + 6) % 7; dow[i] += Number(t.amount) || 0; dowN[i]++; } });
-  return { user: meta.user || '', now, A, ymk, label: CYCLE.day === 1 ? MONTHS[A.getMonth()] + ' ' + A.getFullYear() : cycleName(cr, true), short: CYCLE.day === 1 ? MONTHS_S[A.getMonth()] : cycleName(cr, false), monthItems, cmp, months, outRows, inRows, allRows, dinc, dow, dowN, tin: sumType(monthItems, 'in'), tout: sumType(monthItems, 'out'), fund: fundOf(list), list: list.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.createdAt || '').localeCompare(String(a.createdAt || '')))) };
+  return { user: meta.user || '', now, A, ymk, label: CYCLE.day === 1 ? MONTHS[A.getMonth()] + ' ' + A.getFullYear() : cycleName(cr, true), short: CYCLE.day === 1 ? MONTHS_S[A.getMonth()] : cycleName(cr, false), monthItems, cmp, months, outRows, inRows, allRows, dinc, dow, dowN, tin: sumType(monthItems, 'in'), tout: sumType(monthItems, 'out'), fund: fundOf(list), cap: meta.settings ? Number(meta.settings.budget) || 0 : 0, x: reportExtra(list, A, meta, c0, c1), health: reportHealth(monthItems, sumType(monthItems, 'in'), sumType(monthItems, 'out'), cr, now), list: list.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.createdAt || '').localeCompare(String(a.createdAt || '')))) };
 }
 
 function buildXlsx(X) {
   const SH = {}; const sheets = [];
   const mk = (n, o) => { const s = new XSheet(n, o); SH[n] = s; sheets.push(s); return s; };
-  const dash = mk('Ringkasan', { grid: false, tab: 'F2B01E' }), mo = mk('Bulanan', { tab: '2FA36B', freeze: 1 }), rek = mk('Rekap Kategori', { tab: '7B61D6', freeze: 1 }), kat = mk('Kategori', { tab: '2A78D6', freeze: 1 }), har = mk('Harian', { tab: 'E2593C', freeze: 1 }), trx = mk('Transaksi', { tab: '0F2A24', freeze: 1, landscape: true });
+  const dash = mk('Ringkasan', { grid: false, tab: '2F6BED' }), trx = mk('Transaksi', { tab: '0E2347', freeze: 1, landscape: true }), X0 = X.x || {};
+  const bud = X0.catBud ? mk('Budget Kategori', { tab: 'EDA100', freeze: 1 }) : null, rk = X0.acc ? mk('Rekening', { tab: '1BAF7A', freeze: 1, landscape: true }) : null;
+  const mo = mk('Bulanan', { tab: '1E9E78', freeze: 1 }), rek = mk('Rekap Kategori', { tab: '6250D6', freeze: 1 }), kat = mk('Kategori', { tab: '2A78D6', freeze: 1 }), har = mk('Harian', { tab: 'E0584F', freeze: 1 });
   const C = X.cmp, ML = X.label;
 
   /* --- Bulanan --- */
@@ -1568,20 +1733,51 @@ function buildXlsx(X) {
   har.put(11, 7, 'Kolom Kumulatif kosong untuk tanggal yang belum terjadi. Tabel hari memakai seluruh catatan pengeluaran.', XS.note);
 
   /* --- Transaksi --- */
-  trx.cols = [[1, 1, 14], [2, 2, 10], [3, 3, 13], [4, 4, 26], [5, 5, 30], [6, 6, 46], [7, 7, 18]];
-  ['Tanggal', 'Hari', 'Jenis', 'Kategori', 'Catatan', 'Barang', 'Jumlah'].forEach((h, i) => trx.put(1, i + 1, h, i === 6 ? XS.hdr : XS.hdrL)); trx.rowH[1] = 26;
+  trx.cols = [[1, 1, 14], [2, 2, 10], [3, 3, 17], [4, 4, 24], [5, 5, 18], [6, 6, 30], [7, 7, 40], [8, 8, 18]];
+  ['Tanggal', 'Hari', 'Jenis', 'Kategori', 'Rekening', 'Catatan', 'Barang', 'Jumlah'].forEach((h, i) => trx.put(1, i + 1, h, i === 7 ? XS.hdr : XS.hdrL)); trx.rowH[1] = 26;
+  const NMS = X0.names || null;
   X.list.forEach((t, i) => {
     const r = i + 2, its = (t.items || []).map(x => (x.q > 1 ? x.q + 'x ' : '') + x.n + (x.p ? ' @' + dots(x.p) : '')).join('; ');
-    trx.put(r, 1, xlDate(t.date), XS.date).put(r, 2, DAYS[parseYmd(t.date).getDay()], XS.txt).put(r, 3, (() => { const p = potOf(t), d = debtOf(t); return p ? (p.k === 'setor' ? 'Setor simpanan' : p.k === 'tarik' ? 'Tarik simpanan' : 'Hasil simpanan') : d ? (d.p === 'hutang' ? (d.k === 'tarik' ? 'Pinjaman diterima' : 'Bayar hutang') : (d.k === 'setor' ? 'Beri pinjaman' : 'Pelunasan piutang')) : t.type === 'in' ? 'Pemasukan' : 'Pengeluaran'; })(), XS.txt).put(r, 4, catOf(t.cat).label, XS.txt).put(r, 5, t.note || '', XS.txt).put(r, 6, its, XS.txt).put(r, 7, (t.type === 'in' ? 1 : -1) * (Number(t.amount) || 0), XS.moneyNeg);
+    const jenis = (() => { const p = potOf(t), d = debtOf(t); return p ? (p.k === 'setor' ? 'Setor simpanan' : p.k === 'tarik' ? 'Tarik simpanan' : 'Hasil simpanan') : d ? (d.p === 'hutang' ? (d.k === 'tarik' ? 'Pinjaman diterima' : 'Bayar hutang') : (d.k === 'setor' ? 'Beri pinjaman' : 'Pelunasan piutang')) : accXf(t) ? 'Pindah saldo' : t.type === 'in' ? 'Pemasukan' : 'Pengeluaran'; })();
+    const rekn = !NMS ? '' : accXf(t) ? (NMS[t.acc] || 'Tunai') + ' → ' + (NMS[t.to] || 'Tunai') : (t.acc && NMS[t.acc]) || 'Tunai / Tanpa rekening';
+    trx.put(r, 1, xlDate(t.date), XS.date).put(r, 2, DAYS[parseYmd(t.date).getDay()], XS.txt).put(r, 3, jenis, XS.txt).put(r, 4, catOf(t.cat).label, XS.txt).put(r, 5, rekn, XS.txt).put(r, 6, t.note || '', XS.txt).put(r, 7, its, XS.txt).put(r, 8, (t.type === 'in' ? 1 : -1) * (Number(t.amount) || 0), XS.moneyNeg);
   });
   const TN = X.list.length + 1;
-  trx.o.filter = 'A1:G' + Math.max(TN, 2);
-  trx.put(TN + 2, 1, 'Jumlah bertanda minus berarti uang keluar. Setor/tarik/hasil simpanan bukan pengeluaran atau pemasukan (hasil tidak menyentuh kas). Gunakan filter di baris judul atau PivotTable untuk analisis lanjutan.', XS.note);
+  trx.o.filter = 'A1:H' + Math.max(TN, 2);
+  trx.put(TN + 2, 7, 'Total (mengikuti filter)', XS.totL).put(TN + 2, 8, X.list.reduce((a, t) => a + (t.type === 'in' ? 1 : -1) * (Number(t.amount) || 0), 0), XS.totM, 'SUBTOTAL(109,H2:H' + Math.max(TN, 2) + ')');
+  trx.put(TN + 4, 1, 'Jumlah bertanda minus berarti uang keluar. Setor/tarik/hasil simpanan dan pindah saldo bukan pengeluaran atau pemasukan. Total di bawah memakai SUBTOTAL, jadi ikut berubah saat Anda memfilter. Pakai filter di baris judul atau PivotTable untuk analisis lanjutan.', XS.note);
+
+  /* --- Budget per kategori --- */
+  if (bud) {
+    const CB = X0.catBud, n = CB.rows.length, tr = n + 2, bs = n + 5;
+    bud.cols = [[1, 1, 30], [2, 2, 16], [3, 3, 14], [4, 6, 16], [7, 7, 18]];
+    ['Kategori', 'Budget', '% dari batas', 'Terpakai', 'Sisa', 'Pemakaian', 'Status'].forEach((h, i) => bud.put(1, i + 1, h, i === 0 ? XS.hdrL : XS.hdr)); bud.rowH[1] = 26;
+    CB.rows.forEach((r, i) => { const rw = i + 2;
+      bud.put(rw, 1, r.label, XS.txt).put(rw, 2, r.amt, XS.money).put(rw, 3, CB.base > 0 ? r.amt / CB.base : 0, XS.pct, 'IF($B$' + bs + '>0,B' + rw + '/$B$' + bs + ',0)').put(rw, 4, r.spent, XS.money).put(rw, 5, r.left, XS.moneyNeg, 'B' + rw + '-D' + rw).put(rw, 6, r.used / 100, XS.pct, 'IF(B' + rw + '>0,D' + rw + '/B' + rw + ',0)').put(rw, 7, r.st, XS.txt, 'IF(F' + rw + '>1,"Lewat",IF(F' + rw + '>=0.85,"Hampir habis","Aman"))'); });
+    const sB = CB.alloc, sD = CB.spent;
+    bud.put(tr, 1, 'Total dibagi', XS.totL).put(tr, 2, sB, XS.totM, 'SUM(B2:B' + (tr - 1) + ')').put(tr, 3, CB.base > 0 ? sB / CB.base : 0, XS.totP, 'IF($B$' + bs + '>0,B' + tr + '/$B$' + bs + ',0)').put(tr, 4, sD, XS.totM, 'SUM(D2:D' + (tr - 1) + ')').put(tr, 5, sB - sD, XS.totM, 'B' + tr + '-D' + tr).put(tr, 6, sB > 0 ? sD / sB : 0, XS.totP, 'IF(B' + tr + '>0,D' + tr + '/B' + tr + ',0)').put(tr, 7, null, XS.totL);
+    bud.put(bs - 1, 1, 'Ringkasan batas', XS.sec);
+    bud.put(bs, 1, 'Batas pengeluaran / dana tersedia', XS.txt).put(bs, 2, CB.base, XS.money).put(bs + 1, 1, 'Belum dibagi', XS.txt).put(bs + 1, 2, CB.free, XS.moneyNeg, 'B' + bs + '-B' + tr).put(bs + 2, 1, 'Pengeluaran di luar kategori berbudget', XS.txt).put(bs + 2, 2, CB.other, XS.money);
+    bud.put(bs + 4, 1, 'Periode: ' + CB.label + '. Kolom Sisa, Pemakaian, dan Status memakai rumus; warna berubah otomatis (hijau aman, kuning hampir habis, merah lewat).', XS.note);
+    bud.cf.push({ ref: 'F2:G' + (tr - 1), rules: [['$F2>1', 2], ['$F2>=0.85', 1], ['$F2<0.85', 0]] });
+  }
+
+  /* --- Rekening --- */
+  if (rk) {
+    const AC = X0.acc, n = AC.rows.length, tr = n + 2, KN = { bank: 'Bank', ewallet: 'E-wallet', cash: 'Tunai' };
+    rk.cols = [[1, 1, 26], [2, 2, 12], [3, 5, 16], [6, 6, 20], [7, 7, 26], [8, 9, 18]];
+    ['Rekening', 'Jenis', 'Saldo awal', 'Masuk', 'Keluar', '% dari seluruh pengeluaran', 'Kategori terbesar', 'Pindah saldo bersih', 'Saldo akhir'].forEach((h, i) => rk.put(1, i + 1, h, i < 2 || i === 6 ? XS.hdrL : XS.hdr)); rk.rowH[1] = 36;
+    AC.rows.forEach((a, i) => { const rw = i + 2;
+      rk.put(rw, 1, a.name, XS.txt).put(rw, 2, KN[a.kind] || 'Tunai', XS.txt).put(rw, 3, a.open, XS.money).put(rw, 4, a.in, XS.money).put(rw, 5, a.out, XS.money).put(rw, 6, AC.totOut > 0 ? a.out / AC.totOut : 0, XS.pct, 'IF(E$' + tr + '>0,E' + rw + '/E$' + tr + ',0)').put(rw, 7, a.top ? catOf(a.top).label : '-', XS.txt).put(rw, 8, a.xnet, XS.moneyNeg).put(rw, 9, a.saldo, XS.moneyNeg); });
+    rk.put(tr, 1, 'Total', XS.totL).put(tr, 2, null, XS.totL).put(tr, 3, AC.totOpen, XS.totM, 'SUM(C2:C' + (tr - 1) + ')').put(tr, 4, AC.totIn, XS.totM, 'SUM(D2:D' + (tr - 1) + ')').put(tr, 5, AC.totOut, XS.totM, 'SUM(E2:E' + (tr - 1) + ')').put(tr, 6, AC.totOut > 0 ? 1 : 0, XS.totP, 'IF(E' + tr + '>0,1,0)').put(tr, 7, null, XS.totL).put(tr, 8, AC.rows.reduce((x, a) => x + a.xnet, 0), XS.totM, 'SUM(H2:H' + (tr - 1) + ')').put(tr, 9, AC.totSaldo, XS.totM, 'SUM(I2:I' + (tr - 1) + ')');
+    rk.put(tr + 2, 1, 'Masuk, keluar, dan persentase untuk periode ' + X.label + '; saldo akhir dihitung dari seluruh catatan. Kolom persen menunjukkan dari rekening mana uang paling banyak keluar. Pindah saldo antar rekening dipisah supaya tidak dihitung sebagai pemasukan atau pengeluaran.', XS.note);
+    rk.cf.push({ ref: 'F2:F' + (tr - 1), rules: [['$F2>=0.5', 2], ['$F2>=0.25', 1]] });
+  }
 
   /* --- Ringkasan --- */
   dash.cols = [[1, 3, 9.3], [4, 4, 2.2], [5, 7, 9.3], [8, 8, 2.2], [9, 11, 9.3], [12, 12, 2.2], [13, 15, 9.3]];
-  dash.merge(1, 1, 2, 15, XS.banner); dash.put(1, 1, 'Laporan Keuangan', XS.banner); dash.rowH[1] = 24; dash.rowH[2] = 24;
-  dash.merge(3, 1, 3, 15, XS.sub); dash.put(3, 1, 'SaKu  ·  ' + X.user + '  ·  Bulan laporan: ' + ML + '  ·  Dibuat ' + fmtDateLong(X.now), XS.sub); dash.rowH[3] = 22; dash.rowH[4] = 10;
+  dash.pics.push({ a: [0, 0], w: 200 }); dash.merge(1, 5, 2, 15, XS.banner); dash.put(1, 5, 'Laporan Keuangan', XS.banner); dash.rowH[1] = 24; dash.rowH[2] = 24;
+  dash.merge(3, 5, 3, 15, XS.sub); dash.put(3, 5, 'SaKu v' + APP_VERSION + '  ·  ' + X.user + '  ·  Bulan laporan: ' + ML + '  ·  Dibuat ' + fmtDateLong(X.now), XS.sub); dash.rowH[3] = 22; dash.rowH[4] = 6; dash.merge(4, 1, 4, 15, XS.stripe); dash.put(4, 1, null, XS.stripe); dash.rowH[1] = 26; dash.rowH[2] = 26;
   const net = X.tin - X.tout, dText = C.pct == null ? 'Belum ada pembanding' : (C.pct >= 0 ? 'Naik ' : 'Turun ') + fmtPct(Math.abs(C.pct)) + ' vs ' + C.prevShort + (C.isCurrent ? ' (s.d. tgl ' + C.upto + ')' : '');
   const cards = [[1, 'Pemasukan ' + X.short, X.tin, XS.kVal, X.monthItems.filter(t => t.type === 'in').length + ' catatan'], [5, 'Pengeluaran ' + X.short, X.tout, XS.kVal, dText], [9, 'Selisih bulan ini', net, XS.kValNeg, net >= 0 ? 'Surplus' + (X.tin > 0 ? ' ' + fmtPct(net / X.tin * 100) + ' dari pemasukan' : '') : 'Defisit, pengeluaran melebihi pemasukan'], [13, 'Saldo keseluruhan', X.fund.saldo, XS.kValNeg, 'Dari semua catatan']];
   cards.forEach(cd => {
@@ -1590,6 +1786,15 @@ function buildXlsx(X) {
     dash.merge(7, cd[0], 7, cd[0] + 2, XS.kCap); dash.put(7, cd[0], cd[4], XS.kCap);
   });
   dash.rowH[5] = 22; dash.rowH[6] = 38; dash.rowH[7] = 22; dash.rowH[8] = 12;
+  /* kesehatan keuangan: tingkat tabungan (rumus dari kartu di atas), rata-rata harian, proyeksi, hari berpengeluaran */
+  const H = X.health, perDayPrev = C.pdim > 0 ? C.prevTotal / C.pdim : 0, capTxt = X.cap > 0 && H.proj != null ? (H.proj > X.cap ? 'Lewat batas ' + fmtRp(X.cap) : 'Dalam batas ' + fmtRp(X.cap)) : 'Dari rata-rata harian';
+  const hcards = [[1, 'Tingkat tabungan', H.rate == null ? 0 : H.rate / 100, XS.kPct, H.rate == null ? 'Belum ada pemasukan' : 'dari pemasukan', 'IF(A6>0,(A6-E6)/A6,0)'], [5, 'Rata-rata per hari', Math.round(H.perDay), XS.kVal, perDayPrev > 0 ? C.prevShort + ': ' + fmtRp(Math.round(perDayPrev)) : 'Pengeluaran per hari'], [9, 'Proyeksi akhir bulan', H.proj == null ? 0 : H.proj, XS.kVal, H.proj == null ? 'Hanya untuk bulan berjalan' : capTxt], [13, 'Hari berpengeluaran', H.spendDays + ' dari ' + (H.el || H.N), XS.kVal, H.topDay >= 0 ? 'Terboros: ' + DAYS[H.topDay] : 'Belum ada pengeluaran']];
+  hcards.forEach(cd => {
+    dash.merge(9, cd[0], 9, cd[0] + 2, XS.kLab); dash.put(9, cd[0], cd[1].toUpperCase(), XS.kLab);
+    dash.merge(10, cd[0], 10, cd[0] + 2, cd[3]); dash.put(10, cd[0], cd[2], cd[3], cd[5]);
+    dash.merge(11, cd[0], 11, cd[0] + 2, XS.kCap); dash.put(11, cd[0], cd[4], XS.kCap);
+  });
+  dash.rowH[9] = 22; dash.rowH[10] = 38; dash.rowH[11] = 22; dash.rowH[12] = 12;
 
   const rng = (sh, col, r1, r2) => sh + '!$' + col + '$' + r1 + ':$' + col + '$' + r2;
   const mN = X.months.length + 1, labels = X.months.map(m => m.label);
@@ -1599,17 +1804,51 @@ function buildXlsx(X) {
   const dayL = []; for (let d = 1; d <= C.N; d++) dayL.push(String(addDays(C.cs, d - 1).getDate()));
   const pieColors = pieRows.map((r, i) => (i === 8 || (restOut > 0 && i === pieRows.length - 1)) ? '98A69E' : LINE_PAL[i % 8]);
   const defs = [
-    { type: 'bar', title: 'Pemasukan vs pengeluaran per bulan', catRef: rng('Bulanan', 'A', 2, mN), cats: labels, series: [{ name: 'Pemasukan', nameRef: 'Bulanan!$B$1', valRef: rng('Bulanan', 'B', 2, mN), vals: X.months.map(m => m.in), color: '2FA36B' }, { name: 'Pengeluaran', nameRef: 'Bulanan!$C$1', valRef: rng('Bulanan', 'C', 2, mN), vals: X.months.map(m => m.out), color: 'E2593C' }] },
+    { type: 'bar', title: 'Pemasukan vs pengeluaran per bulan', catRef: rng('Bulanan', 'A', 2, mN), cats: labels, series: [{ name: 'Pemasukan', nameRef: 'Bulanan!$B$1', valRef: rng('Bulanan', 'B', 2, mN), vals: X.months.map(m => m.in), color: '1E9E78' }, { name: 'Pengeluaran', nameRef: 'Bulanan!$C$1', valRef: rng('Bulanan', 'C', 2, mN), vals: X.months.map(m => m.out), color: 'E0584F' }] },
     { type: 'doughnut', title: 'Pengeluaran per kategori – ' + ML, catRef: catCol('A', pieRows.length), cats: pieNames, labels: 'pct', series: [{ name: 'Pengeluaran', nameRef: 'Kategori!$B$1', valRef: rng('Kategori', 'B', 2, pieRows.length + 1), vals: pieVals, ptColors: pieColors }] },
-    { type: 'line', title: 'Pengeluaran ' + C.curLabel + ' vs ' + C.prevLabel + ' (kumulatif)', catRef: rng('Harian', 'A', 2, HN), cats: dayL, tickSkip: 2, series: [{ name: 'Kumulatif ' + C.prevLabel, nameRef: 'Harian!$E$1', valRef: rng('Harian', 'E', 2, HN), vals: C.prev.concat(new Array(C.N - C.pdim).fill(null)), color: '64756C', dash: 1, w: 22225 }, { name: 'Kumulatif ' + C.curLabel, nameRef: 'Harian!$D$1', valRef: rng('Harian', 'D', 2, HN), vals: C.cur.concat(new Array(C.N - C.dc).fill(null)), color: 'E2593C', w: 34925 }] },
-    { type: 'bar', horizontal: true, title: 'Sumber pemasukan – ' + ML, catRef: catCol('E', inList.length), cats: inList.map(r => r[0]), legend: false, labels: 'val', series: [{ name: 'Pemasukan', nameRef: 'Kategori!$F$1', valRef: rng('Kategori', 'F', 2, inList.length + 1), vals: inList.map(r => r[1]), color: '2FA36B' }] },
-    { type: 'bar', title: 'Pengeluaran harian – ' + ML, catRef: rng('Harian', 'A', 2, C.dc + 1), cats: dayL.slice(0, C.dc), legend: false, gap: 40, tickSkip: 2, series: [{ name: 'Pengeluaran', nameRef: 'Harian!$B$1', valRef: rng('Harian', 'B', 2, C.dc + 1), vals: C.dcur.slice(1), color: 'E2593C' }] },
+    { type: 'line', title: 'Pengeluaran ' + C.curLabel + ' vs ' + C.prevLabel + ' (kumulatif)', catRef: rng('Harian', 'A', 2, HN), cats: dayL, tickSkip: 2, series: [{ name: 'Kumulatif ' + C.prevLabel, nameRef: 'Harian!$E$1', valRef: rng('Harian', 'E', 2, HN), vals: C.prev.concat(new Array(C.N - C.pdim).fill(null)), color: '62728A', dash: 1, w: 22225 }, { name: 'Kumulatif ' + C.curLabel, nameRef: 'Harian!$D$1', valRef: rng('Harian', 'D', 2, HN), vals: C.cur.concat(new Array(C.N - C.dc).fill(null)), color: 'E0584F', w: 34925 }] },
+    { type: 'bar', horizontal: true, title: 'Sumber pemasukan – ' + ML, catRef: catCol('E', inList.length), cats: inList.map(r => r[0]), legend: false, labels: 'val', series: [{ name: 'Pemasukan', nameRef: 'Kategori!$F$1', valRef: rng('Kategori', 'F', 2, inList.length + 1), vals: inList.map(r => r[1]), color: '1E9E78' }] },
+    { type: 'bar', title: 'Pengeluaran harian – ' + ML, catRef: rng('Harian', 'A', 2, C.dc + 1), cats: dayL.slice(0, C.dc), legend: false, gap: 40, tickSkip: 2, series: [{ name: 'Pengeluaran', nameRef: 'Harian!$B$1', valRef: rng('Harian', 'B', 2, C.dc + 1), vals: C.dcur.slice(1), color: 'E0584F' }] },
     { type: 'bar', title: 'Pengeluaran per hari dalam seminggu', catRef: rng('Harian', 'G', 2, 8), cats: [1, 2, 3, 4, 5, 6, 0].map(i => DAYS[i]), legend: false, series: [{ name: 'Total pengeluaran', nameRef: 'Harian!$H$1', valRef: rng('Harian', 'H', 2, 8), vals: X.dow, color: '2A78D6' }] },
     { type: 'line', title: 'Saldo akhir per bulan', catRef: rng('Bulanan', 'A', 2, mN), cats: labels, legend: false, series: [{ name: 'Saldo akhir', nameRef: 'Bulanan!$E$1', valRef: rng('Bulanan', 'E', 2, mN), vals: X.months.map(m => m.saldo), color: '2A78D6', marker: 1 }] },
-    { type: 'bar', horizontal: true, title: '10 kategori pengeluaran terbesar (seluruh data)', catRef: rng('Kategori', 'I', 2, topAll.length + 1), cats: topAll.map(r => r[0]), legend: false, labels: 'val', series: [{ name: 'Pengeluaran', nameRef: 'Kategori!$J$1', valRef: rng('Kategori', 'J', 2, topAll.length + 1), vals: topAll.map(r => r[1]), color: 'E2593C' }] }
+    { type: 'bar', horizontal: true, title: '10 kategori pengeluaran terbesar (seluruh data)', catRef: rng('Kategori', 'I', 2, topAll.length + 1), cats: topAll.map(r => r[0]), legend: false, labels: 'val', series: [{ name: 'Pengeluaran', nameRef: 'Kategori!$J$1', valRef: rng('Kategori', 'J', 2, topAll.length + 1), vals: topAll.map(r => r[1]), color: 'E0584F' }] }
   ];
-  defs.forEach((d, i) => { const row = 8 + Math.floor(i / 2) * 19, left = i % 2 === 0; d.a = left ? [0, row, 7, row + 18] : [8, row, 15, row + 18]; dash.charts.push(d); });
-  dash.put(8 + 4 * 19 + 1, 1, 'Data di balik grafik ada di sheet Bulanan, Kategori, dan Harian. Angka diperbarui saat Anda mengunduh ulang dari SaKu.', XS.note);
+  defs.forEach((d, i) => { const row = 12 + Math.floor(i / 2) * 19, left = i % 2 === 0; d.a = left ? [0, row, 7, row + 18] : [8, row, 15, row + 18]; dash.charts.push(d); });
+  dash.put(12 + 4 * 19 + 2, 1, 'Data di balik grafik ada di sheet Bulanan, Kategori, dan Harian. Angka diperbarui saat Anda mengunduh ulang dari SaKu.', XS.note);
+
+  /* --- Rencana dan komitmen: tagihan, hutang/cicilan, target, wishlist, perjalanan, patungan --- */
+  const PLX = X0.plan;
+  if (PLX) {
+    const dd = d => d ? xlDate(d) : null;
+    const table = (sh, r0, title, heads, rows, widths) => {
+      sh.put(r0, 1, title, XS.sec); sh.rowH[r0] = 24; r0++;
+      heads.forEach((h, i) => sh.put(r0, i + 1, h, i === 0 ? XS.hdrL : XS.hdr)); sh.rowH[r0] = 26;
+      rows.forEach((row, k) => row.forEach((c, i) => sh.put(r0 + 1 + k, i + 1, c[0], c[1], c[2] ? c[2].replace(/#/g, r0 + 1 + k) : undefined)));
+      return r0 + rows.length + 3;
+    };
+    const T = v => [v, XS.txt], M_ = v => [v, XS.money], D_ = v => [dd(v), v ? XS.date : XS.txt];
+    if (PLX.due.length || PLX.hutang.length) {
+      const sh = mk('Tagihan & Hutang', { tab: 'C23B3B' }); sh.cols = [[1, 1, 34], [2, 2, 18], [3, 6, 17], [7, 7, 16]]; let r = 1;
+      if (PLX.due.length) r = table(sh, r, 'Tagihan terdekat', ['Tagihan', 'Jatuh tempo', 'Jumlah', 'Status'], PLX.due.map(d => [T(d.title), D_(d.due), M_(d.amount), T(d.st === 'telat' ? 'Terlambat' : d.st === 'hariini' ? 'Hari ini' : 'Segera')]));
+      if (PLX.hutang.length) {
+        const r1 = r + 2; r = table(sh, r, 'Hutang dan cicilan', ['Nama', 'Jenis', 'Total', 'Terbayar', 'Sisa', 'Progres', 'Berikutnya'], PLX.hutang.map(h => [T(h.who), T(h.dir === 'piutang' ? 'Piutang' : h.dir === 'hutang' ? 'Hutang' : 'Cicilan'), M_(h.amount), M_(h.paid), [h.left, XS.moneyNeg, 'C#-D#'], [h.amount > 0 ? h.paid / h.amount : 0, XS.pct, 'IF(C#>0,D#/C#,0)'], D_(h.next)]));
+        const re = r1 + PLX.hutang.length - 1; sh.put(r - 1, 1, 'Total sisa', XS.totL).put(r - 1, 2, null, XS.totL).put(r - 1, 3, PLX.hutang.reduce((x, h) => x + h.amount, 0), XS.totM, 'SUM(C' + r1 + ':C' + re + ')').put(r - 1, 4, PLX.hutang.reduce((x, h) => x + h.paid, 0), XS.totM, 'SUM(D' + r1 + ':D' + re + ')').put(r - 1, 5, PLX.hutang.reduce((x, h) => x + h.left, 0), XS.totM, 'SUM(E' + r1 + ':E' + re + ')'); r++;
+        sh.cf.push({ ref: 'F' + r1 + ':F' + re, rules: [['$F' + r1 + '>=1', 0]] });
+      }
+      sh.put(r, 1, 'Posisi per ' + fmtDateLong(X.now) + '. Kolom Sisa dan Progres memakai rumus.', XS.note);
+    }
+    if (PLX.target.length || PLX.wish.length) {
+      const sh = mk('Target & Wishlist', { tab: '7B61D6' }); sh.cols = [[1, 1, 32], [2, 2, 16], [3, 6, 17], [7, 9, 16]]; let r = 1;
+      if (PLX.target.length) { const r1 = r + 2; r = table(sh, r, 'Target keuangan', ['Target', 'Jenis', 'Sasaran', 'Terkumpul', 'Kurang', 'Progres', 'Batas waktu', 'Perlu per bulan', 'Status'], PLX.target.map(g => [T(g.name), T(g.kind), M_(g.goal), M_(g.saved), [g.left, XS.money, 'MAX(0,C#-D#)'], [g.goal > 0 ? g.saved / g.goal : 0, XS.pct, 'IF(C#>0,MIN(1,D#/C#),0)'], D_(g.deadline), M_(g.need), T(g.status === 'tercapai' ? 'Tercapai' : g.status === 'tertinggal' || g.status === 'lewat' ? 'Tertinggal' : g.status === 'ditutup' ? 'Ditutup' : 'Sesuai')])); sh.cf.push({ ref: 'I' + r1 + ':I' + (r1 + PLX.target.length - 1), rules: [['I' + r1 + '="Tercapai"', 0], ['I' + r1 + '="Sesuai"', 0], ['I' + r1 + '="Tertinggal"', 2]] }); }
+      if (PLX.wish.length) r = table(sh, r, 'Wishlist', ['Keinginan', 'Jenis', 'Biaya', 'Terkumpul', 'Kurang', 'Progres', 'Rencana'], PLX.wish.map(w => [T(w.name), T(w.kind === 'kegiatan' ? 'Kegiatan' : 'Barang'), M_(w.cost), M_(w.saved), [w.left, XS.money, 'MAX(0,C#-D#)'], [w.cost > 0 ? Math.min(1, w.saved / w.cost) : 0, XS.pct, 'IF(C#>0,MIN(1,D#/C#),0)'], D_(w.date)]));
+      sh.put(r, 1, 'Terkumpul diambil dari catatan setoran target dan isian wishlist. Kolom Kurang dan Progres memakai rumus.', XS.note);
+    }
+    if (PLX.trip.length || PLX.ramean.length) {
+      const sh = mk('Perjalanan & Patungan', { tab: '2A78D6' }); sh.cols = [[1, 1, 32], [2, 2, 26], [3, 5, 17]]; let r = 1;
+      if (PLX.trip.length) r = table(sh, r, 'Perjalanan', ['Nama', 'Rute', 'Berangkat', 'Anggaran'], PLX.trip.map(t => [T(t.name), T(t.route || '-'), D_(t.date), M_(t.budget)]));
+      if (PLX.ramean.length) r = table(sh, r, 'Patungan', ['Nama', 'Peserta', 'Bagian Anda', 'Total', 'Anggaran'], PLX.ramean.map(q => [T(q.name), [q.n, XS.int], M_(q.mine), M_(q.total), M_(q.budget)]));
+    }
+  }
 
   /* --- rakit paket --- */
   const files = []; let chartN = 0; const ct = [], wbRels = [], wbSheets = [];
@@ -1618,11 +1857,11 @@ function buildXlsx(X) {
     files.push({ name: 'xl/worksheets/sheet' + n + '.xml', data: s.xml(i === 0) });
     ct.push('<Override PartName="/xl/worksheets/sheet' + n + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>');
     wbRels.push('<Relationship Id="rId' + n + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + n + '.xml"/>');
-    wbSheets.push('<sheet name="' + s.name + '" sheetId="' + n + '" r:id="rId' + n + '"/>');
-    if (s.charts.length) {
+    wbSheets.push('<sheet name="' + xe(s.name) + '" sheetId="' + n + '" r:id="rId' + n + '"/>');
+    if (s.charts.length || s.pics.length) {
       const dn = 1, rels = [];
       files.push({ name: 'xl/worksheets/_rels/sheet' + n + '.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing' + dn + '.xml"/></Relationships>' });
-      files.push({ name: 'xl/drawings/drawing' + dn + '.xml', data: drawingXml(s.charts) });
+      files.push({ name: 'xl/drawings/drawing' + dn + '.xml', data: drawingXml(s.charts, s.pics) });
       ct.push('<Override PartName="/xl/drawings/drawing' + dn + '.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>');
       s.charts.forEach((c, k) => {
         chartN++;
@@ -1630,16 +1869,17 @@ function buildXlsx(X) {
         ct.push('<Override PartName="/xl/charts/chart' + chartN + '.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>');
         rels.push('<Relationship Id="rId' + (k + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart' + chartN + '.xml"/>');
       });
+      s.pics.forEach((q, k) => { rels.push('<Relationship Id="rId' + (s.charts.length + k + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo' + (k + 1) + '.png"/>'); const bin = atob(SAKU_LOGO_PNG.b64), u = new Uint8Array(bin.length); for (let z = 0; z < bin.length; z++) u[z] = bin.charCodeAt(z); files.push({ name: 'xl/media/logo' + (k + 1) + '.png', data: u }); });
       files.push({ name: 'xl/drawings/_rels/drawing' + dn + '.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + rels.join('') + '</Relationships>' });
     }
   });
   wbRels.push('<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>');
   const iso = X.now.toISOString().replace(/\.\d+Z$/, 'Z');
   const pre = [
-    { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' + ct.join('') + '</Types>' },
+    { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' + ct.join('') + '</Types>' },
     { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>' },
     { name: 'docProps/core.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Laporan Keuangan ' + xe(ML) + '</dc:title><dc:creator>' + xe(X.user || 'SaKu') + '</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">' + iso + '</dcterms:created></cp:coreProperties>' },
-    { name: 'docProps/app.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>SaKu</Application></Properties>' },
+    { name: 'docProps/app.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>SaKu</Application><AppVersion>' + APP_VERSION + '</AppVersion></Properties>' },
     { name: 'xl/workbook.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets>' + wbSheets.join('') + '</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>' },
     { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + wbRels.join('') + '</Relationships>' },
     { name: 'xl/styles.xml', data: stylesXml() }
@@ -1712,7 +1952,8 @@ async function saveFile(name, data) {
 async function exportPdf() {
   if (S.busy.pdf) return; S.busy.pdf = true;
   try {
-    const M = periodModel(S.tx, S.period, S.anchor, { user: me().name, budget: S.settings && S.settings.budget, settings: S.settings, now: new Date() });
+    const rp = S.view === 'laporan' && S.rep ? S.rep : { period: S.period, anchor: S.anchor };
+    const M = periodModel(S.tx, rp.period, rp.anchor, { user: me().name, budget: S.settings && S.settings.budget, settings: S.settings, accts: accList(), plan: S.plan, now: new Date() });
     await saveFile('laporan-keuangan-' + slugF(M.label) + '.pdf', buildReportPdf(M));
   } catch (e) { toast('Laporan gagal dibuat.'); }
   S.busy.pdf = false;
@@ -1720,7 +1961,7 @@ async function exportPdf() {
 async function exportXlsx() {
   if (S.busy.xlsx) return; S.busy.xlsx = true;
   try {
-    const now = new Date(), A = S.anchor > now ? now : S.anchor, X = xlsxModel(S.tx, A, { user: me().name, now, settings: S.settings });
+    const now = new Date(), A0 = S.view === 'laporan' && S.rep ? S.rep.xa : S.anchor, A = A0 > now ? now : A0, X = xlsxModel(S.tx, A, { user: me().name, now, settings: S.settings, accts: accList(), plan: S.plan });
     await saveFile('saku-' + slugF(me().name) + '-' + X.ymk + '.xlsx', buildXlsx(X));
   } catch (e) { toast('File Excel gagal dibuat.'); }
   S.busy.xlsx = false;
@@ -1817,7 +2058,7 @@ function bkExportPlan(plan) {
   return o;
 }
 function bkFile(user, list, photos, settings, now, plan) {
-  return { app: BK_APP, kind: BK_KIND, v: BK_VER, createdAt: now.toISOString(), user: { id: user.id, name: user.name }, settings: settings || {}, tx: list.map(bkExportTx), photos: photos || {}, plan: bkExportPlan(plan) };
+  return { app: BK_APP, kind: BK_KIND, v: BK_VER, appVersion: APP_VERSION, createdAt: now.toISOString(), user: { id: user.id, name: user.name }, settings: settings || {}, tx: list.map(bkExportTx), photos: photos || {}, plan: bkExportPlan(plan) };
 }
 function bkCleanTx(d, fb) {
   if (!d || typeof d !== 'object') return null;
@@ -2654,6 +2895,8 @@ const NAV_GROUPS = [
   { id: 'transaksi', label: 'Transaksi', tab: 'Transaksi', icon: 'list', def: 'transaksi' },
   { id: 'tagihan', label: 'Tagihan', tab: 'Tagihan', icon: 'receipt', def: 'jatuh' },
   { id: 'rencana', label: 'Rencana', tab: 'Rencana', icon: 'flag', def: 'anggaran' },
+  { id: 'laporan', label: 'Laporan', tab: 'Laporan', icon: 'file', def: 'laporan' },
+  { id: 'asisten', label: 'Tanya SaKu', tab: 'Tanya', icon: 'sparkle', def: 'asisten' },
   { id: 'rekening', label: 'Pengaturan Rekening', tab: 'Rekening', icon: 'wallet', def: 'rekening' },
   { id: 'kurs', label: 'Kurs', tab: 'Kurs', icon: 'swap', def: 'konversi' },
   { id: 'teman', label: 'Teman', tab: 'Teman', icon: 'users', def: 'teman' },
@@ -2672,6 +2915,8 @@ const LEAF = {
   ramean: { g: 'rencana', path: '/rencana/ramean', title: 'Jajan Ramean', sub: 'Jajan Ramean' },
   perjalanan: { g: 'rencana', path: '/rencana/perjalanan', title: 'Perjalanan', sub: 'Perjalanan' },
   wishlist: { g: 'rencana', path: '/rencana/wishlist', title: 'Wishlist', sub: 'Wishlist' },
+  laporan: { g: 'laporan', path: '/laporan', title: 'Laporan' },
+  asisten: { g: 'asisten', path: '/tanya', title: 'Tanya SaKu' },
   rekening: { g: 'rekening', path: '/rekening', title: 'Pengaturan Rekening', sub: 'Rekening' },
   konversi: { g: 'kurs', path: '/kurs', title: 'Konversi Mata Uang', sub: 'Konversi' },
   pasar: { g: 'kurs', path: '/kurs/pasar', title: 'Kurs & Indeks', sub: 'Kurs & Indeks' },
@@ -2739,6 +2984,291 @@ window.addEventListener('popstate', () => {
   const v = viewFromPath(routeCurrent());
   if (v && routeAllowed(v) && v !== S.view) { S.view = v; renderView(true); window.scrollTo(0, 0); }
 });
+/* ================= Catat dengan suara: mengubah kalimat ucapan menjadi isian transaksi =================
+   Fungsi murni (tanpa DOM) supaya bisa diuji. Contoh: "beli kopi susu dua puluh lima ribu pakai gopay kemarin"
+   -> { amount: 25000, type: 'out', cat: 'kopi', date: kemarin, note: 'Beli kopi susu', acc: id GoPay } */
+const VP_UNIT = { nol: 0, kosong: 0, satu: 1, se: 1, dua: 2, tiga: 3, empat: 4, lima: 5, enam: 6, tujuh: 7, delapan: 8, sembilan: 9, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+const VP_SLANG = { seceng: 1000, noceng: 2000, goceng: 5000, ceban: 10000, goban: 50000, cepek: 100000, gopek: 500, sepuluhribu: 10000 };
+const VP_SCALE = { ribu: 1e3, rb: 1e3, k: 1e3, thousand: 1e3, juta: 1e6, jt: 1e6, million: 1e6, miliar: 1e9, milyar: 1e9, billion: 1e9 };
+const VP_NUMW = ['satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas', 'belas', 'puluh', 'ratus', 'seratus', 'seribu', 'sejuta', 'setengah', 'nol', 'kosong', 'seceng', 'noceng', 'goceng', 'ceban', 'goban', 'cepek', 'gopek', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'hundred'];
+function vpTokens(text) {
+  return String(text || '').toLowerCase().replace(/rp\.?\s*/g, ' rp ').replace(/(\d)([a-z])/g, '$1 $2').replace(/([a-z])(\d)/g, '$1 $2').replace(/[^a-z0-9.,\s-]/g, ' ').replace(/[.,]+(?=\s|$)/g, ' ').trim().split(/\s+/).filter(Boolean);
+}
+function vpNumTok(t) {
+  if (/^\d{1,3}([.,]\d{3})+$/.test(t)) return { v: Number(t.replace(/[.,]/g, '')), dig: true };
+  if (/^\d+[.,]\d{1,2}$/.test(t)) return { v: parseFloat(t.replace(',', '.')), dig: true, dec: true };
+  if (/^\d+$/.test(t)) return { v: Number(t), dig: true };
+  return null;
+}
+/* Nilai satu rangkaian token angka ("dua puluh lima ribu", "25 rb", "1,5 juta") */
+function vpRunValue(tk) {
+  let total = 0, group = 0, sub = 0, scaled = false;
+  for (const t of tk) {
+    const n = vpNumTok(t);
+    if (n) { sub = n.v; continue; }
+    if (VP_SLANG[t] != null) { total += VP_SLANG[t]; scaled = true; continue; }
+    if (t === 'rp' || t === 'rupiah' || t === 'dan') continue;
+    if (t === 'seratus') { group += 100; continue; }
+    if (t === 'seribu') { total += 1e3; scaled = true; continue; }
+    if (t === 'sejuta') { total += 1e6; scaled = true; continue; }
+    if (t === 'sepuluh') { group += 10; continue; }
+    if (t === 'sebelas') { group += 11; continue; }
+    if (t === 'setengah') { sub += 0.5; continue; }
+    if (t === 'belas') { group += sub + 10; sub = 0; continue; }
+    if (t === 'puluh') { group += (sub || 1) * 10; sub = 0; continue; }
+    if (t === 'ratus' || t === 'hundred') { group += (sub || 1) * 100; sub = 0; continue; }
+    if (VP_SCALE[t]) { total += ((group + sub) || 1) * VP_SCALE[t]; group = 0; sub = 0; scaled = true; continue; }
+    if (VP_UNIT[t] != null) { sub = VP_UNIT[t]; continue; }
+  }
+  return { v: Math.round(total + group + sub), scaled };
+}
+function vpIsNumTok(t) { return !!vpNumTok(t) || VP_UNIT[t] != null && t !== 'se' || VP_SCALE[t] != null || VP_SLANG[t] != null || VP_NUMW.indexOf(t) >= 0; }
+/* Cari jumlah uang: pilih rangkaian angka berskala (ribu/juta) atau yang terbesar */
+function vpFindAmount(tk) {
+  const runs = []; let cur = null;
+  tk.forEach((t, i) => {
+    const num = vpIsNumTok(t) && !(t === 'k' && !cur), cont = cur && (t === 'rp' || t === 'rupiah');
+    if (num || (t === 'rp' && !cur)) { if (!cur) cur = { a: i, b: i, toks: [] }; cur.b = i; cur.toks.push(t); }
+    else if (cont) { cur.b = i; cur.toks.push(t); }
+    else if (cur && t === 'dan' && i + 1 < tk.length && vpIsNumTok(tk[i + 1])) { cur.toks.push(t); cur.b = i; }
+    else { if (cur) runs.push(cur); cur = null; }
+  });
+  if (cur) runs.push(cur);
+  let best = null;
+  runs.forEach(r => { const x = vpRunValue(r.toks); r.v = x.v; r.scaled = x.scaled; if (r.v >= 100 && (!best || (r.scaled && !best.scaled) || (r.scaled === best.scaled && r.v >= best.v))) best = r; });
+  return best;
+}
+const VP_IN = /\b(gaji|gajian|terima|menerima|diterima|dapat|dapet|pemasukan|bonus|thr|komisi|lembur|freelance|jualan|dikasih|cair|dividen|bunga|income|salary|received|earned)\b/;
+const VP_OUT = /\b(beli|membeli|bayar|membayar|belanja|pengeluaran|keluar|isi|topup|jajan|makan|minum|spent|paid|bought|expense)\b/;
+const VP_CAT = {
+  makan: ['makan', 'nasi', 'ayam', 'bakso', 'mie', 'soto', 'warteg', 'warung', 'minum', 'sate', 'gorengan', 'lunch', 'dinner', 'food'], sarapan: ['sarapan', 'breakfast'], makan_siang: ['makan siang'], makan_malam: ['makan malam'],
+  kopi: ['kopi', 'jajan', 'cemilan', 'camilan', 'snack', 'boba', 'coffee', 'teh'], pesan_antar: ['gofood', 'grabfood', 'shopeefood', 'pesan antar'], dapur: ['belanja dapur', 'sayur', 'pasar', 'daging', 'telur', 'beras', 'sembako', 'groceries'],
+  gas_galon: ['gas', 'galon', 'lpg'], laundry: ['laundry', 'londri'], online: ['shopee', 'tokopedia', 'lazada', 'belanja online', 'checkout'], pakaian: ['baju', 'celana', 'sepatu', 'kemeja', 'jaket'],
+  listrik: ['listrik', 'pln', 'token listrik', 'pdam', 'air ledeng'], pulsa: ['pulsa', 'kuota', 'internet', 'wifi', 'indihome', 'paket data'], sewa: ['sewa', 'kontrakan', 'kpr', 'rent'],
+  angkot: ['ojek', 'grab', 'gojek', 'angkot', 'ojol', 'angkutan', 'uber'], krl: ['krl', 'commuter'], mrt_lrt: ['mrt', 'lrt'], transjakarta: ['transjakarta', 'busway', 'brt'], taksi: ['taksi', 'taxi', 'bluebird'],
+  bensin: ['bensin', 'pertamax', 'pertalite', 'solar', 'parkir', 'bbm', 'gas station', 'fuel', 'parking'], tol: ['tol', 'etoll', 'e-toll'], sehat: ['obat', 'apotek', 'medicine'], dokter: ['dokter', 'rumah sakit', 'klinik', 'doctor'], vitamin: ['vitamin', 'suplemen'],
+  hiburan: ['nonton', 'bioskop', 'film', 'movie'], langganan: ['netflix', 'spotify', 'youtube', 'langganan', 'subscription'], kosmetik: ['skincare', 'kosmetik', 'make up', 'makeup'], olahraga: ['gym', 'olahraga', 'futsal', 'badminton'],
+  game: ['game', 'diamond', 'topup game'], hewan: ['kucing', 'anjing', 'pakan', 'hewan'], rawat: ['potong rambut', 'salon', 'barbershop', 'pangkas', 'haircut'], anak: ['anak'], bayi: ['popok', 'susu bayi'],
+  sekolah: ['sekolah', 'spp', 'kursus', 'kuliah', 'les'], hadiah: ['hadiah', 'kado', 'donasi', 'gift'], zakat: ['zakat', 'sedekah', 'infaq', 'infak'], iuran: ['iuran', 'ronda'], acara: ['kondangan', 'nikahan', 'hajatan'], ibadah: ['gereja', 'masjid', 'kolekte'],
+  cicilan: ['cicilan', 'kartu kredit'], paylater: ['paylater', 'spaylater'], hutang_bayar: ['bayar hutang'], biaya_bank: ['biaya admin'], denda: ['denda', 'tilang'], darurat: ['darurat'], arisan: ['arisan'], hotel: ['hotel', 'penginapan'],
+  tiket_pesawat: ['tiket pesawat', 'pesawat', 'flight'], kereta_api: ['kereta api', 'tiket kereta'], liburan: ['liburan'], asuransi: ['asuransi'], tabung: ['nabung', 'menabung', 'setor tabungan'],
+  mobil_perawatan: ['servis mobil', 'service mobil'], motor_perawatan: ['servis motor', 'service motor', 'ganti oli'], cuci_kendaraan: ['cuci motor', 'cuci mobil', 'steam'],
+  gaji: ['gaji', 'gajian', 'payroll', 'salary'], bonus: ['bonus', 'thr'], komisi: ['komisi', 'insentif'], lembur: ['lembur'], freelance: ['freelance', 'proyek'], usaha: ['jualan', 'dagang', 'hasil usaha', 'jual'], bunga: ['bunga'], investasi: ['dividen', 'investasi'], hutang_terima: ['pinjaman', 'pinjam']
+};
+function vpHas(text, kw) { return new RegExp('(^|[^a-z0-9])' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+') + '([^a-z0-9]|$)').test(text); }
+/* Tebak kategori: kata kunci (yang terpanjang menang), lalu kata dari nama kategori (termasuk buatan sendiri) */
+function vpGuessCat(text, type, cats) {
+  const ok = {}; cats.forEach(c => { if (c.type === type) ok[c.id] = c; });
+  let best = null, bs = 0;
+  Object.keys(VP_CAT).forEach(id => { if (!ok[id]) return; VP_CAT[id].forEach(kw => { if (vpHas(text, kw) && kw.length + (kw.indexOf(' ') > 0 ? 4 : 0) > bs) { bs = kw.length + (kw.indexOf(' ') > 0 ? 4 : 0); best = id; } }); });
+  cats.forEach(c => {
+    if (c.type !== type) return;
+    const label = String(c.label || '').toLowerCase();
+    if (label && vpHas(text, label)) { const s = label.length + 8; if (s > bs) { bs = s; best = c.id; } return; }
+    label.split(/[^a-z0-9]+/).filter(w => w.length > 3 && ['dan', 'lain', 'lainnya'].indexOf(w) < 0).forEach(w => { if (vpHas(text, w) && w.length > bs) { bs = w.length; best = c.id; } });
+  });
+  return best;
+}
+const VP_DATE = [[/\bkemarin\s+lusa\b|\blusa\s+kemarin\b|\b2 hari (yang )?lalu\b|\bday before yesterday\b/g, 2], [/\bkemarin\b|\byesterday\b/g, 1], [/\bhari ini\b|\btadi\s+(pagi|siang|sore|malam)\b|\btadi\b|\bbarusan\b|\btoday\b/g, 0]];
+/* Hasil: { amount, type, cat (null bila tidak ketemu), date (yyyy-mm-dd), note, acc (id rekening atau null), accName, heard } */
+function parseVoice(text, ctx) {
+  ctx = ctx || {}; const cats = ctx.cats || [], accts = ctx.accts || [], now = ctx.now || new Date();
+  let src = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const out = { heard: String(text || '').trim(), amount: 0, type: 'out', cat: null, date: null, note: '', acc: null, accName: '' };
+  if (!src) return out;
+  const tk = vpTokens(src), amt = vpFindAmount(tk);
+  if (amt) out.amount = amt.v;
+  /* jenis */
+  const hasIn = VP_IN.test(src), hasOut = VP_OUT.test(src);
+  out.type = hasIn && !(hasOut && !/\b(gaji|gajian|terima|menerima|diterima|dapat|dapet|bonus|thr|komisi|pemasukan|dikasih)\b/.test(src)) ? 'in' : 'out';
+  /* tanggal */
+  let days = 0, rest = src;
+  for (const d of VP_DATE) { if (d[0].test(rest)) { if (d[1] > days) days = d[1]; } d[0].lastIndex = 0; rest = rest.replace(d[0], ' '); }
+  const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+  out.date = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  /* rekening */
+  let accHit = null;
+  accts.forEach(a => { const nm = String(a.name || '').toLowerCase().trim(); if (nm && vpHas(rest, nm) && (!accHit || nm.length > accHit.nm.length)) accHit = { a, nm }; });
+  if (accHit) {
+    out.acc = accHit.a.id; out.accName = accHit.a.name;
+    rest = rest.replace(new RegExp('\\b(pakai|pake|dengan|via|dari|lewat|pakai uang|using|with|from)?\\s*' + accHit.nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'), 'g'), ' ');
+  } else if (/\b(tunai|cash|uang tunai)\b/.test(rest)) { out.acc = ''; out.accName = 'Tunai'; rest = rest.replace(/\b(pakai|pake|dengan|via|dari)?\s*(uang tunai|tunai|cash)\b/g, ' '); }
+  out.cat = vpGuessCat(src, out.type, cats);
+  /* catatan: buang kata jumlah uang dan kata pengantar */
+  let nt = vpTokens(rest), a2 = vpFindAmount(nt);
+  if (a2) nt = nt.slice(0, a2.a).concat(nt.slice(a2.b + 1));
+  nt = nt.filter(t => ['rp', 'rupiah', 'sebesar', 'seharga', 'senilai', 'sekitar', 'sejumlah', 'catat', 'tambah', 'tambahkan', 'masukkan', 'input', 'pengeluaran', 'pemasukan', 'transaksi', 'untuk', 'sebanyak', 'rupiahnya'].indexOf(t) < 0);
+  while (nt.length && ['dan', 'di', 'ke', 'dari', 'pakai', 'pake', 'dengan', 'seharga', 'harga', 'total', 'habis', 'sebesar', 'sekitar', 'rp', 'rupiah'].indexOf(nt[nt.length - 1]) >= 0) nt.pop();
+  while (nt.length && ['dan', 'di', 'ke', 'dari', 'pakai', 'pake', 'dengan', 'harga', 'total'].indexOf(nt[0]) >= 0) nt.shift();
+  let note = nt.join(' ').trim(); note = note ? note.charAt(0).toUpperCase() + note.slice(1) : ''; out.note = note.slice(0, 80);
+  return out;
+}
+/* ================= Tanya SaKu: otak asisten keuangan =================
+   Fungsi murni: menjawab dari data SaKu pengguna sendiri, di perangkat, tanpa mengirim data ke mana pun.
+   botAnswer(teks, D, ctx) -> { text: [paragraf...], chips: [saran pertanyaan lanjutan], topic }
+   D = { tx, settings, accts, plan, now, name }. ctx = { topic } dari jawaban sebelumnya (untuk "lanjut"). */
+const BOT_NEED = ['sewa', 'listrik', 'pulsa', 'dapur', 'gas_galon', 'sehat', 'dokter', 'bpjs', 'sekolah', 'cicilan', 'cicilan_kpr', 'cicilan_mobil', 'cicilan_motor', 'cicilan_hp', 'hutang_bayar', 'asuransi', 'pajak', 'pbb', 'zakat', 'tabung', 'inv_setor', 'kirim_keluarga', 'bensin', 'angkot', 'krl'];
+const BOT_CHIPS = ['Ringkasan bulan ini', 'Ke mana uang saya paling banyak keluar?', 'Bagaimana cara berhemat?', 'Apakah budget saya aman?', 'Tagihan terdekat', 'Brainstorming rencana keuangan'];
+function botData(D) {
+  const now = D.now || new Date();
+  const M = periodModel(D.tx || [], 'month', now, { user: D.name || '', budget: D.settings && D.settings.budget, settings: D.settings || {}, accts: D.accts || [], plan: D.plan || {}, now });
+  const avgOut = M.avg && M.avg.has ? (M.avg.perMonth != null ? M.avg.perMonth : M.avg.perMonthEst || 0) : M.tout;
+  const want = M.outCats.filter(c => BOT_NEED.indexOf(c.id) < 0 && !isXfer({ cat: c.id, type: 'out' }));
+  return { M, now, avgOut, want, cap: D.settings && Number(D.settings.budget) > 0 && M.bud && M.bud.cap > 0 ? M.bud.cap : 0, has: (D.tx || []).length > 0 };
+}
+const botRp = n => fmtRp(Math.round(n));
+function botSummary(X) {
+  const M = X.M, t = [];
+  t.push('Ringkasan ' + M.label + ': pemasukan ' + botRp(M.tin) + ', pengeluaran ' + botRp(M.tout) + ', selisih ' + (M.net < 0 ? '-' : '') + botRp(Math.abs(M.net)) + '.');
+  if (M.health.rate != null) t.push(M.health.rate >= 20 ? 'Tingkat tabungan ' + fmtPct(M.health.rate) + '. Ini sudah sehat (patokan umum 20% atau lebih).' : M.health.rate >= 0 ? 'Tingkat tabungan ' + fmtPct(M.health.rate) + '. Masih di bawah patokan umum 20%, ada ruang untuk ditingkatkan.' : 'Pengeluaran melebihi pemasukan bulan ini sebesar ' + botRp(-M.net) + '.');
+  if (M.prevOut > 0) { const ch = (M.tout - M.prevOut) / M.prevOut * 100; t.push('Dibanding ' + M.prevLabel + ' (' + botRp(M.prevOut) + '), pengeluaran ' + (ch >= 0 ? 'naik ' : 'turun ') + fmtPct(Math.abs(ch)) + (M.health.cur ? ' walau bulan belum selesai.' : '.')); }
+  if (M.outCats[0]) t.push('Kategori terbesar: ' + M.outCats.slice(0, 3).map(c => c.label + ' ' + botRp(c.v) + ' (' + fmtPct(c.pct) + ')').join(', ') + '.');
+  return { text: t, chips: ['Bagaimana cara berhemat?', 'Apakah budget saya aman?', 'Proyeksi akhir bulan'], topic: 'ringkasan' };
+}
+function botTop(X) {
+  const M = X.M, t = [];
+  if (!M.outCats.length) return { text: ['Belum ada pengeluaran di ' + M.label + '.'], chips: BOT_CHIPS.slice(0, 3), topic: 'top' };
+  t.push('Di ' + M.label + ', uang paling banyak keluar untuk:');
+  M.outCats.slice(0, 5).forEach((c, i) => t.push((i + 1) + '. ' + c.label + ': ' + botRp(c.v) + ' (' + fmtPct(c.pct) + ', ' + c.n + ' transaksi)'));
+  const A = M.x && M.x.acc; if (A && A.rows[0] && A.rows[0].out > 0) t.push('Dari sisi rekening, paling banyak keluar lewat ' + A.rows[0].name + ': ' + fmtPct(A.rows[0].pct) + ' dari total pengeluaran.');
+  if (M.biggest && M.biggest[0]) t.push('Transaksi terbesar: ' + (M.biggest[0].note || catOf(M.biggest[0].cat).label) + ' ' + botRp(M.biggest[0].amount) + '.');
+  return { text: t, chips: ['Bagaimana cara berhemat?', 'Bandingkan dengan bulan lalu', 'Apakah budget saya aman?'], topic: 'top' };
+}
+function botBudget(X) {
+  const M = X.M, B = M.bud, t = [];
+  if (!X.cap) return { text: ['Anda belum memasang batas pengeluaran. Pasang di menu Rencana > Anggaran supaya saya bisa memantau sisa dan memberi peringatan.', X.avgOut > 0 ? 'Sebagai patokan awal, rata-rata pengeluaran Anda sekitar ' + botRp(X.avgOut) + ' per bulan. Batas sedikit di bawah angka itu biasanya realistis.' : ''].filter(Boolean), chips: ['Ringkasan bulan ini', 'Bagaimana cara berhemat?'], topic: 'budget' };
+  t.push('Batas pengeluaran ' + botRp(X.cap) + '. Terpakai ' + botRp(B.outM) + ' (' + fmtPct(B.used) + '), sisa ' + (B.left < 0 ? '-' : '') + botRp(Math.abs(B.left)) + '.');
+  if (B.isCur && B.daysLeft > 0) t.push(B.left > 0 ? 'Masih ' + B.daysLeft + ' hari lagi. Supaya cukup, jatah aman sekitar ' + botRp(B.left / B.daysLeft) + ' per hari.' : 'Batas sudah terlewati dan masih ' + B.daysLeft + ' hari lagi. Tahan pengeluaran yang bisa ditunda.');
+  if (B.isCur && B.proj > 0) t.push(B.proj > X.cap ? 'Dengan laju sekarang, perkiraan akhir bulan ' + botRp(B.proj) + ', lewat ' + botRp(B.proj - X.cap) + ' dari batas.' : 'Dengan laju sekarang, perkiraan akhir bulan ' + botRp(B.proj) + ', masih di dalam batas.');
+  const CB = M.x && M.x.catBud;
+  if (CB) { const bad = CB.rows.filter(r => r.used >= 85).sort((a, b) => b.used - a.used); t.push(bad.length ? 'Budget kategori yang perlu diperhatikan: ' + bad.slice(0, 4).map(r => r.label + ' ' + Math.round(r.used) + '%' + (r.over ? ' (lewat ' + botRp(-r.left) + ')' : '')).join(', ') + '.' : 'Semua budget kategori masih aman (di bawah 85%).'); }
+  return { text: t, chips: ['Bagaimana cara berhemat?', 'Ke mana uang saya paling banyak keluar?', 'Proyeksi akhir bulan'], topic: 'budget' };
+}
+function botSave(X) {
+  const M = X.M, t = [], w = X.want.slice(0, 3);
+  if (!w.length) return { text: ['Belum cukup data pengeluaran untuk memberi saran hemat. Catat transaksi beberapa hari dulu, lalu tanya lagi.'], chips: BOT_CHIPS.slice(0, 3), topic: 'hemat' };
+  t.push('Beberapa ide berhemat dari data ' + M.label + ' Anda:');
+  let tot = 0;
+  w.forEach((c, i) => { const cut = Math.round(c.v * 0.2 / 1000) * 1000; tot += cut; t.push((i + 1) + '. ' + c.label + ' sekarang ' + botRp(c.v) + ' (' + c.n + ' transaksi). Dipangkas 20% saja sudah hemat ' + botRp(cut) + '.'); });
+  t.push('Kalau ketiganya jalan, hemat sekitar ' + botRp(tot) + ' per bulan atau ' + botRp(tot * 12) + ' per tahun.');
+  if (!(M.x && M.x.catBud)) t.push('Supaya terjaga, pasang budget untuk kategori itu di Rencana > Anggaran > Budget per Kategori.');
+  if (M.health.topDay >= 0) t.push('Hari paling boros Anda: ' + DAYS[M.health.topDay] + '. Coba rencanakan pengeluaran hari itu lebih dulu.');
+  return { text: t, chips: ['Simulasi: hemat 500 ribu per bulan', 'Apakah budget saya aman?', 'Brainstorming rencana keuangan'], topic: 'hemat' };
+}
+function botDue(X) {
+  const P = X.M.x && X.M.x.plan, t = [];
+  if (!P || (!P.due.length && !P.hutang.length)) return { text: ['Tidak ada tagihan, cicilan, atau hutang yang tercatat. Tambahkan di menu Tagihan supaya saya bisa mengingatkan.'], chips: BOT_CHIPS.slice(0, 3), topic: 'tagihan' };
+  if (P.due.length) { t.push('Tagihan terdekat:'); P.due.slice(0, 5).forEach(d => t.push('- ' + d.title + ': ' + botRp(d.amount) + ', jatuh tempo ' + fmtDateLong(parseYmd(d.due)) + (d.st === 'telat' ? ' (terlambat)' : d.st === 'hariini' ? ' (hari ini)' : ''))); t.push('Total ' + botRp(P.due.slice(0, 5).reduce((a, d) => a + d.amount, 0)) + ' untuk ' + Math.min(5, P.due.length) + ' tagihan itu.'); }
+  if (P.hutangLeft > 0) t.push('Sisa hutang dan cicilan yang masih harus dibayar: ' + botRp(P.hutangLeft) + '.' + (X.M.tin > 0 ? ' Itu setara ' + fmtPct(P.hutangLeft / X.M.tin * 100) + ' dari pemasukan bulan ini.' : ''));
+  return { text: t, chips: ['Strategi melunasi hutang', 'Ringkasan bulan ini', 'Apakah budget saya aman?'], topic: 'tagihan' };
+}
+function botGoal(X) {
+  const P = X.M.x && X.M.x.plan, t = [], save = Math.max(0, X.M.net);
+  const ef = X.avgOut * 3;
+  if (P && P.target.length) { t.push('Target Anda:'); P.target.slice(0, 5).forEach(g => t.push('- ' + g.name + ': ' + botRp(g.saved) + (g.goal > 0 ? ' dari ' + botRp(g.goal) + ' (' + fmtPct(g.pct) + ')' + (g.left > 0 && save > 0 ? ', kira-kira ' + Math.ceil(g.left / save) + ' bulan lagi bila seluruh selisih bulan ini ditabung' : '') : ''))); }
+  else t.push('Belum ada target tercatat. Buat di menu Rencana > Target.');
+  if (P && P.wish.length) t.push('Wishlist yang belum tercapai: ' + P.wish.slice(0, 3).map(w => w.name + ' (kurang ' + botRp(w.left) + ')').join(', ') + '.');
+  if (X.avgOut > 0) t.push('Patokan dana darurat: 3 sampai 6 kali pengeluaran bulanan, untuk Anda sekitar ' + botRp(ef) + ' sampai ' + botRp(ef * 2) + '.');
+  return { text: t, chips: ['Simulasi: nabung 1 juta per bulan', 'Bagaimana cara berhemat?', 'Brainstorming rencana keuangan'], topic: 'target' };
+}
+function botAcc(X) {
+  const A = X.M.x && X.M.x.acc, t = [];
+  if (!A) return { text: ['Saldo keseluruhan dari semua catatan: ' + botRp(X.M.saldo) + '.', 'Anda belum menambahkan rekening. Tambahkan di menu Rekening supaya saldo dan pengeluaran bisa dilihat per rekening.'], chips: BOT_CHIPS.slice(0, 3), topic: 'rekening' };
+  t.push('Saldo per rekening (total ' + botRp(A.totSaldo) + '):');
+  A.rows.slice().sort((a, b) => b.saldo - a.saldo).forEach(a => t.push('- ' + a.name + ': ' + (a.saldo < 0 ? '-' : '') + botRp(Math.abs(a.saldo)) + (a.out > 0 ? ', keluar bulan ini ' + botRp(a.out) + ' (' + fmtPct(a.pct) + ')' : '')));
+  const low = A.rows.filter(a => a.saldo < a.out * 0.25 && a.out > 0)[0]; if (low) t.push(low.name + ' paling cepat menipis: saldonya tinggal ' + botRp(low.saldo) + ' padahal bulan ini sudah keluar ' + botRp(low.out) + '.');
+  return { text: t, chips: ['Ke mana uang saya paling banyak keluar?', 'Ringkasan bulan ini'], topic: 'rekening' };
+}
+function botProj(X) {
+  const M = X.M, H = M.health, t = [];
+  if (!H.cur || H.el < 1) return { text: ['Proyeksi hanya untuk bulan berjalan.'], chips: BOT_CHIPS.slice(0, 3), topic: 'proyeksi' };
+  t.push('Sampai hari ke-' + H.el + ' dari ' + H.N + ', pengeluaran ' + botRp(M.tout) + ' atau rata-rata ' + botRp(H.perDay) + ' per hari.');
+  t.push('Kalau lajunya sama, akhir bulan sekitar ' + botRp(H.proj) + '.' + (X.cap ? (H.proj > X.cap ? ' Itu lewat ' + botRp(H.proj - X.cap) + ' dari batas ' + botRp(X.cap) + '.' : ' Masih di dalam batas ' + botRp(X.cap) + '.') : '') + (M.tin > 0 ? (H.proj > M.tin ? ' Itu juga melebihi pemasukan bulan ini (' + botRp(M.tin) + ').' : ' Sisa dari pemasukan kira-kira ' + botRp(M.tin - H.proj) + '.') : ''));
+  if (X.cap && H.proj > X.cap && H.N > H.el) t.push('Agar tetap di dalam batas, sisa hari ini perlu rata-rata ' + botRp(Math.max(0, X.cap - M.tout) / (H.N - H.el)) + ' per hari.');
+  return { text: t, chips: ['Bagaimana cara berhemat?', 'Apakah budget saya aman?'], topic: 'proyeksi' };
+}
+function botCompare(X) {
+  const M = X.M, C = M.cmp, t = [];
+  if (!C || !C.has || !(C.prevTotal > 0)) return { text: ['Belum ada data bulan lalu untuk dibandingkan.'], chips: BOT_CHIPS.slice(0, 3), topic: 'banding' };
+  t.push('Sampai tanggal yang sama, ' + C.curLabel + ' ' + botRp(C.curTo) + ' dan ' + C.prevLabel + ' ' + botRp(C.prevTo) + ': ' + (C.diff >= 0 ? 'lebih boros ' : 'lebih hemat ') + botRp(Math.abs(C.diff)) + (C.pct != null ? ' (' + fmtPct(Math.abs(C.pct)) + ')' : '') + '.');
+  t.push('Total ' + C.prevLabel + ' sebulan penuh: ' + botRp(C.prevTotal) + '.');
+  return { text: t, chips: ['Ke mana uang saya paling banyak keluar?', 'Proyeksi akhir bulan'], topic: 'banding' };
+}
+function botCat(X, id, D) {
+  const M = X.M, c = M.outCats.filter(x => x.id === id)[0] || M.inCats.filter(x => x.id === id)[0], lab = catOf(id).label, t = [];
+  const pr = rangeFor('month', shiftAnchor('month', X.now, -1)), ps = ymd(pr.start), pe = ymd(pr.end), prev = (D.tx || []).filter(x => x.cat === id && x.date >= ps && x.date <= pe).reduce((a, x) => a + (Number(x.amount) || 0), 0);
+  if (!c) t.push('Belum ada transaksi ' + lab + ' di ' + M.label + '.' + (prev > 0 ? ' Bulan lalu ' + botRp(prev) + '.' : ''));
+  else { t.push(lab + ' di ' + M.label + ': ' + botRp(c.v) + ' dari ' + c.n + ' transaksi (' + fmtPct(c.pct) + ' dari total), rata-rata ' + botRp(c.v / c.n) + ' per transaksi.'); if (prev > 0) t.push('Bulan lalu ' + botRp(prev) + ', jadi ' + (c.v >= prev ? 'naik ' : 'turun ') + botRp(Math.abs(c.v - prev)) + (M.health.cur ? ' sejauh ini.' : '.')); }
+  const CB = M.x && M.x.catBud, r = CB && CB.rows.filter(x => x.id === id)[0]; if (r) t.push('Budget kategori ini ' + botRp(r.amt) + ', terpakai ' + Math.round(r.used) + '%.');
+  return { text: t, chips: ['Bagaimana cara berhemat?', 'Ke mana uang saya paling banyak keluar?'], topic: 'kategori' };
+}
+/* Simulasi: "hemat/nabung X per bulan" dan "bisakah saya beli ... X" */
+function botSim(X, amount, buy) {
+  const M = X.M, t = [], free = Math.max(0, M.avg && M.avg.has && M.tin > 0 ? M.tin - X.avgOut : M.net);
+  if (buy) {
+    t.push('Harga ' + botRp(amount) + '. Saldo keseluruhan Anda ' + botRp(M.saldo) + '.');
+    if (M.saldo >= amount) t.push('Saldo cukup, dan setelah membeli tersisa ' + botRp(M.saldo - amount) + (X.avgOut > 0 ? ', setara ' + (Math.round((M.saldo - amount) / X.avgOut * 10) / 10) + ' bulan pengeluaran.' : '.') + (X.avgOut > 0 && (M.saldo - amount) < X.avgOut * 3 ? ' Tetapi sisa itu di bawah patokan dana darurat 3 bulan (' + botRp(X.avgOut * 3) + '), jadi pertimbangkan menabung dulu.' : ''));
+    else t.push('Saldo belum cukup, kurang ' + botRp(amount - M.saldo) + '.' + (free > 0 ? ' Dengan sisa pemasukan sekitar ' + botRp(free) + ' per bulan, butuh kira-kira ' + Math.ceil((amount - M.saldo) / free) + ' bulan menabung.' : ' Saat ini belum ada sisa pemasukan bulanan untuk ditabung, jadi perlu memangkas pengeluaran dulu.'));
+    t.push('Mau saya masukkan ke Wishlist? Buka Rencana > Wishlist untuk menabung bertahap.');
+    return { text: t, chips: ['Bagaimana cara berhemat?', 'Target dan dana darurat'], topic: 'simulasi' };
+  }
+  t.push('Simulasi menyisihkan ' + botRp(amount) + ' per bulan:');
+  [6, 12, 36, 60].forEach(n => t.push('- ' + (n < 12 ? n + ' bulan' : (n / 12) + ' tahun') + ': ' + botRp(amount * n)));
+  if (M.tin > 0) t.push('Itu ' + fmtPct(amount / M.tin * 100) + ' dari pemasukan bulan ini.' + (free >= amount ? ' Dari data Anda, jumlah ini masuk akal: sisa pemasukan rata-rata sekitar ' + botRp(free) + ' per bulan.' : ' Sisa pemasukan rata-rata Anda sekitar ' + botRp(free) + ' per bulan, jadi perlu memangkas pengeluaran ' + botRp(amount - free) + ' agar tercapai.'));
+  t.push('Angka di atas belum memperhitungkan bunga atau hasil investasi.');
+  return { text: t, chips: ['Bagaimana cara berhemat?', 'Target dan dana darurat'], topic: 'simulasi' };
+}
+function botDebt(X) {
+  const P = X.M.x && X.M.x.plan, hs = P ? P.hutang.filter(h => h.dir !== 'piutang' && h.left > 0) : [], t = [];
+  if (!hs.length) return { text: ['Tidak ada hutang atau cicilan aktif yang tercatat. Bagus, fokus bisa ke dana darurat dan target.'], chips: ['Target dan dana darurat', 'Brainstorming rencana keuangan'], topic: 'hutang' };
+  const small = hs.slice().sort((a, b) => a.left - b.left);
+  t.push('Anda punya ' + hs.length + ' hutang/cicilan aktif, total sisa ' + botRp(P.hutangLeft) + '. Dua cara yang umum dipakai:');
+  t.push('1. Bola salju: lunasi yang sisanya paling kecil dulu supaya cepat berkurang jumlahnya. Urutan untuk Anda: ' + small.slice(0, 4).map(h => h.who + ' (' + botRp(h.left) + ')').join(', ') + '.');
+  t.push('2. Longsoran: lunasi yang bunganya paling tinggi dulu supaya total bunga paling hemat. SaKu tidak mencatat bunga, jadi cek bunga tiap pinjaman Anda (paylater dan kartu kredit biasanya paling tinggi).');
+  const extra = Math.max(0, X.M.net); if (extra > 0) t.push('Selisih bulan ini ' + botRp(extra) + '. Bila separuhnya dipakai untuk pelunasan ekstra, hutang terkecil (' + small[0].who + ') selesai dalam kira-kira ' + Math.max(1, Math.ceil(small[0].left / (extra / 2))) + ' bulan.');
+  return { text: t, chips: ['Tagihan terdekat', 'Bagaimana cara berhemat?'], topic: 'hutang' };
+}
+/* Brainstorming: usulan prioritas berdasarkan kondisi, lalu ajak pengguna memilih arah */
+function botBrain(X) {
+  const M = X.M, P = M.x && M.x.plan, t = [], debt = P ? P.hutangLeft : 0, ef = X.avgOut * 3, rate = M.health.rate;
+  t.push('Mari brainstorming. Dari data Anda, ini gambaran dan urutan prioritas yang bisa dipertimbangkan:');
+  let i = 1;
+  if (M.net < 0) t.push((i++) + '. Tutup defisit dulu: bulan ini pengeluaran lebih besar ' + botRp(-M.net) + ' dari pemasukan. Target pertama: selisih kembali nol.');
+  if (debt > 0) t.push((i++) + '. Hutang dan cicilan tersisa ' + botRp(debt) + '. Hutang berbunga tinggi biasanya didahulukan sebelum menabung besar.');
+  if (X.avgOut > 0) t.push((i++) + '. Dana darurat: patokan ' + botRp(ef) + ' (3 bulan pengeluaran). Saldo Anda sekarang ' + botRp(M.saldo) + (M.saldo >= ef ? ', sudah melewati patokan itu.' : ', masih kurang ' + botRp(ef - M.saldo) + '.'));
+  if (rate != null) t.push((i++) + '. Tingkat tabungan ' + fmtPct(rate) + (rate >= 20 ? ': pertahankan, lalu arahkan ke target atau investasi.' : ': coba naikkan bertahap menuju 20%, misalnya tambah ' + botRp(Math.max(0, M.tin * 0.2 - Math.max(0, M.net))) + ' per bulan.'));
+  if (X.want[0]) t.push((i++) + '. Ruang hemat terbesar ada di ' + X.want.slice(0, 2).map(c => c.label + ' (' + botRp(c.v) + ')').join(' dan ') + '.');
+  if (P && (P.target.length || P.wish.length)) t.push((i++) + '. Target/wishlist aktif: ' + P.target.concat(P.wish).slice(0, 3).map(g => g.name).join(', ') + '. Kita bisa hitung berapa per bulan yang dibutuhkan.');
+  t.push('Arah mana yang ingin Anda dalami? Pilih di bawah, atau tulis tujuan Anda sendiri (misalnya "ingin beli motor 20 juta tahun depan").');
+  return { text: t, chips: ['Strategi melunasi hutang', 'Target dan dana darurat', 'Bagaimana cara berhemat?', 'Simulasi: nabung 1 juta per bulan'], topic: 'brainstorm' };
+}
+function botHelp(name) {
+  return { text: ['Halo' + (name ? ' ' + name : '') + '! Saya Tanya SaKu, asisten keuangan yang membaca catatan SaKu Anda di perangkat ini. Data Anda tidak dikirim ke mana pun.', 'Saya bisa merangkum bulan ini, mencari pengeluaran terbesar, mengecek budget, mengingatkan tagihan, menghitung simulasi tabungan, menilai rencana pembelian, dan brainstorming rencana keuangan.', 'Saya bukan penasihat keuangan berlisensi; anggap jawaban saya sebagai bahan pertimbangan.'], chips: BOT_CHIPS, topic: 'bantuan' };
+}
+function botAnswer(text, D, ctx) {
+  const q = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim(), X = botData(D);
+  if (!q || /^(hai|halo|hi|hello|hei|pagi|siang|sore|malam|assalamualaikum|help|bantuan|menu|bisa apa)\b/.test(q)) return botHelp(String(D.name || '').split(' ')[0]);
+  if (!X.has) return { text: ['Belum ada transaksi di SaKu, jadi saya belum punya data untuk dianalisis. Catat pemasukan dan pengeluaran dulu, lalu tanya lagi.'], chips: [], topic: 'kosong' };
+  const has = re => re.test(q), amt = (() => { const r = vpFindAmount(vpTokens(q)); return r ? r.v : 0; })();
+  if (has(/brainstorm|ide |ide$|strategi keuangan|rencana keuangan|atur keuangan|mengatur keuangan|financial plan|prioritas/)) return botBrain(X);
+  if (has(/lunas|melunasi|strategi.*(hutang|utang|cicilan)|bebas (hutang|utang)|debt/)) return botDebt(X);
+  if (amt > 0 && has(/\b(beli|membeli|bisa beli|mampu|sanggup|afford|buy)\b/)) return botSim(X, amt, true);
+  if (amt > 0 && has(/simulasi|nabung|menabung|tabung|sisih|hemat|invest|kalau|jika|andai|save/)) return botSim(X, amt, false);
+  if (has(/hemat|irit|kurangi|mengurangi|tips|saran|boros banget|save money|cut/)) return botSave(X);
+  if (has(/budget|anggaran|batas|limit|jatah/)) return botBudget(X);
+  if (has(/tagihan|jatuh tempo|cicilan|hutang|utang|piutang|bill|due/)) return botDue(X);
+  if (has(/target|dana darurat|wishlist|tujuan|impian|goal|emergency/)) return botGoal(X);
+  if (has(/rekening|saldo|dompet|e-?wallet|balance|account/)) return botAcc(X);
+  if (has(/proyeksi|perkiraan|akhir bulan|cukup(kah)? sampai|prediksi|forecast/)) return botProj(X);
+  if (has(/banding|bulan lalu|versus|\bvs\b|compare|naik atau turun/)) return botCompare(X);
+  if (has(/terbesar|paling banyak|kemana|ke mana|boros|habis di|top|biggest|where/)) return botTop(X);
+  const cid = vpGuessCat(q, 'out', Object.keys(CATS).map(id => ({ id, type: CATS[id].type, label: CATS[id].label }))) || vpGuessCat(q, 'in', Object.keys(CATS).map(id => ({ id, type: CATS[id].type, label: CATS[id].label })));
+  if (cid && has(/berapa|pengeluaran|pemasukan|habis|total|how much|spend/)) return botCat(X, cid, D);
+  if (has(/ringkas|rekap|rangkum|gimana|bagaimana|kondisi|sehat|summary|overview|bulan ini|pemasukan|pengeluaran/)) return botSummary(X);
+  if (cid) return botCat(X, cid, D);
+  if (ctx && ctx.topic === 'brainstorm' && amt > 0) return botSim(X, amt, true);
+  return { text: ['Saya belum menangkap maksudnya. Coba salah satu pertanyaan di bawah, atau tanyakan hal seperti "berapa pengeluaran kopi bulan ini" atau "bisakah saya beli laptop 8 juta".'], chips: BOT_CHIPS, topic: 'bingung' };
+}
 
 /* ================= Terjemahan tampilan: Indonesia → Inggris =================
    Kode sumber tetap berbahasa Indonesia. Saat bahasa English aktif, teks yang tampil di layar (simpul teks dan atribut placeholder, aria-label, title, alt)
@@ -3066,6 +3596,7 @@ const I18N_EN = {
   "{1} Laporan PDF": "{1} PDF Report",
   "{1} Memberi Hutang": "{1} Lend Money",
   "{1} orang": "{1} people",
+  "{1} orang · bagian Anda {2}": "{1} people · your share {2}",
   "{1} Pemasukan": "{1} Income",
   "{1} Pengeluaran": "{1} Expenses",
   "{1} Perbarui": "{1} Update",
@@ -3093,7 +3624,11 @@ const I18N_EN = {
   "{1} transaksi": "{1} transactions",
   "{1} transaksi ({2}) dicatat tanpa daftar barang.": "{1} transactions ({2}) recorded without an item list.",
   "{1} Transaksi (CSV)": "{1} Transactions (CSV)",
+  "{1} transaksi di periode ini": "{1} transactions in this period",
   "{1} transaksi tanpa foto karena fotonya tidak ada di berkas.": "{1} transactions without photos because the photos aren't in the file.",
+  "{1} transaksi tersimpan di akun ini": "{1} transactions saved in this account",
+  "{1} transaksi tersimpan di akun ini.": "{1} transactions saved in this account.",
+  "{1} transaksi tersimpan di akun ini. Laporan PDF, Excel, dan CSV sekarang diunduh dari menu Laporan.": "{1} transactions saved in this account. PDF, Excel, and CSV reports are now downloaded from the Reports menu.",
   "{1} Ubah": "{1} Edit",
   "{1} Unduh Cadangan": "{1} Download Backup",
   "{1} Unduh lagi": "{1} Download again",
@@ -3103,7 +3638,10 @@ const I18N_EN = {
   "{1}× dicatat · terakhir {2}": "{1}× recorded · latest {2}",
   "{1}Tekan tombol di tiap tagihan bila sudah dibayar, lalu otomatis tercatat di transaksi.": "{1}Tap the button on each bill once it's paid, and it's recorded in Transactions automatically.",
   "{1}Tidak termasuk setoran ke tabungan dan investasi.": "{1}Excludes deposits to savings and investments.",
+  "% dari batas": "% of limit",
+  "% dari seluruh pengeluaran": "% of all spending",
   "% dari seluruh target": "% of all goals",
+  "% dari total keluar": "% of total spending",
   "→ Create database (lokasi bebas).": "→ Create database (any location).",
   "+ {1} tagihan lainnya ada di menu Jatuh Tempo.": "+ {1} more bills are in Due Dates.",
   "+ tambahan": "+ extra",
@@ -3138,6 +3676,7 @@ const I18N_EN = {
   "Ada {1} pendaftaran menunggu persetujuan": "There are {1} sign-ups waiting for approval",
   "Ada 1 pendaftaran menunggu persetujuan": "There is 1 sign-up waiting for approval",
   "Ada permintaan simpan yang masih terbuka. Selesaikan dulu, lalu coba lagi.": "A save request is still pending. Please finish it first, then try again.",
+  "Ada yang bisa dibantu?": "Need any help?",
   "Admin hanya melihat jumlah catatan dan waktu aktivitas. Isi transaksi, nominal, dan foto milik pengguna tidak dapat dibuka dari sini.": "Admins can only see the number of entries and activity times. Users' transaction details, amounts, and photos can't be opened from here.",
   "Admin Pembantu": "Assistant Admin",
   "Admin pembantu hanya boleh mengelola akun pengguna biasa.": "Assistant admins can only manage regular user accounts.",
@@ -3194,6 +3733,7 @@ const I18N_EN = {
   "Alamat proyek Supabase": "Supabase project URL",
   "Alamat proyek:": "Project URL:",
   "Alamat server belum diisi.": "Server address is not set yet.",
+  "Aman": "Safe",
   "anak": "kids",
   "Anak & Keluarga": "Kids & Family",
   "Anda": "You",
@@ -3243,6 +3783,7 @@ const I18N_EN = {
   "Arus kas": "Cash flow",
   "Arus Kas Harian": "Daily Cash Flow",
   "Arus Kas per Hari": "Cash Flow per Day",
+  "Asisten keuangan dari catatan Anda sendiri": "A finance assistant built on your own records",
   "Asisten Rumah Tangga & Jasa": "Household Help & Services",
   "asuransi": "insurance",
   "Asuransi": "Insurance",
@@ -3306,11 +3847,13 @@ const I18N_EN = {
   "Batas {1} transaksi tercapai. Pakai \"Ganti\" atau hapus transaksi lama dulu.": "{1} transaction limit reached. Use \"Replace\" or delete old transactions first.",
   "batas & estimasi habis": "limit & estimated run-out",
   "Batas pengeluaran": "Spending Limit",
+  "Batas pengeluaran / dana tersedia": "Spending limit / available funds",
   "Batas pengeluaran dan sisa dana": "Spending Limit and Remaining Funds",
   "Batas pengeluaran per periode. Bila diisi, inilah yang dipantau tiap periode, dan sisa anggaran dikurangkan dari saldo pemasukan. Isi 0 atau kosongkan untuk memakai saldo pemasukan sebagai dasar. Kalau anggaran kurang, tambahkan dari kartu di atas.": "Spending limit per period. If set, this is what gets tracked each period, and the remaining budget is subtracted from your income balance. Enter 0 or leave it empty to use your income balance as the base. If your budget is too low, add more from the card above.",
   "Batas pengiriman email tercapai (3 kali per jam), jadi admin akan memeriksa data Anda.": "The email sending limit (3 per hour) was reached, so an admin will review your details.",
   "Batas pengiriman email tercapai (maksimal 3 kali per jam). Coba lagi dalam sekitar {1} menit.": "Email sending limit reached (maximum 3 per hour). Try again in about {1} minutes.",
   "Batas tidak boleh lebih kecil dari total budget kategori ({1}). Kurangi budget kategori dulu.": "The limit cannot be lower than the total category budgets ({1}). Reduce the category budgets first.",
+  "Batas waktu": "Deadline",
   "Batas waktu (menit)": "Timeout (minutes)",
   "Batas Waktu Login": "Login Timeout",
   "Batas waktu login diubah menjadi": "Login timeout changed to",
@@ -3368,10 +3911,11 @@ const I18N_EN = {
   "Belum ada kategori buatan sendiri.": "No custom categories yet.",
   "Belum ada kategori buatan sendiri. Isi formulir di atas lalu pilih ikonnya.": "No custom categories yet. Fill in the form above, then choose its icon.",
   "belum ada nominal": "no amount yet",
+  "Belum ada pemasukan": "No income yet",
   "Belum ada pemasukan di periode ini.": "No income in this period yet.",
   "Belum ada pembanding": "No comparison yet",
   "belum ada pengeluaran": "no expenses yet",
-  "Belum ada pengeluaran": "No expenses yet",
+  "Belum ada pengeluaran": "No spending yet",
   "Belum Ada Pengeluaran": "No Expenses Yet",
   "Belum ada pengeluaran {1} ini. Isi batas anggaran di bawah untuk mulai memantau.": "No expenses this {1} yet. Set a spending limit below to start tracking.",
   "Belum ada pengeluaran di": "No expenses in",
@@ -3391,6 +3935,7 @@ const I18N_EN = {
   "Belum ada teman. Kirim kode Anda, atau masukkan kode teman di atas.": "No friends yet. Send your code, or enter a friend's code above.",
   "Belum ada transaksi di periode ini.": "No transactions in this period yet.",
   "Belum ada transaksi pada periode ini.": "No transactions in this period.",
+  "Belum ada transaksi. Catat transaksi dulu, lalu laporan bisa diunduh di sini.": "No transactions yet. Record a transaction first, then reports can be downloaded here.",
   "Belum ada tujuan — tambahkan di Pengaturan Rekening": "No destination yet. Add one in Account Settings",
   "Belum ada uang yang Anda pinjamkan.": "You haven't lent any money yet.",
   "Belum ada wishlist, target, patungan, perjalanan, atau anggaran yang bisa dibagikan.": "There is no wishlist, goal, split bill, trip, or budget to share yet.",
@@ -3430,6 +3975,7 @@ const I18N_EN = {
   "Berhutang ke": "Owe to",
   "Beri pinjaman": "Loans given",
   "Beri Pinjaman": "Lend Money",
+  "Berikutnya": "Next",
   "Berkas belum tersimpan": "File not saved yet",
   "Berkas cadangan rusak, sudah diubah, atau bukan milik akun ini.": "Backup file is corrupted, has been modified, or doesn't belong to this account.",
   "Berkas cadangan tidak dikenali.": "Backup file not recognized.",
@@ -3450,6 +3996,7 @@ const I18N_EN = {
   "berkurang.": "decreased.",
   "bertambah.": "increased.",
   "besok": "tomorrow",
+  "Biaya": "Cost",
   "Biaya Admin & Bank": "Admin & Bank Fees",
   "Biaya tambahan": "Extra fees",
   "bila": "if",
@@ -3483,7 +4030,9 @@ const I18N_EN = {
   "Budget kategori dihapus": "Category budget deleted",
   "Budget kategori diperbarui": "Category budget updated",
   "Budget kategori ditambahkan": "Category budget added",
+  "Budget per kategori": "Budget per Category",
   "Budget per Kategori": "Budget per Category",
+  "Budget per Kategori sebagai pecahan dari batas pengeluaran": "Budget per Category as a share of the spending limit",
   "Buka": "Open",
   "Buka {1}": "Open {1}",
   "Buka di Yahoo Finance": "Open in Yahoo Finance",
@@ -3491,6 +4040,7 @@ const I18N_EN = {
   "Buka Jatuh Tempo": "Open Due Dates",
   "Buka link konfirmasi / aktivasi akun melalui email Anda (cek juga folder spam). Setelah link dibuka, akun langsung aktif dan Anda bisa masuk.": "Open the confirmation / activation link in your email (also check spam). Once the link is opened, your account is active and you can sign in.",
   "Buka menu": "Open menu",
+  "Buka menu Laporan": "Open the Reports menu",
   "Buka menu Teman": "Open Friends menu",
   "Buka menu Teman. Setiap akun punya kode sendiri. Salin atau kirim kode itu ke teman lewat chat.": "Open the Friends menu. Every account has its own code. Copy it or send it to a friend by chat.",
   "Buka rute di Google Maps": "Open route in Google Maps",
@@ -3579,6 +4129,8 @@ const I18N_EN = {
   "Catat barang atau kegiatan yang Anda inginkan, lengkap dengan tanggal rencana dan estimasi biayanya. SaKu menghitung berapa yang perlu disisihkan per hari, minggu, atau bulan.": "Note things or activities you want, with a planned date and estimated cost. SaKu works out how much to set aside per day, week, or month.",
   "Catat bunga": "Record interest",
   "Catat cicilan KPR, mobil, HP, atau cicilan lain. SaKu mengingatkan setiap jatuh tempo dan menghitung sisa tagihannya.": "Record KPR, car, phone, or other installments. SaKu reminds you of every due date and calculates the remaining bills.",
+  "Catat dengan suara": "Record by voice",
+  "Catat dengan suara: ucapkan transaksi, formulir terisi otomatis": "Record by voice: say the transaction and the form fills in automatically",
   "Catat hasil": "Record income",
   "Catat hutang Anda ke orang lain, atau uang yang Anda pinjamkan. SaKu mengingatkan saat jatuh tempo dan menghitung sisanya. Hutang tidak dihitung sebagai pemasukan atau pengeluaran, hanya menggeser saldo.": "Record debts you owe to others, or money you've lent out. SaKu reminds you on due dates and calculates what's left. Debts aren't counted as income or expenses; they only shift your balance.",
   "Catat ke SaKu": "Record to SaKu",
@@ -3619,6 +4171,7 @@ const I18N_EN = {
   "Cicilan & Kartu Kredit": "Installments & Credit Cards",
   "cicilan aktif": "active installments",
   "Cicilan bulan ini": "Installments this month",
+  "cicilan dan hutang": "installments and debts",
   "Cicilan dan hutang yang perlu dibayar": "Installments and debts to pay",
   "Cicilan dihapus": "Installment deleted",
   "Cicilan diperbarui": "Installment updated",
@@ -3641,6 +4194,7 @@ const I18N_EN = {
   "Cicilan tidak boleh melebihi nominal pinjaman.": "Installment can't exceed the loan amount.",
   "Cicilan, hutang & target": "Installments, debts & goals",
   "cicilan:": "installments:",
+  "Cicilan: {1}": "Installment: {1}",
   "Ciutkan": "Collapse",
   "Ciutkan menu": "Collapse menu",
   "Cloud Firestore belum diaktifkan di proyek Firebase Anda. Buka Firestore Database lalu klik Create database.": "Cloud Firestore isn't enabled in your Firebase project. Open Firestore Database and click Create database.",
@@ -3651,6 +4205,7 @@ const I18N_EN = {
   "Coba ubah kata kunci atau filter.": "Try changing the keyword or filter.",
   "cocok dengan cadangan ini": "matches this backup",
   "Contoh:": "Example:",
+  "Contoh: \"beli kopi dua puluh lima ribu pakai GoPay\"": "Example: \"coffee 25 thousand with GoPay\"",
   "Cuci Motor/Mobil": "Motorcycle/Car Wash",
   "Cukup": "Got it",
   "cukup sampai akhir": "enough until the end",
@@ -3664,9 +4219,11 @@ const I18N_EN = {
   "daftar": "list",
   "Daftar": "Sign up",
   "Daftar Akun": "Account List",
+  "Daftar semua transaksi dalam bentuk tabel sederhana, untuk dibuka di aplikasi lain atau diolah sendiri.": "A simple table of all transactions, to open in other apps or process yourself.",
   "Daftar transaksi": "Transaction list",
   "dalam": "in",
   "Dalam anggaran, sisa": "Within budget, remaining",
+  "Dalam batas {1}": "Within the {1} limit",
   "Dalam pengembangan": "In development",
   "dalam rupiah": "in rupiah",
   "dan": "and",
@@ -3698,6 +4255,7 @@ const I18N_EN = {
   "dari {1}{2}. {3}": "of {1}{2}. {3}",
   "Dari akun": "From account",
   "dari pemasukan": "of income",
+  "Dari rata-rata harian": "From the daily average",
   "Dari rekening": "From account",
   "Dari semua catatan": "From all entries",
   "dari target aktif": "from active goals",
@@ -3762,6 +4320,8 @@ const I18N_EN = {
   "di atas": "above",
   "di bawah": "below",
   "Di edisi ini pemulihan": "In this edition, restoring",
+  "Di luar kategori berbudget: {1}": "Outside budgeted categories: {1}",
+  "Di luar kategori berbudget: {1}  ·  Belum dibagi dari batas: {2}": "Outside budgeted categories: {1}  ·  Not yet allocated from the limit: {2}",
   "di server, jadi cadangan tetap bisa dipulihkan bila server dipindah.": "on the server, so backups can still be restored if the server is moved.",
   "di Supabase), lalu pilih username dan kata sandi administrator.": "in Supabase), then choose an administrator username and password.",
   "Di tab": "In the tab",
@@ -3826,6 +4386,7 @@ const I18N_EN = {
   "Dompet": "Wallet",
   "Dompet yang dijaga hari ini, hati yang tenang esok hari. Semangat!": "A wallet guarded today, a calm heart tomorrow. You've got this!",
   "e-wallet": "e-wallet",
+  "E-wallet": "E-wallet",
   "E-Wallet": "E-Wallet",
   "Edisi Firebase hanya bisa mengganti seluruh catatan akun saat memulihkan.": "The Firebase edition can only replace all account entries when restoring.",
   "Edisi ini tidak punya server penjaga rahasia, jadi cadangan dikunci dengan": "This edition doesn't have a secrets server, so backups are locked with",
@@ -3881,6 +4442,7 @@ const I18N_EN = {
   "Estimasi: {1} sudah habis{2}": "Estimate: {1} has run out{2}",
   "Estimasi: {1} sudah habis{2}.": "Estimate: {1} has run out{2}.",
   "Excel + grafik": "Excel + chart",
+  "Excel + Grafik": "Excel + Charts",
   "File cadangan memuat data yang tidak dikenal.": "Backup file contains unrecognized data.",
   "File cadangan tidak bisa dibaca.": "Backup file can't be read.",
   "File cadangan tidak memuat daftar akun.": "Backup file doesn't contain an account list.",
@@ -3982,11 +4544,13 @@ const I18N_EN = {
   "Halaman {1}{2} dari": "Page {1}{2} of",
   "Halaman {1}{2} dari {3}": "Page {1}{2} of {3}",
   "hampir habis": "almost used up",
+  "Hampir habis": "Almost used up",
   "Hanya": "Only",
   "Hanya administrator atau admin pembantu yang boleh melakukan ini.": "Only an administrator or assistant admin can do this.",
   "Hanya administrator yang boleh melakukan ini.": "Only administrators can do this.",
   "Hanya mengubah simbol dan format angka. Nominal dicatat dalam satuan utuh (tanpa sen) dan angka yang sudah tercatat tidak dikonversi. Untuk menghitung nilai tukar, buka menu Kurs.": "This only changes the symbol and number format. Amounts are recorded in whole units (no cents), and figures already recorded are not converted. To calculate exchange rates, open the Rates menu.",
   "Hanya pendaftaran yang menunggu yang bisa ditolak.": "Only pending sign-ups can be rejected.",
+  "Hanya untuk bulan berjalan": "Current month only",
   "Hapus": "Delete",
   "Hapus {1}": "Delete {1}",
   "Hapus barang {1}": "Delete item {1}",
@@ -4004,6 +4568,8 @@ const I18N_EN = {
   "Harga satuan barang {1}": "Unit price of item {1}",
   "hari": "days",
   "Hari": "Day",
+  "Hari berpengeluaran": "Days with spending",
+  "HARI BERPENGELUARAN": "DAYS WITH SPENDING",
   "hari bursa)": "trading days)",
   "hari ini": "today",
   "Hari ini": "Today",
@@ -4045,6 +4611,7 @@ const I18N_EN = {
   "Hutang & Piutang": "Debts & Receivables",
   "Hutang Anda ke": "Your debt to",
   "Hutang Anda ke {1}": "Your debt to {1}",
+  "Hutang dan cicilan": "Debts and Installments",
   "Hutang diperbarui": "Debt updated",
   "Hutang ditambahkan": "Debt added",
   "Hutang ke": "Debt to",
@@ -4054,6 +4621,7 @@ const I18N_EN = {
   "Hutang saya dan uang yang dipinjam orang": "My debts and money lent to others",
   "Hutang tersimpan, tetapi uang pinjaman belum tercatat di Transaksi. Buka “Ubah” untuk mencoba lagi.": "Debt saved, but the loan money isn't recorded in Transactions yet. Open “Edit” to try again.",
   "hutang:": "debts:",
+  "Hutang: {1}": "Debt: {1}",
   "Ibadah & Keagamaan": "Worship & Religious Giving",
   "ID foto tidak valid.": "Invalid photo ID.",
   "ID tidak valid.": "Invalid ID.",
@@ -4073,6 +4641,7 @@ const I18N_EN = {
   "Ini melebihi saldo pemasukan Anda.": "This exceeds your income balance.",
   "ini sejauh ini": "this so far",
   "ini. Isi batas anggaran di bawah untuk mulai memantau.": "this period. Set a spending limit below to start tracking.",
+  "Input suara tidak bisa dimulai di peramban ini.": "Voice input could not start in this browser.",
   "Insight": "Insights",
   "internet": "internet",
   "Internet rumah": "Home internet",
@@ -4138,6 +4707,7 @@ const I18N_EN = {
   "Itu kode Anda sendiri. Kirim kode ini ke teman, bukan dimasukkan di sini.": "That is your own code. Send it to a friend instead of entering it here.",
   "Iuran-iuran": "Dues & Contributions",
   "Izin membaca foto ditolak. Anda tetap bisa mengisi barang secara manual.": "Photo reading permission was denied. You can still enter items manually.",
+  "Izin mikrofon ditolak. Izinkan mikrofon untuk SaKu di pengaturan peramban atau ponsel Anda.": "Microphone permission was denied. Allow the microphone for SaKu in your browser or phone settings.",
   "Jadikan Admin Pembantu": "Make Assistant Admin",
   "Jadikan Administrator": "Make Administrator",
   "Jadikan bawaan": "Set as default",
@@ -4165,6 +4735,7 @@ const I18N_EN = {
   "Jatuh tempo tidak boleh sebelum tanggal acara.": "Due date can't be before the event date.",
   "Jatuh tempo tidak boleh sebelum tanggal pinjam.": "Due date can't be before the borrow date.",
   "Jatuh tempo, cicilan, dan hutang agar tidak ada yang terlewat.": "Due dates, installments, and debts so nothing is missed.",
+  "Jawaban dihitung di perangkat ini dari data SaKu Anda dan tidak dikirim ke pihak lain. Bukan nasihat keuangan profesional.": "Answers are calculated on this device from your SaKu data and are not sent to anyone. Not professional financial advice.",
   "Jeda": "Pause",
   "jenis": "types",
   "Jenis": "Type",
@@ -4189,6 +4760,7 @@ const I18N_EN = {
   "Jumlah akun sudah mencapai batas. Hubungi admin.": "Account limit reached. Contact the administrator.",
   "Jumlah barang {1}": "Quantity for item {1}",
   "Jumlah bertanda minus berarti uang keluar. Setor/tarik/hasil simpanan bukan pengeluaran atau pemasukan (hasil tidak menyentuh kas). Gunakan filter di baris judul atau PivotTable untuk analisis lanjutan.": "Amounts with a minus sign mean money out. Deposits, withdrawals, and savings returns are not expenses or income (returns don't touch cash). Use the filters in the header row or a PivotTable for deeper analysis.",
+  "Jumlah bertanda minus berarti uang keluar. Setor/tarik/hasil simpanan dan pindah saldo bukan pengeluaran atau pemasukan. Total di bawah memakai SUBTOTAL, jadi ikut berubah saat Anda memfilter. Pakai filter di baris judul atau PivotTable untuk analisis lanjutan.": "Amounts with a minus sign are money out. Savings deposits, withdrawals and returns, and balance transfers are not expenses or income. The total below uses SUBTOTAL, so it changes when you filter. Use the filters in the header row or a PivotTable for deeper analysis.",
   "Jumlah bulan yang sudah dibayar melebihi tenor (": "Months paid exceed the tenor (",
   "Jumlah bulan yang sudah dibayar melebihi tenor ({1} bulan).": "Months paid exceed the tenor ({1} months).",
   "Jumlah catatan": "Number of entries",
@@ -4250,6 +4822,7 @@ const I18N_EN = {
   "kategori ini pada": "this category on",
   "Kategori pengeluaran Anda": "Your expense category",
   "Kategori Saya": "My Categories",
+  "Kategori terbesar": "Top category",
   "Kategori tidak valid.": "Invalid category.",
   "Ke": "To",
   "Kebutuhan Harian": "Daily Needs",
@@ -4257,6 +4830,7 @@ const I18N_EN = {
   "Kebutuhan Rumah Tangga": "Household Supplies",
   "Kegiatan": "Activity",
   "Kegiatan ini sudah terlaksana.": "This activity is done.",
+  "Keinginan": "Wish",
   "Kelola": "Manage",
   "Kelompok": "Group",
   "Keluar": "Out",
@@ -4286,12 +4860,15 @@ const I18N_EN = {
   "kesehatan": "health",
   "Kesehatan": "Health",
   "Kesehatan & Obat": "Health & Medicine",
+  "Kesehatan keuangan": "Financial Health",
+  "Keterangan": "Details",
   "Ketik ulang kata sandi": "Re-enter password",
   "Ketuk nama kategori untuk melihat isinya. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.": "Tap a category name to see its contents. Deposits and withdrawals to savings aren't counted as expenses.",
   "Ketuk tombol + kapan saja untuk mencatat pemasukan atau pengeluaran.": "Tap the + button any time to record income or an expense.",
   "Keuangan sehat dibangun dari keputusan kecil. Tunda satu keinginan hari ini.": "Healthy finances are built on small decisions. Put off one want today.",
   "Keuangan, Cicilan & Pajak": "Finance, Installments & Taxes",
   "kini administrator": "now an administrator",
+  "Kirim": "Send",
   "Kirim email verifikasi": "Send verification email",
   "Kirim ke Keluarga": "Money Sent to Family",
   "Kirim ke teman": "Send to a friend",
@@ -4355,6 +4932,7 @@ const I18N_EN = {
   "Kunci penyegel dibuat dan disimpan di server. Agar cadangan tetap bisa dipulihkan bila server dipindah atau datanya hilang, isi variabel": "The sealing key is created and stored on the server. To keep backups restorable if the server is moved or its data is lost, fill in the variable",
   "Kunci tidak bisa dibuat.": "Key can't be created.",
   "Kuota Firebase hari ini habis. Coba lagi nanti.": "Today's Firebase quota has been used up. Try again later.",
+  "Kurang": "Short by",
   "Kurangi penumpang": "Fewer passengers",
   "kurs": "rates",
   "Kurs": "Rates",
@@ -4386,25 +4964,29 @@ const I18N_EN = {
   "Langsung masuk ke saldo": "Goes directly to balance",
   "Langsung masuk ke saldo {1}. Tidak menambah saldo kas dan bukan pemasukan.": "Goes directly to the {1} balance. Doesn't add to cash balance and isn't income.",
   "Lanjut": "Next",
-  "Laporan": "Report",
+  "Laporan": "Reports",
   "Laporan gagal dibuat.": "Failed to create report.",
   "Laporan Keuangan": "Financial Report",
   "Laporan Keuangan {1}": "Financial Report {1}",
   "Laporan PDF": "PDF Report",
+  "Laporan PDF dan Excel baru dengan logo SaKu, kesehatan keuangan, persentase pemakaian rekening, budget kategori, dan rencana": "New PDF and Excel reports with the SaKu logo, financial health, account usage percentages, category budgets, and plans",
+  "Laporan PDF, Excel, dan CSV sekarang diunduh dari menu Laporan.": "PDF, Excel, and CSV reports are now downloaded from the Reports menu.",
   "laptop": "laptop",
   "Laundry": "Laundry",
   "Laut": "Sea",
   "Layanan baca foto gagal merespons.": "The photo reading service failed to respond.",
   "Layanan baca foto sedang sibuk. Coba lagi nanti.": "The photo reading service is busy. Try again later.",
   "Layanan baca foto tidak bisa dihubungi.": "The photo reading service can't be reached.",
+  "Layar sambutan Selamat datang di SaKu setiap kali dibuka": "Welcome to SaKu splash screen every time the app opens",
   "lebih boros": "spending more",
   "lebih hemat": "spending less",
   "Lembur & Tunjangan": "Overtime & Allowances",
   "lepas": "freelance",
   "lewat": "overdue",
-  "Lewat": "Overdue",
+  "Lewat": "Over",
   "Lewat {1}": "Over by {1}",
   "Lewat {1}.": "Past {1}.",
+  "Lewat batas {1}": "Over the {1} limit",
   "Lewat tenggat": "Past deadline",
   "Lewati": "Skip",
   "liburan": "vacation",
@@ -4449,6 +5031,7 @@ const I18N_EN = {
   "Masuk ke": "To account",
   "Masuk ke rekening": "Into account",
   "masuk vs keluar": "in vs out",
+  "Masuk, keluar, dan persentase untuk periode {1}; saldo akhir dihitung dari seluruh catatan. Kolom persen menunjukkan dari rekening mana uang paling banyak keluar. Pindah saldo antar rekening dipisah supaya tidak dihitung sebagai pemasukan atau pengeluaran.": "Income, spending, and percentages are for the period {1}; the ending balance is calculated from all entries. The percentage column shows which account most of your money goes out through. Transfers between accounts are kept separate so they are not counted as income or spending.",
   "Masukkan email baru Anda:": "Enter your new email:",
   "Masukkan email yang Anda pakai saat mendaftar untuk menyelesaikan konfirmasi:": "Enter the email you used to register to finish the confirmation:",
   "Masukkan email yang benar:": "Enter the correct email:",
@@ -4496,6 +5079,7 @@ const I18N_EN = {
   "Mencatat…": "Recording…",
   "Mendaftar": "Signing up",
   "mendekati batas": "nearing the limit",
+  "Mendengarkan… ketuk untuk selesai": "Listening… tap to finish",
   "Mengambil foto": "Fetching photos",
   "Mengambil foto {1} dari": "Fetching photos {1} of",
   "Mengambil foto {1} dari {2}": "Fetching photos {1} of {2}",
@@ -4519,6 +5103,7 @@ const I18N_EN = {
   "menit tanpa aktivitas.": "minutes of inactivity.",
   "menit. Silakan masuk lagi.": "minutes. Please log in again.",
   "Menu lainnya": "More menu",
+  "Menu Laporan terpisah: unduh PDF, Excel, dan CSV dengan pilihan periode": "Separate Reports menu: download PDF, Excel, and CSV with a period picker",
   "Menu Teman untuk akun pengguna.": "The Friends menu is for user accounts.",
   "Menunggu": "Waiting",
   "Menunggu jawaban": "Awaiting reply",
@@ -4534,6 +5119,7 @@ const I18N_EN = {
   "Metode tidak didukung.": "Method not supported.",
   "Mi ayam": "Chicken noodles",
   "Mi instan": "Instant noodles",
+  "Mikrofon tidak ditemukan di perangkat ini.": "No microphone was found on this device.",
   "Minggu": "Week",
   "minggu lalu": "last week",
   "Mingguan": "Weekly",
@@ -4581,6 +5167,7 @@ const I18N_EN = {
   "Mulai dengan mencatat transaksi pertama.": "Start by recording your first transaction.",
   "Mulai menipis bukan berarti gagal. Ini tanda untuk melangkah lebih bijak. Kamu pasti bisa!": "Running low doesn't mean failure. It's a sign to step more wisely. You've got this!",
   "mulai tanggal": "starting on",
+  "Mulai ulang": "Start over",
   "Multiguna": "Multipurpose",
   "naik": "up",
   "Naik": "Up",
@@ -4627,6 +5214,8 @@ const I18N_EN = {
   "nominal target belum diketahui": "goal amount not known yet",
   "Nomor HP": "Phone number",
   "Nomor HP tidak valid. Isi 8–15 angka, contoh 081234567890.": "Invalid phone number. Enter 8–15 digits, e.g. 081234567890.",
+  "Nomor versi dan riwayat perubahan di Pengaturan": "Version number and change history in Settings",
+  "Nomor versi tampil di bagian bawah aplikasi": "Version number shown at the bottom of the app",
   "nonaktif": "inactive",
   "Nonaktif": "Inactive",
   "Nonaktif / Ditolak": "Inactive / Rejected",
@@ -4674,6 +5263,7 @@ const I18N_EN = {
   "PBB & Pajak Rumah": "Property Tax (PBB)",
   "Pecah uang Anda menurut rekening: pilih bank mana yang bersaldo (boleh lebih dari satu bank yang sama), e-wallet, atau uang tunai.": "Split your money by account: choose which banks hold a balance (you can add more than one from the same bank), e-wallets, or cash.",
   "Pecah uang Anda menurut rekening: pilih bank mana yang bersaldo (boleh lebih dari satu bank yang sama), e-wallet, atau uang tunai. Saat mencatat transaksi, pilih rekening yang dipakai.": "Split your money by account: choose which banks hold a balance (you can add more than one from the same bank), e-wallets, or cash. When recording a transaction, choose the account you used.",
+  "Pecahan dari batas {1}": "Share of the {1} limit",
   "Pelan tapi pasti: yang perlu dulu, yang diinginkan nanti.": "Slow and steady: what you need first, what you want later.",
   "Pelunasan dari": "Repayment from",
   "Pelunasan dari {1}": "Repayment from {1}",
@@ -4681,6 +5271,7 @@ const I18N_EN = {
   "Pelunasan hutang ke {1}": "Debt repayment to {1}",
   "Pelunasan piutang": "Receivables repaid",
   "Pelunasan Piutang": "Receivable Repayment",
+  "Pemakaian": "Usage",
   "pemasukan": "income",
   "Pemasukan": "Income",
   "PEMASUKAN": "INCOME",
@@ -4727,18 +5318,23 @@ const I18N_EN = {
   "Pengeluaran {1} vs": "Spending {1} vs",
   "Pengeluaran {1} vs {2}": "Spending {1} vs {2}",
   "Pengeluaran {1} vs {2} (kumulatif)": "Expenses {1} vs {2} (cumulative)",
+  "Pengeluaran / hari": "Spending per day",
   "pengeluaran Anda, kategori": "your expenses, category",
+  "Pengeluaran di luar kategori berbudget": "Spending outside budgeted categories",
   "Pengeluaran di luar kategori berbudget bulan ini: {1}.": "Spending outside budgeted categories this month: {1}.",
   "Pengeluaran di luar kategori berbudget periode ini: {1}.": "Spending outside budgeted categories this period: {1}.",
   "Pengeluaran harian –": "Daily expenses –",
   "pengeluaran jajan ramean": "group treat expenses",
   "Pengeluaran melebihi dana": "Spending exceeds funds",
+  "pengeluaran melebihi pemasukan": "spending exceeds income",
+  "Pengeluaran per hari": "Spending per day",
   "Pengeluaran per hari dalam seminggu": "Expenses by day of the week",
   "Pengeluaran per kategori": "Expenses by category",
   "Pengeluaran per Kategori": "Expenses by Category",
   "Pengeluaran per kategori –": "Expenses by category –",
   "Pengeluaran seluruh data": "All-time expenses",
   "Pengeluaran terbesar": "Largest expense",
+  "Pengenalan suara perlu koneksi internet. Periksa koneksi Anda.": "Speech recognition needs an internet connection. Check your connection.",
   "Pengguna": "User",
   "Pengguna otomatis keluar bila tidak ada aktivitas selama waktu ini. Isi dalam menit, antara 1 dan 1440. Bawaannya 20 menit.": "Users are automatically logged out after this period of inactivity. Enter minutes, between 1 and 1440. Default is 20 minutes.",
   "Pengingat Cadangan": "Backup Reminder",
@@ -4762,6 +5358,7 @@ const I18N_EN = {
   "Penyimpanan di browser penuh. Hapus foto atau transaksi lama, atau pindahkan data lewat cadangan.": "Browser storage is full. Delete old photos or transactions, or move data using a backup.",
   "Penyimpanan di perangkat penuh. Sambungkan ke internet dulu agar catatan terunggah, lalu coba lagi.": "Device storage is full. Connect to the internet first so entries can upload, then try again.",
   "Penyimpanan penuh. Hapus beberapa foto atau transaksi lama, lalu coba lagi.": "Storage is full. Delete some old photos or transactions, then try again.",
+  "per {1}": "as of {1}",
   "per akun. Hapus sebagian transaksi lama dulu, atau pakai \"Ganti Semua Data\".": "per account. Delete some older transactions first, or use \"Replace All Data\".",
   "per bulan": "per month",
   "per bulan agar tercapai": "per month to reach it",
@@ -4780,6 +5377,7 @@ const I18N_EN = {
   "Per minggu": "Per week",
   "per minggu ·": "per week ·",
   "per orang": "per person",
+  "Peramban ini belum mendukung input suara. Coba Chrome, Edge, atau Safari terbaru.": "This browser does not support voice input yet. Try the latest Chrome, Edge, or Safari.",
   "Peran": "Role",
   "Peran admin pembantu {1} dicabut": "Assistant admin role removed for {1}",
   "Peran admin pembantu Anda dicabut": "Your assistant admin role has been removed",
@@ -4796,6 +5394,7 @@ const I18N_EN = {
   "Perbaikan Motor": "Motorcycle Repairs",
   "Perbarui": "Update",
   "Perbarui kurs": "Update Rates",
+  "Percakapan dengan Tanya SaKu": "Conversation with Ask SaKu",
   "Periksa data pendaftar. Setelah disetujui, akun aktif dan pendaftar masuk dengan kata sandi yang ia buat sendiri.": "Review the applicant's details. Once approved, the account becomes active and the applicant logs in with the password they created themselves.",
   "Periksa koneksi internet Anda, lalu coba lagi.": "Check your internet connection, then try again.",
   "Perintah tidak dikenal.": "Unknown command.",
@@ -4808,6 +5407,7 @@ const I18N_EN = {
   "Periode ini": "This period",
   "periode lalu": "last period",
   "Periode lalu": "Last period",
+  "Periode laporan": "Report period",
   "Periode mengikuti bulan kalender (tanggal 1 sampai akhir bulan).": "Periods follow calendar months (the 1st to the end of the month).",
   "Periode rekap": "Overview period",
   "Periode saat ini:": "Current period:",
@@ -4816,10 +5416,12 @@ const I18N_EN = {
   "Periode saat ini: {1}. Periode berikutnya mulai tanggal {2}.": "Current period: {1}. Next period starts on {2}.",
   "Periode sebelumnya": "Previous period",
   "Periode:": "Period:",
+  "Periode: {1}. Kolom Sisa, Pemakaian, dan Status memakai rumus; warna berubah otomatis (hijau aman, kuning hampir habis, merah lewat).": "Period: {1}. The Remaining, Usage, and Status columns use formulas; colors change automatically (green safe, yellow almost used up, red over).",
   "Periode: {1}. Urut dari pengeluaran terbesar. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.": "Period: {1}. Sorted from largest expense. Savings deposits and withdrawals are not counted as expenses.",
   "Perjalanan": "Trips",
   "Perjalanan & Wisata": "Travel & Tourism",
   "Perjalanan Baru": "New Trip",
+  "Perjalanan dan patungan": "Trips and Group Splits",
   "Perjalanan dihapus": "Trip deleted",
   "Perjalanan diperbarui": "Trip updated",
   "Perjalanan disimpan": "Trip saved",
@@ -4834,6 +5436,7 @@ const I18N_EN = {
   "perkiraan, belum ada": "estimate, no data yet",
   "perkiraan, belum ada {1} penuh": "estimate, no full {1} yet",
   "Perlu dibayar sekarang": "Due for payment now",
+  "Perlu per bulan": "Needed per month",
   "Perlu Persetujuan": "Needs Approval",
   "Perlu Persetujuan ({1})": "Needs Approval ({1})",
   "Perlu sekitar {1} per bulan sampai tanggal rencana.": "About {1} per month is needed until the planned date.",
@@ -4894,6 +5497,8 @@ const I18N_EN = {
   "Pilihan pengingat cadangan tidak valid.": "Invalid backup reminder option.",
   "Pindah saldo": "Transfer",
   "Pindah Saldo Antar Rekening": "Transfer Between Accounts",
+  "pindah saldo antar rekening tidak dihitung": "transfers between accounts are not counted",
+  "Pindah saldo bersih": "Net transfers",
   "pinjam": "borrow",
   "Pinjam dari": "Borrow from",
   "Pinjam dari {1}": "Borrowed from {1}",
@@ -4903,13 +5508,18 @@ const I18N_EN = {
   "Pinjamkan ke {1}": "Lent to {1}",
   "piutang": "receivables",
   "Piutang dari": "Receivable from",
+  "Piutang: {1}": "Receivable: {1}",
   "Popok & Perlengkapan Bayi": "Diapers & Baby Supplies",
   "Porsi": "Portion",
+  "Posisi per {1}. Kolom Sisa dan Progres memakai rumus.": "Position as of {1}. The Remaining and Progress columns use formulas.",
   "Pratinjau skema": "Schematic preview",
   "prestasi": "achievement",
   "Profil, kata sandi, kategori sendiri, dan cadangan data.": "Profile, password, your own categories, and data backup.",
+  "Progres": "Progress",
   "projectId tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.": "projectId not found or malformed. Copy the entire firebaseConfig block from the Firebase Console.",
   "Proyek lepas": "Freelance project",
+  "Proyeksi akhir bulan": "Projected month end",
+  "PROYEKSI AKHIR PERIODE": "PROJECTED PERIOD END",
   "Pulihkan": "Restore",
   "Pulihkan {1} akun terpilih": "Restore {1} selected accounts",
   "Pulihkan dari cadangan": "Restore from Backup",
@@ -4935,6 +5545,8 @@ const I18N_EN = {
   "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per": "Average spending: {1} per day · {2} per week · {3} per",
   "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per {4}": "Average spending: {1} per day · {2} per week · {3} per {4}",
   "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per {4}.": "Average spending: {1} per day · {2} per week · {3} per {4}.",
+  "Rata-rata per hari": "Average per day",
+  "RATA-RATA PER HARI": "AVERAGE PER DAY",
   "Rata-rata per transaksi": "Average per transaction",
   "rata-rata.": "average.",
   "Reimburse & Ganti Biaya": "Reimbursements",
@@ -4946,6 +5558,7 @@ const I18N_EN = {
   "Rekening": "Accounts",
   "Rekening asal dan tujuan tidak boleh sama.": "Source and destination accounts can't be the same.",
   "Rekening bawaan pembayaran diatur": "Default payment account set",
+  "Rekening dan kantong": "Accounts and Pockets",
   "Rekening dihapus.": "Account deleted.",
   "Rekening dihapus. Catatannya dihitung sebagai tunai.": "Account deleted. Its entries now count as cash.",
   "Rekening diperbarui": "Account updated",
@@ -4978,8 +5591,10 @@ const I18N_EN = {
   "Ringkasan": "Summary",
   "Ringkasan {1}": "{1} summary",
   "Ringkasan Akun": "Account Summary",
+  "Ringkasan batas": "Limit summary",
   "Ringkasan saldo": "Balance summary",
   "Ringkasan saldo, pemasukan, dan pengeluaran Anda ada di sini.": "Your balance, income, and expense summary lives here.",
+  "Ringkasan satu periode: kesehatan keuangan, budget per kategori, rekening, rencana, dan daftar transaksi. Cocok untuk dibaca atau dicetak.": "A summary of one period: financial health, category budgets, accounts, plans, and the transaction list. Good for reading or printing.",
   "Ringkasan tabungan dan investasi": "Savings and investments summary",
   "Riwayat": "History",
   "Riwayat setoran": "Deposit history",
@@ -5048,8 +5663,10 @@ const I18N_EN = {
   "Sampai tanggal {1}: {2} dibanding {3} pada {4}{5}": "As of {1}: {2} compared to {3} on {4}{5}",
   "Sampai tanggal {1}: {2} dibanding {3} pada {4}{5}.": "As of {1}: {2} compared to {3} on {4}{5}.",
   "Sandi awal": "Initial password",
+  "Saran pertanyaan": "Suggested questions",
   "sarapan": "breakfast",
   "Sarapan": "Breakfast",
+  "Sasaran": "Goal",
   "Sate": "Satay",
   "Satu buku kas pribadi yang rapi: catat, atur, dan pantau uang Anda di HP maupun laptop.": "One neat personal cashbook: record, organize, and track your money on your phone or laptop.",
   "Satu catatan offline ditolak server:": "The server rejected one offline entry:",
@@ -5063,7 +5680,9 @@ const I18N_EN = {
   "sebelum": "before",
   "Sebelum SaKu": "Before SaKu",
   "Sedang dikerjakan": "In progress",
+  "Sedang menyusun jawaban": "Preparing an answer",
   "Sedekah Jumat": "Friday Charity",
+  "Segera": "Soon",
   "sehat": "healthy",
   "sejak": "since",
   "sejak {1}": "since {1}",
@@ -5075,6 +5694,8 @@ const I18N_EN = {
   "sekitar {1} hari lagi, {2}": "about {1} days left, {2}",
   "Sekitar {1} per orang untuk {2} orang": "About {1} per person for {2} people",
   "sekolah": "school",
+  "Selamat datang di": "Welcome to",
+  "Selamat datang di SaKu": "Welcome to SaKu",
   "Selamat malam": "Good evening",
   "Selamat pagi": "Good morning",
   "Selamat siang": "Good afternoon",
@@ -5085,6 +5706,7 @@ const I18N_EN = {
   "Selisih bulan ini": "Net this month",
   "seluruh": "all",
   "Seluruh batas sudah dibagi.": "The whole limit is already assigned.",
+  "Seluruh catatan dengan 8 grafik dan rumus, plus lembar Transaksi, Rekening, Budget Kategori, dan Rencana. Pilih bulan yang menjadi sorotan laporan.": "All entries with 8 charts and formulas, plus Transactions, Accounts, Category Budget, and Plans sheets. Choose the month the report highlights.",
   "Semua": "All",
   "Semua angka adalah perkiraan. Ubah harga BBM, tol, dan tiket sesuai kondisi di lapangan.": "All figures are estimates. Adjust fuel, toll, and ticket prices to match real conditions.",
   "Semua catatan": "All entries",
@@ -5094,6 +5716,7 @@ const I18N_EN = {
   "Semua kategori sudah punya budget.": "Every category already has a budget.",
   "semua sudah lunas": "all paid off",
   "Semua uang ada di": "All your money lives in",
+  "Semua uang ada di SaKu.": "All your money is in SaKu.",
   "Semua waktu": "All time",
   "senilai {1}": "worth {1}",
   "Sertakan foto struk (berkas lebih besar)": "Include receipt photos (larger file)",
@@ -5114,6 +5737,7 @@ const I18N_EN = {
   "Sesi berakhir karena tidak ada aktivitas selama {1} menit. Silakan masuk lagi.": "Session ended after {1} minutes of inactivity. Please log in again.",
   "Sesi berakhir. Silakan masuk lagi.": "Your session has ended. Please log in again.",
   "sesuai": "according to",
+  "Sesuai": "On track",
   "Sesuai rencana": "On track",
   "setelah": "after",
   "setelah {1} dicadangkan": "after {1} is set aside",
@@ -5147,6 +5771,7 @@ const I18N_EN = {
   "Sewa kamar": "Room rent",
   "Sewa Mobil & Motor": "Car & Motorcycle Rental",
   "siang": "daytime",
+  "Silakan bicara…": "Speak now…",
   "simpan": "save",
   "Simpan": "Save",
   "Simpan & lanjut": "Save & Continue",
@@ -5167,6 +5792,7 @@ const I18N_EN = {
   "Sisa": "Remaining",
   "sisa {1}": "{1} remaining",
   "Sisa {1}": "{1} left",
+  "sisa {1} yang masih harus dibayar": "{1} left to pay",
   "Sisa {1}.": "{1} left.",
   "Sisa anggaran": "Remaining budget",
   "Sisa anggaran {1} dicadangkan dari saldo pemasukan {2}. Setoran tabungan dan investasi tidak dihitung sebagai pengeluaran, hanya mengurangi saldo.": "Remaining budget {1} is reserved from the {2} income balance. Deposits to savings and investments aren't counted as expenses; they only reduce the balance.",
@@ -5184,6 +5810,7 @@ const I18N_EN = {
   "Sparepart Motor": "Motorcycle Spare Parts",
   "Status cadangan tidak bisa dibaca.": "Backup status can't be read.",
   "struk": "receipt",
+  "Suara tidak bisa dikenali. Coba lagi.": "The speech could not be recognized. Try again.",
   "Submenu {1}": "{1} Submenu",
   "sudah": "already",
   "sudah {1}": "already {1}",
@@ -5221,9 +5848,10 @@ const I18N_EN = {
   "Tabungan bulanan": "Monthly savings",
   "Tabungan wishlist ditambah {1}": "Wishlist savings increased by {1}",
   "tagihan": "bills",
-  "Tagihan": "Bills",
+  "Tagihan": "Bill",
   "Tagihan Jatuh Tempo": "Due Bills",
   "tagihan lainnya ada di menu Jatuh Tempo.": "Other bills are in Due Dates.",
+  "Tagihan terdekat": "Upcoming Bills",
   "tagihan yang sudah dihapus": "deleted bills",
   "Tahapan pengembangan": "Development stages",
   "Tahu": "Tofu",
@@ -5300,6 +5928,10 @@ const I18N_EN = {
   "Tanpa rekening, semua catatan dihitung sebagai satu dompet seperti biasa.": "Without accounts, all entries count as one wallet as usual.",
   "Tanpa tenggat": "No deadline",
   "tanpa verifikasi JWT": "without JWT verification",
+  "Tanya": "Ask",
+  "Tanya SaKu": "Ask SaKu",
+  "Tanya SaKu: asisten keuangan interaktif dari data Anda sendiri": "Ask SaKu: an interactive finance assistant built on your own data",
+  "Tanya soal keuangan Anda…": "Ask about your finances…",
   "tapi": "but",
   "target": "target",
   "Target": "Goal",
@@ -5316,6 +5948,7 @@ const I18N_EN = {
   "Target diperbarui": "Goal updated",
   "Target ditambahkan": "Goal added",
   "Target ini ditutup.": "This goal is closed.",
+  "Target keuangan": "Financial Goals",
   "Target tercapai. Selamat!": "Goal reached. Congratulations!",
   "tarik": "withdraw",
   "Tarik": "Withdraw",
@@ -5339,6 +5972,7 @@ const I18N_EN = {
   "Teman perlu mengembalikan": "Friend needs to pay back",
   "Teman perlu mengembalikan {1} kepada Anda.": "Friend needs to pay you back {1}.",
   "Teman tidak valid.": "Invalid friend.",
+  "Teman: kode teman dan berbagi data hanya-baca": "Friends: friend codes and read-only data sharing",
   "Tempe": "Tempeh",
   "Tempel alamat proyek (contoh:": "Paste the project URL (example:",
   "Tempel kode dari teman di kolom Tambah teman, lalu kirim permintaan. Teman akan mendapat pemberitahuan.": "Paste your friend's code in Add a friend, then send the request. Your friend will be notified.",
@@ -5356,6 +5990,7 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Tentang SaKu": "About SaKu",
   "tepat di akhir": "right at the end",
   "Terakhir diunduh:": "Last downloaded:",
   "Terakhir masuk": "Last logged in",
@@ -5365,9 +6000,12 @@ const I18N_EN = {
   "Terbesar:": "Largest:",
   "Terbesar: {1} ·": "Largest: {1} ·",
   "Terbesar: {1} · {2}": "Largest: {1} · {2}",
+  "Terboros: {1}": "Highest spending: {1}",
   "tercapai": "reached",
   "Tercapai": "Reached",
   "Tercatat.": "Recorded.",
+  "Terdengar: \"{1}\". Jumlahnya belum tertangkap, isi jumlah lalu Simpan.": "Heard: \"{1}\". The amount was not captured; enter the amount, then Save.",
+  "Terdengar: \"{1}\". Periksa isinya lalu tekan Simpan.": "Heard: \"{1}\". Check the details, then press Save.",
   "Terendah (": "Low (",
   "Terendah ({1} hari bursa)": "Low ({1} trading days)",
   "terhadap": "against",
@@ -5379,6 +6017,7 @@ const I18N_EN = {
   "Terjadi kesalahan di aplikasi. Muat ulang halaman lalu coba lagi.": "An app error occurred. Reload the page and try again.",
   "Terjadi kesalahan di server. Coba lagi.": "A server error occurred. Try again.",
   "Terkumpul": "Saved",
+  "Terkumpul diambil dari catatan setoran target dan isian wishlist. Kolom Kurang dan Progres memakai rumus.": "Saved comes from target deposit entries and the wishlist fields. The Short by and Progress columns use formulas.",
   "terkunci": "locked",
   "Terlalu banyak percobaan. Coba lagi beberapa menit lagi.": "Too many attempts. Try again in a few minutes.",
   "Terlalu banyak percobaan. Coba lagi dalam": "Too many attempts. Try again in",
@@ -5419,6 +6058,7 @@ const I18N_EN = {
   "Tidak ada kategori yang cocok.": "No matching categories.",
   "Tidak ada kategori yang cocok. Coba kata lain atau tekan Tambah Kategori.": "No matching categories. Try another word or tap Add Category.",
   "Tidak ada ruas darat": "No land leg",
+  "Tidak ada suara yang terdengar. Ketuk lagi lalu bicara.": "No speech was heard. Tap again and speak.",
   "tidak ada tagihan": "no bills",
   "Tidak ada tagihan dalam 7 hari ke depan": "No bills in the next 7 days",
   "Tidak Ada Transaksi": "No Transactions",
@@ -5439,6 +6079,8 @@ const I18N_EN = {
   "Tiket per orang (Rp)": "Ticket per person (Rp)",
   "Tiket Pesawat": "Flight Tickets",
   "Tiket Wisata & Hiburan": "Attraction & Entertainment Tickets",
+  "Tingkat tabungan": "Savings rate",
+  "TINGKAT TABUNGAN": "SAVINGS RATE",
   "titik (.)": "period (.)",
   "Titik perjalanan": "Trip stops",
   "Token listrik": "Electricity token",
@@ -5446,10 +6088,12 @@ const I18N_EN = {
   "Tol": "Toll",
   "Tol mobil (Rp)": "Car toll (Rp)",
   "Tolak": "Decline",
+  "Tombol mengambang Tanya SaKu dengan maskot dan sapaan": "Floating Ask SaKu button with a mascot and greeting",
   "Topup E-Money (Kartu)": "E-Money Card Top-up",
   "Topup E-Wallet": "E-Wallet Top-up",
   "total · rata-rata": "total · average",
   "total · rata-rata {1} per orang": "total · average {1} per person",
+  "Total (mengikuti filter)": "Total (follows filter)",
   "Total {1} · dibayar {2}": "Total {1} · paid {2}",
   "Total {1}, dibayar": "Total {1}, paid",
   "Total {1}, dibayar {2}": "Total {1}, paid {2}",
@@ -5458,11 +6102,13 @@ const I18N_EN = {
   "Total barang": "Total items",
   "Total catatan pengguna": "Total user entries",
   "Total dari barang": "Total from items",
+  "Total dibagi": "Total allocated",
   "Total keluar": "Total out",
   "TOTAL KELUAR": "TOTAL OUT",
   "Total masuk": "Total in",
   "Total pengeluaran": "Total expenses",
   "Total saldo": "Total balance",
+  "Total sisa": "Total remaining",
   "Total tabungan & investasi": "Total savings & investments",
   "Total tagihan": "Total bill",
   "Total waktu": "Total time",
@@ -5497,6 +6143,7 @@ const I18N_EN = {
   "tukar": "exchange",
   "Tukar arah": "Swap direction",
   "Tukar arah konversi": "Swap conversion direction",
+  "Tulis pertanyaan": "Type a question",
   "Tunai": "Cash",
   "Tunai / tanpa rekening": "Cash / no account",
   "Tunai / Tanpa rekening": "Cash / No Account",
@@ -5508,6 +6155,8 @@ const I18N_EN = {
   "Uang": "Money",
   "Uang awal yang sudah terkumpul:": "Starting funds already saved:",
   "Uang awal yang sudah terkumpul: {1} (tidak dicatat sebagai transaksi).": "Starting funds already saved: {1} (not recorded as a transaction).",
+  "Uang paling banyak keluar dari {1}: {2} ({3}), terbesar untuk {4} {5}.": "Most of your money went out through {1}: {2} ({3}), mostly for {4} {5}.",
+  "Uang paling banyak keluar dari {1}: {2} ({3}).": "Most of your money went out through {1}: {2} ({3}).",
   "Uang pinjaman belum dicatat di Transaksi. Buka “Ubah” untuk mencatatnya.": "Loan money isn't recorded in Transactions yet. Open “Edit” to record it.",
   "Uang pinjaman sudah tercatat di Transaksi (": "Loan money is already recorded in Transactions (",
   "Uang pinjaman sudah tercatat di Transaksi ({1}, {2}). Ubah di sana bila perlu.": "Loan money is already recorded in Transactions ({1}, {2}). Edit it there if needed.",
@@ -5537,9 +6186,13 @@ const I18N_EN = {
   "Unduh": "Download",
   "Unduh Cadangan": "Download Backup",
   "Unduh cadangan akun Anda sendiri lewat submenu Cadangan Data.": "Download your own account backup from the Data Backup submenu.",
+  "Unduh CSV": "Download CSV",
+  "Unduh Excel": "Download Excel",
   "Unduh lagi": "Download again",
+  "Unduh laporan keuangan Anda": "Download your financial reports",
+  "Unduh PDF": "Download PDF",
   "Unduh satu berkas berisi seluruh transaksi, foto struk, anggaran, dan rencana milik setiap akun. Isinya": "Download a single file containing all transactions, receipt photos, budgets, and plans for every account. Its contents",
-  "Unduhan belum tersedia di tampilan ini.": "Downloads aren't available in this view yet.",
+  "Unduhan belum tersedia di tampilan ini.": "Downloads are not available in this view yet.",
   "Unduhan tidak tersedia di tampilan ini.": "Downloads aren't available in this view.",
   "untuk": "for",
   "Untuk akun Anda sendiri, pakai menu Pengaturan.": "For your own account, use the Settings menu.",
@@ -5558,6 +6211,7 @@ const I18N_EN = {
   "Verifikasi email Anda dulu (lihat himbauan di atas) agar kata sandi bisa diganti.": "Verify your email first (see the notice above) so you can change your password.",
   "Verifikasi email Anda dulu lewat himbauan di atas, lalu ganti kata sandi.": "Verify your email first through the notice above, then change your password.",
   "Verifikasi email dulu: kirim email verifikasi, klik tautannya, lalu ganti kata sandi (berlaku 15 menit).": "Verify your email first: send the verification email, click its link, then change your password (valid for 15 minutes).",
+  "Versi {1} · build {2}": "Version {1} · build {2}",
   "Versi berkas cadangan ini belum didukung.": "This backup file version isn't supported yet.",
   "Visa & Paspor": "Visa & Passport",
   "Vitamin & Suplemen": "Vitamins & Supplements",
@@ -5598,6 +6252,7 @@ const I18N_EN = {
   "Yang akan dicatat:": "To be recorded:",
   "Yang Anda bagikan": "What you share",
   "Yang Anda buat tadi": "The one you just created",
+  "Yang baru": "What's new",
   "Yang dibagikan": "What to share",
   "yang dicatat.": "recorded.",
   "Yang ikut membayar item {1}": "Who shares the cost of item {1}",
@@ -6159,6 +6814,7 @@ function shellHTML() {
       <div id="netbar" class="netbar" role="status" hidden></div>
       <div id="mailbar" class="netbar mailbar" role="status" hidden></div>
       <div id="view"></div>
+      <p class="app-ver" translate="no">SaKu v${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p>
     </div>
   </div>
   ${(() => {
@@ -6170,7 +6826,7 @@ function shellHTML() {
     <div class="more-scrim" data-act="more-close"></div>
     <div class="more-sh" role="menu" aria-label="Menu lainnya"><div class="more-h">Menu lainnya</div><div class="more-grid">${mi.map(sheetI).join('')}</div></div>`;
   })()}
-  ${isAdmin() ? '' : `<button class="fab" data-act="add" aria-label="Catat transaksi">${ic('plus', 26)}<span class="fab-t">Catat transaksi</span></button>`}`;
+  ${isAdmin() ? '' : `<button class="fab" data-act="add" aria-label="Catat transaksi">${ic('plus', 26)}<span class="fab-t">Catat transaksi</span></button>${askFabHTML()}`}`;
 }
 function moreSet(v) {
   const sh = $('.shell'); if (!sh) return;
@@ -6232,7 +6888,7 @@ function renderView() {
   if (!VIEWS[S.view]) S.view = isAdmin() ? 'admin' : 'rekap';
   const V = VIEWS[S.view];
   if (S.mountedView !== S.view) { v.innerHTML = ''; if (V.mount) V.mount(v); S.mountedView = S.view; setNav(); routePush(S.view, S.routeReplace); S.routeReplace = false; }
-  V.update(); paintBadge();
+  V.update(); paintBadge(); askFabPaint();
   const key = S.view + (S.txLoaded ? ':ok' : ':load');
   if (S.entered !== key) {
     S.entered = key; enterAnim('enter');
@@ -6691,6 +7347,9 @@ function subOpen(k) {
   }
   return !!st[k];
 }
+function verBodyHTML() {
+  return `<p class="desc">Versi ${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p><h3 class="t" style="margin-top:12px">Yang baru</h3>` + CHANGELOG.map(c => `<div class="field"><span class="lbl">v${esc(c.v)} · ${esc(c.d)}</span><ul class="desc" style="margin:4px 0 0 18px">${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('');
+}
 function subMenu(k, title, hint, body) {
   const on = subOpen(k);
   return `<section class="card submenu${on ? ' open' : ''}" data-sub="${k}"><h2 class="sub-title"><button type="button" class="sub-h" data-act="sub" data-k="${k}" aria-expanded="${on}" aria-controls="sub-${k}"><span class="sub-tx"><span class="sub-name">${esc(title)}</span><small id="sub-hint-${k}">${esc(hint)}</small></span><span class="sub-chev">${ic('chevd', 20)}</span></button></h2><div class="sub-body" id="sub-${k}"${on ? '' : ' hidden'}>${body}</div></section>`;
@@ -6718,6 +7377,7 @@ VIEWS.akun = {
         <p class="form-err" id="pw-err" role="alert" hidden></p><p class="form-ok" id="pw-ok" role="status" hidden></p><button class="btn btn-primary" type="submit">Simpan kata sandi</button></form>`)}
       ${adm ? `<div id="bk-legacy" hidden>${subMenu('bk', 'Cadangan Catatan Lama', bkHint(), bkSubBody(true))}</div>` : subMenu('bk', 'Cadangan Data', bkHint(), bkSubBody())}
       ${adm ? '' : `<section class="card"><h2 class="t">Pengingat Dana Menipis</h2><p class="desc">Beberapa detik setelah Anda menyimpan transaksi, muncul notifikasi beremoji dengan kata penyemangat bila pengeluaran bulan ini sudah mendekati 70% dari dana atau anggaran Anda.</p><label class="check"><input type="checkbox" id="rem-on" checked> Aktifkan pengingat</label><div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" data-act="rem-test">${ic('bell', 16)} Coba tampilkan</button></div></section>`}
+      ${subMenu('ver', 'Tentang SaKu', 'Versi ' + APP_VERSION + ' · build ' + APP_BUILD, verBodyHTML())}
       ${adm && !extraDataActs().length ? '' : `<section class="card"><h2 class="t">Data</h2><p class="desc" id="data-desc"></p><div class="btn-row" id="data-acts"></div></section>`}</div>`;
   },
   update() {
@@ -6739,10 +7399,10 @@ VIEWS.akun = {
     const bd = $('#bud-day'); if (bd && document.activeElement !== bd) bd.value = CYCLE.day > 1 ? String(CYCLE.day) : ''; updateDayNote();
     const bh = $('#sub-hint-bud'); if (bh) bh.textContent = (bud ? 'Batas ' + fmtRp(bud) : 'Belum diatur') + ' · periode ' + (CYCLE.day > 1 ? 'mulai tanggal ' + CYCLE.day : 'awal bulan');
     paintBk();
-    $('#data-desc').textContent = S.tx.length + ' transaksi tersimpan di akun ini. Laporan PDF mengikuti periode yang sedang dibuka di Rekap, sedangkan Excel memuat seluruh catatan dengan 8 grafik.' + dataNote();
+    $('#data-desc').innerHTML = `<span>${S.tx.length} transaksi tersimpan di akun ini.</span> <span>Laporan PDF, Excel, dan CSV sekarang diunduh dari menu Laporan.</span> <span>${esc(dataNote())}</span>`;
     const ro = $('#rem-on'); if (ro && document.activeElement !== ro) ro.checked = !(S.settings && S.settings.reminder === false);
     const acts = [];
-    if (S.downloads && S.tx.length) acts.push(`<button class="btn btn-ghost" data-act="dl-pdf">${ic('file', 18)} Laporan PDF</button><button class="btn btn-ghost" data-act="dl-xlsx">${ic('table', 18)} Excel + grafik</button><button class="btn btn-ghost" data-act="csv">${ic('download', 18)} Transaksi (CSV)</button>`);
+    if (!isAdmin()) acts.push(`<button class="btn btn-ghost" data-act="nav" data-v="laporan">${ic('file', 18)} Buka menu Laporan</button>`);
     if (S.demoCount > 0) acts.push(`<button class="btn btn-danger ${S.armed && S.armed.key === 'demo' ? 'armed' : ''}" data-act="demo-del">${S.armed && S.armed.key === 'demo' ? 'Yakin hapus ' + S.demoCount + ' data contoh?' : 'Hapus data contoh (' + S.demoCount + ')'}</button>`);
     else acts.push('<button class="btn btn-ghost" data-act="demo-add">Isi data contoh</button>');
     extraDataActs().forEach(h => acts.push(h));
@@ -6761,6 +7421,7 @@ function sheetHTML() {
   return `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title" novalidate>
     <div class="sheet-h"><h2 id="sh-title">Catat Transaksi</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
     <div class="sheet-b">
+      ${S.form && !S.form.id && voiceSupport() ? voiceRowHTML() : ''}
       <div class="tgl" role="group" aria-label="Jenis transaksi"><button type="button" class="out" data-act="f-type" data-t="out" aria-pressed="true">${ic('up', 18)} Pengeluaran</button><button type="button" class="in" data-act="f-type" data-t="in" aria-pressed="false">${ic('down', 18)} Pemasukan</button></div>
       <div class="field"><label for="f-amt">Jumlah</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="f-amt" data-money="amt" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
       <div class="row2" id="f-accrow" hidden><div class="field" id="f-accbox"><label for="f-acc" id="f-acc-l">Dibayar dari</label><select class="input" id="f-acc" required></select></div><div class="field" id="f-tobox" hidden><label for="f-to">Masuk ke</label><select class="input" id="f-to"></select></div></div>
@@ -6801,6 +7462,7 @@ function openSheet(tx, preset) {
 }
 function closeSheet(silent) {
   const r = $('#sheet-root'); if (!r) return;
+  if (VOICE.on) { VOICE.last = ''; VOICE.on = false; try { if (VOICE.native) voiceNative().stop(); else if (VOICE.rec) VOICE.rec.abort(); } catch (e) { /* abaikan */ } }
   if (S.form && S.form.ctl) { try { S.form.ctl.abort(); } catch (e) { /* abaikan */ } }
   r.remove(); S.form = null; S.cf = null; S.pay = null; S.hf = null; S.tf = null; S.rf = null; document.body.style.overflow = '';
   if (!silent && S.lastFocus && S.lastFocus.focus) { try { S.lastFocus.focus(); } catch (e) { /* abaikan */ } }
@@ -8974,6 +9636,173 @@ Object.assign(ACT, {
   'fri-go'() { frIntroClose(); ACT.nav({ dataset: { v: 'teman' } }); },
   'fri-bd'(el, e) { if (e && e.target === el) frIntroClose(); }
 });
+/* ================= Catat dengan suara (antarmuka) =================
+   Peramban: Web Speech API (Chrome, Edge, Safari). Aplikasi mobile: plugin @capacitor-community/speech-recognition.
+   Hasil ucapan hanya MENGISI formulir; pengguna tetap memeriksa lalu menekan Simpan. */
+const VOICE = { on: false, rec: null, last: '', native: false, subs: [] };
+function voiceNative() { const c = window.Capacitor; return c && c.Plugins && c.Plugins.SpeechRecognition && c.isNativePlatform && c.isNativePlatform() ? c.Plugins.SpeechRecognition : null; }
+function voiceSupport() { return !!(window.SpeechRecognition || window.webkitSpeechRecognition || voiceNative()); }
+function voiceRowHTML() {
+  return `<div class="voice" id="f-voice"><button type="button" class="btn btn-ghost btn-sm voice-btn" data-act="f-voice" aria-pressed="false">${ic('mic', 16)} <span id="f-voicelbl">Catat dengan suara</span></button><p class="voice-txt" id="f-voicetxt" role="status" aria-live="polite">Contoh: "beli kopi dua puluh lima ribu pakai GoPay"</p></div>`;
+}
+function voicePaint(msg, cls) {
+  const b = $('#f-voice .voice-btn'), t = $('#f-voicetxt'), l = $('#f-voicelbl'); if (!b) return;
+  b.classList.toggle('on', VOICE.on); b.setAttribute('aria-pressed', String(VOICE.on)); if (l) l.textContent = VOICE.on ? 'Mendengarkan… ketuk untuk selesai' : 'Catat dengan suara';
+  if (t && msg != null) { t.textContent = msg; t.className = 'voice-txt' + (cls ? ' ' + cls : ''); }
+}
+function voiceErrMsg(code) {
+  return code === 'not-allowed' || code === 'service-not-allowed' ? 'Izin mikrofon ditolak. Izinkan mikrofon untuk SaKu di pengaturan peramban atau ponsel Anda.'
+    : code === 'no-speech' ? 'Tidak ada suara yang terdengar. Ketuk lagi lalu bicara.'
+      : code === 'network' ? 'Pengenalan suara perlu koneksi internet. Periksa koneksi Anda.'
+        : code === 'audio-capture' ? 'Mikrofon tidak ditemukan di perangkat ini.' : 'Suara tidak bisa dikenali. Coba lagi.';
+}
+function voiceStop() {
+  if (!VOICE.on) return;
+  try { if (VOICE.native) voiceNative().stop(); else if (VOICE.rec) VOICE.rec.stop(); } catch (e) { /* abaikan */ }
+}
+function voiceEnd(err) {
+  const was = VOICE.on; VOICE.on = false; VOICE.rec = null;
+  VOICE.subs.forEach(h => { try { h.remove(); } catch (e) { /* abaikan */ } }); VOICE.subs = [];
+  if (!was && !err) return;
+  if (err) { voicePaint(voiceErrMsg(err), 'err'); return; }
+  if (VOICE.last) voiceApply(VOICE.last); else voicePaint(voiceErrMsg('no-speech'), 'err');
+}
+/* Isi formulir dari kalimat yang terdengar */
+function voiceApply(text) {
+  const F = S.form; if (!F || !$('#f-voice')) return;
+  const P = parseVoice(text, { cats: Object.keys(CATS).map(id => ({ id, type: CATS[id].type, label: CATS[id].label })), accts: accList(), now: new Date() });
+  if (F.type !== P.type) { F.type = P.type; F.ref = null; F.cat = P.type === 'out' ? 'makan' : 'gaji'; F.catTouched = false; }
+  if (P.cat && CATS[P.cat]) { F.cat = P.cat; F.catTouched = true; }
+  if (P.amount > 0) { F.amount = Math.min(P.amount, 1e12); F.amountTouched = true; $('#f-amt').value = dots(F.amount); }
+  if (P.date) { F.date = P.date; $('#f-date').value = P.date; }
+  if (P.note) { F.note = P.note; $('#f-note').value = P.note; }
+  if (P.acc != null && (P.acc === '' || accById(P.acc))) F.acc = P.acc;
+  F.q = ''; const q = $('#f-catq'); if (q) q.value = '';
+  paintAll();
+  voicePaint('Terdengar: "' + P.heard + '". ' + (P.amount > 0 ? 'Periksa isinya lalu tekan Simpan.' : 'Jumlahnya belum tertangkap, isi jumlah lalu Simpan.'), P.amount > 0 ? 'ok' : 'err');
+  if (!(P.amount > 0)) { const a = $('#f-amt'); if (a) a.focus(); } else { const s = $('#f-save'); if (s) s.focus(); }
+}
+function voiceStart() {
+  if (VOICE.on) { voiceStop(); return; }
+  if (!S.form) return;
+  VOICE.last = ''; const lang = LANG === 'en' ? 'en-US' : 'id-ID', N = voiceNative();
+  if (N) {
+    VOICE.native = true; VOICE.on = true; voicePaint('Silakan bicara…');
+    Promise.resolve().then(() => N.requestPermissions()).then(p => {
+      if (p && p.speechRecognition && p.speechRecognition !== 'granted') throw { code: 'not-allowed' };
+      return Promise.all([N.addListener('partialResults', d => { if (d && d.matches && d.matches[0]) { VOICE.last = d.matches[0]; voicePaint('"' + VOICE.last + '"'); } }), N.addListener('listeningState', d => { if (d && d.status === 'stopped') setTimeout(() => voiceEnd(), 250); })]);
+    }).then(hs => { VOICE.subs = hs || []; return N.start({ language: lang, maxResults: 1, partialResults: true, popup: false }); })
+      .catch(e => voiceEnd((e && e.code) || (/permission|denied/i.test(String(e && e.message)) ? 'not-allowed' : 'x')));
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('Peramban ini belum mendukung input suara. Coba Chrome, Edge, atau Safari terbaru.'); return; }
+  let r; try { r = new SR(); } catch (e) { toast('Input suara tidak bisa dimulai di peramban ini.'); return; }
+  VOICE.native = false; VOICE.rec = r; VOICE.on = true; let failed = null;
+  r.lang = lang; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  r.onresult = e => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; VOICE.last = t.trim(); if (VOICE.last) voicePaint('"' + VOICE.last + '"'); };
+  r.onerror = e => { failed = e.error || 'x'; if (failed === 'aborted') failed = null; };
+  r.onend = () => voiceEnd(failed && !VOICE.last ? failed : null);
+  try { r.start(); voicePaint('Silakan bicara…'); } catch (e) { VOICE.on = false; VOICE.rec = null; voicePaint(voiceErrMsg('x'), 'err'); }
+}
+ACT['f-voice'] = () => voiceStart();
+/* ================= Menu Laporan: unduh laporan PDF, Excel, dan CSV (dipisah dari Pengaturan) ================= */
+function repState() { if (!S.rep) { const t = startOfDay(new Date()); S.rep = { period: 'month', anchor: t, xa: t }; } return S.rep; }
+function repNavHTML(act, label, canNext, isCur) {
+  return `<div class="range rep-range"><button class="icon-btn" data-act="${act}" data-d="-1" aria-label="Periode sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(label)}</span>${isCur ? '' : `<button class="back" data-act="${act}" data-d="0">Kembali ke sekarang</button>`}</div><button class="icon-btn" data-act="${act}" data-d="1" aria-label="Periode berikutnya" ${canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div>`;
+}
+function laporanHTML() {
+  const R = repState(), now = startOfDay(new Date()), can = !!S.downloads, any = S.tx.length > 0;
+  const rg = rangeFor(R.period, R.anchor), s = ymd(rg.start), e = ymd(rg.end), n = S.tx.filter(t => t.date >= s && t.date <= e).length;
+  const canNext = rangeFor(R.period, shiftAnchor(R.period, R.anchor, 1)).start <= now, isCur = rg.start <= now && now <= rg.end;
+  const xr = rangeFor('month', R.xa), xNext = rangeFor('month', shiftAnchor('month', R.xa, 1)).start <= now, xCur = xr.start <= now && now <= xr.end;
+  const off = can && any ? '' : ' disabled';
+  const note = !can ? '<p class="form-err" role="status">Unduhan belum tersedia di tampilan ini.</p>' : !any ? '<p class="cat-hint" role="status">Belum ada transaksi. Catat transaksi dulu, lalu laporan bisa diunduh di sini.</p>' : '';
+  return `<div class="page-head"><div><p class="hello">Unduh laporan keuangan Anda</p><h1>Laporan</h1></div></div>${note}<div class="stack">
+    <section class="card rep-card" id="rep-pdf"><h2 class="t">${ic('file', 18)} Laporan PDF</h2><p class="desc">Ringkasan satu periode: kesehatan keuangan, budget per kategori, rekening, rencana, dan daftar transaksi. Cocok untuk dibaca atau dicetak.</p>
+      <div class="seg" role="group" aria-label="Periode laporan">${[['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']].map(p => `<button type="button" data-act="rep-period" data-v="${p[0]}" aria-pressed="${R.period === p[0]}">${p[1]}</button>`).join('')}</div>
+      ${repNavHTML('rep-shift', rangeLabel(R.period, rg, R.anchor), canNext, isCur)}
+      <p class="cat-hint" id="rep-count">${n} transaksi di periode ini</p>
+      <div class="btn-row"><button type="button" class="btn btn-primary" data-act="dl-pdf"${off}>${ic('download', 18)} Unduh PDF</button></div></section>
+    <section class="card rep-card" id="rep-xlsx"><h2 class="t">${ic('table', 18)} Excel + Grafik</h2><p class="desc">Seluruh catatan dengan 8 grafik dan rumus, plus lembar Transaksi, Rekening, Budget Kategori, dan Rencana. Pilih bulan yang menjadi sorotan laporan.</p>
+      ${repNavHTML('rep-xshift', rangeLabel('month', xr, R.xa), xNext, xCur)}
+      <div class="btn-row"><button type="button" class="btn btn-primary" data-act="dl-xlsx"${off}>${ic('download', 18)} Unduh Excel</button></div></section>
+    <section class="card rep-card" id="rep-csv"><h2 class="t">${ic('list', 18)} Transaksi (CSV)</h2><p class="desc">Daftar semua transaksi dalam bentuk tabel sederhana, untuk dibuka di aplikasi lain atau diolah sendiri.</p>
+      <p class="cat-hint">${S.tx.length} transaksi tersimpan di akun ini</p>
+      <div class="btn-row"><button type="button" class="btn btn-ghost" data-act="csv"${off}>${ic('download', 18)} Unduh CSV</button></div></section></div>`;
+}
+VIEWS.laporan = {
+  mount() { const R = repState(), now = startOfDay(new Date()); R.period = S.period || 'month'; R.anchor = S.anchor || now; R.xa = S.anchor && S.anchor <= now ? S.anchor : now; },   // mengikuti periode yang terakhir dibuka di Rekap
+  update() { $('#view').innerHTML = laporanHTML(); }
+};
+const repShift = (key, P, d) => { const R = repState(), now = startOfDay(new Date()); if (d === 0) R[key] = now; else { const nx = shiftAnchor(P, R[key], d); if (d < 0 || rangeFor(P, nx).start <= now) R[key] = nx; } VIEWS.laporan.update(); };
+ACT['rep-period'] = el => { const R = repState(); R.period = el.dataset.v; R.anchor = startOfDay(new Date()); VIEWS.laporan.update(); };
+ACT['rep-shift'] = el => repShift('anchor', repState().period, Number(el.dataset.d));
+ACT['rep-xshift'] = el => repShift('xa', 'month', Number(el.dataset.d));
+/* ================= Tanya SaKu: tampilan obrolan asisten keuangan ================= */
+function botState() { if (!S.bot) S.bot = { msgs: [], ctx: null, busy: false }; return S.bot; }
+function botMsgHTML(m, last) {
+  if (m.who === 'me') return `<div class="bot-m me"><div class="bot-b">${esc(m.text[0])}</div></div>`;
+  if (m.wait) return `<div class="bot-m"><span class="bot-av" aria-hidden="true">${ic('sparkle', 16)}</span><div class="bot-b bot-wait" aria-label="Sedang menyusun jawaban"><i></i><i></i><i></i></div></div>`;
+  return `<div class="bot-m"><span class="bot-av" aria-hidden="true">${ic('sparkle', 16)}</span><div class="bot-b">${m.text.map(p => `<p>${esc(p)}</p>`).join('')}</div></div>` +
+    (last && m.chips && m.chips.length ? `<div class="bot-chips" role="group" aria-label="Saran pertanyaan">${m.chips.map(c => `<button type="button" class="bot-chip" data-act="bot-ask" data-q="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : '');
+}
+function botPaint() {
+  const B = botState(), log = $('#bot-log'); if (!log) return;
+  log.innerHTML = B.msgs.map((m, i) => botMsgHTML(m, i === B.msgs.length - 1)).join('');
+  const sc = () => { try { log.scrollTop = log.scrollHeight; const l = log.lastElementChild; if (l && l.scrollIntoView) l.scrollIntoView({ block: 'nearest' }); } catch (e) { /* abaikan */ } }; sc(); setTimeout(sc, 30);
+}
+function botData0() { return { tx: S.tx, settings: S.settings || {}, accts: accList(), plan: S.plan || {}, now: new Date(), name: (me() && me().name) || '' }; }
+function botReply(q) {
+  const B = botState(); let r;
+  try { r = botAnswer(q, botData0(), B.ctx); } catch (e) { r = { text: ['Maaf, saya gagal menghitung jawaban untuk pertanyaan itu. Coba pertanyaan lain.'], chips: BOT_CHIPS.slice(0, 3), topic: 'galat' }; }
+  B.ctx = { topic: r.topic }; return { who: 'bot', text: r.text, chips: r.chips };
+}
+function botSend(q) {
+  const B = botState(), inp = $('#bot-q'); q = String(q == null ? (inp ? inp.value : '') : q).replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!q || B.busy) return;
+  if (inp) inp.value = '';
+  B.msgs.push({ who: 'me', text: [q] }); B.msgs.push({ who: 'bot', wait: true, text: [] }); B.busy = true; botPaint();
+  setTimeout(() => { B.msgs.pop(); B.msgs.push(botReply(q)); if (B.msgs.length > 60) B.msgs.splice(0, B.msgs.length - 60); B.busy = false; botPaint(); const i2 = $('#bot-q'); if (i2 && window.matchMedia && window.matchMedia('(min-width: 1000px)').matches) i2.focus(); }, 380);
+}
+VIEWS.asisten = {
+  mount(v) {
+    const B = botState(); if (!B.msgs.length) B.msgs.push(botReply(''));
+    v.innerHTML = `<div class="page-head"><div><p class="hello">Asisten keuangan dari catatan Anda sendiri</p><h1>Tanya SaKu</h1></div><button type="button" class="btn btn-ghost btn-sm" data-act="bot-reset">Mulai ulang</button></div>
+      <section class="card bot-card"><div class="bot-log" id="bot-log" translate="no" role="log" aria-live="polite" aria-label="Percakapan dengan Tanya SaKu"></div>
+      <form id="bot-form" class="bot-form" novalidate><label class="sr-only" for="bot-q">Tulis pertanyaan</label><input class="input" id="bot-q" maxlength="300" autocomplete="off" placeholder="Tanya soal keuangan Anda…"><button class="btn btn-primary" type="submit" aria-label="Kirim">${ic('chevr', 18)}</button></form>
+      <p class="cat-hint bot-note">Jawaban dihitung di perangkat ini dari data SaKu Anda dan tidak dikirim ke pihak lain. Bukan nasihat keuangan profesional.</p></section>`;
+    botPaint();
+  },
+  update() { /* percakapan tidak digambar ulang saat data berubah; jawaban berikutnya memakai data terbaru */ }
+};
+ACT['bot-ask'] = el => botSend(el.dataset.q);
+ACT['bot-reset'] = () => { S.bot = null; const B = botState(); B.msgs.push(botReply('')); botPaint(); };
+document.addEventListener('submit', e => { if (e.target && e.target.id === 'bot-form') { e.preventDefault(); botSend(); } });
+
+/* Tombol mengambang Tanya SaKu: maskot kecil yang berkedip, dengan balon sapaan yang muncul sesekali */
+function askFabHTML() {
+  return `<div class="ask-fab" id="ask-fab"><span class="ask-tip" aria-hidden="true">Ada yang bisa dibantu?</span><button type="button" class="ask-btn" data-act="nav" data-v="asisten" aria-label="Tanya SaKu" title="Tanya SaKu"><span class="ask-face"><svg aria-hidden="true" width="32" height="32" viewBox="0 0 40 40" fill="none"><rect x="4" y="8" width="32" height="24" rx="10" fill="#FFFFFF"/><rect class="ask-eye" x="12" y="15" width="5" height="8" rx="2.5" fill="#0E2347"/><rect class="ask-eye" x="23" y="15" width="5" height="8" rx="2.5" fill="#0E2347"/><path d="M16 26.5c2.4 1.8 5.6 1.8 8 0" stroke="#2F6BED" stroke-width="2" stroke-linecap="round"/><path d="M20 8V4" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/><circle cx="20" cy="3" r="2" fill="#22C08A"/></svg><span class="ask-dot" aria-hidden="true"></span></span></button></div>`;
+}
+function askFabPaint() { const f = $('#ask-fab'); if (f) f.hidden = S.view === 'asisten'; }
+/* ================= Layar sambutan "Selamat datang di SaKu" =================
+   Tampil setiap kali SaKu dibuka (situs maupun aplikasi), sebelum layar masuk. Hilang sendiri setelah sekitar 2,4 detik,
+   atau langsung saat diketuk / ditekan tombol apa pun. */
+const INTRO_MS = 2400;
+function introClose() {
+  const el = document.getElementById('intro'); if (!el || el.classList.contains('out')) return;
+  el.classList.add('out'); document.removeEventListener('keydown', introClose, true);
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 420);
+}
+function introShow() {
+  if (document.getElementById('intro') || !document.body) return;
+  const el = document.createElement('div'); el.id = 'intro'; el.className = 'intro'; el.setAttribute('role', 'status'); el.setAttribute('aria-label', 'Selamat datang di SaKu');
+  el.innerHTML = `<div class="intro-in"><div class="intro-logo" aria-hidden="true">${LOGO}</div><p class="intro-hi">Selamat datang di</p><div class="intro-wm" aria-hidden="true">${WM}</div><p class="intro-tag">Semua uang ada di SaKu.</p><div class="intro-bar" aria-hidden="true"><i></i></div></div><button type="button" class="intro-skip">Lewati</button>`;
+  el.addEventListener('click', introClose);
+  document.body.appendChild(el); document.addEventListener('keydown', introClose, true);
+  setTimeout(introClose, INTRO_MS);
+}
+try { introShow(); } catch (e) { /* sambutan tidak boleh menghalangi aplikasi */ }
 /* ================= Rekening bank & e-wallet, pindah saldo, dan kategori buatan sendiri =================
    Rekening disimpan di pengaturan akun: settings.accts = [{ id, kind: 'bank'|'ewallet'|'cash', brand, name, open }], settings.payDefault = id rekening bawaan.
    Setiap transaksi boleh membawa acc (rekening yang dipakai). Topup e-wallet dan Pindah Saldo membawa acc (asal) dan to (tujuan):
