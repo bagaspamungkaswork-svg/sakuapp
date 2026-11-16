@@ -48,7 +48,9 @@ jobs:
           grep -n "versionName\|versionCode" app/build.gradle
           # Kunci tanda tangan tetap (secret) supaya update bisa dipasang di atas versi lama. Tanpa secret: kunci debug bawaan.
           if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
-            echo "$KS_B64" | base64 -d > app/saku.keystore
+            # nilai secret bisa terbawa spasi atau baris baru saat ditempel dari ponsel: bersihkan dulu
+            printf '%s' "$KS_B64" | tr -d ' \n\r\t' | base64 -di > app/saku.keystore || { echo "::error::Secret ANDROID_KEYSTORE_BASE64 tidak utuh. Hapus lalu tempel ulang seluruh nilai Secret 2 dari berkas kunci."; exit 1; }
+            keytool -list -keystore app/saku.keystore -storetype PKCS12 -storepass "$KS_PASS" -alias saku > /dev/null 2>&1 || { echo "::error::Kunci tidak bisa dibuka. Periksa ANDROID_KEYSTORE_PASSWORD (Secret 1) dan ANDROID_KEYSTORE_BASE64 (Secret 2): salin nilainya utuh dari berkas kunci."; exit 1; }
             cat >> app/build.gradle <<'GRADLE'
 
           android {
