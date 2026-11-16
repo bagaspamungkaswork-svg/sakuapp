@@ -1,0 +1,11346 @@
+(function () {
+'use strict';
+/* ================= Konstanta & util ================= */
+const DEFAULT_PW = 'catatuang123';
+const MIN_PW = 5;
+const SALT = 'catatuang::';
+const SESSION_KEY = 'catatuang.sesi.v1';
+const MAX_TX = 1000;
+/* Nama hari & bulan: isinya diganti di tempat saat bahasa berubah (lihat setLang), jadi semua kode lama tetap memakai larik yang sama */
+const LNAMES = {
+  id: { d: ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'], ds: ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'],
+    m: ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'], ms: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'] },
+  en: { d: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], ds: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    m: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], ms: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] }
+};
+const DAYS = LNAMES.id.d.slice(), DAYS_S = LNAMES.id.ds.slice(), MONTHS = LNAMES.id.m.slice(), MONTHS_S = LNAMES.id.ms.slice();
+
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const parseYmd = s => { const p = String(s).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); };
+const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const startOfWeek = d => addDays(startOfDay(d), -((d.getDay() + 6) % 7));
+const isYmd = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s)) && !isNaN(parseYmd(s).getTime());
+/* Huruf judul: awal tiap kata kapital, kecuali kata sambung dan kata depan (dan, atau, ke, dari, di, yang, untuk, per, ...). Kata pertama selalu kapital. */
+const TC_LOW = new Set(['dan', 'atau', 'serta', 'tetapi', 'tapi', 'namun', 'yang', 'bahwa', 'karena', 'jika', 'bila', 'kalau', 'agar', 'supaya', 'sehingga', 'ketika', 'saat', 'sebelum', 'setelah', 'hingga', 'sampai', 'dengan', 'tanpa', 'untuk', 'bagi', 'pada', 'di', 'ke', 'dari', 'dalam', 'oleh', 'antara', 'per', 'vs', 'sebagai', 'terhadap', 'tentang']);
+function tc(s) { let first = true; return String(s).replace(/[^\s-]+/g, w => { const lw = w.toLowerCase(), r = !first && TC_LOW.has(lw) ? w : (/^[a-z]/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w); first = false; return r; }); }
+const fmtDM = d => d.getDate() + ' ' + MONTHS_S[d.getMonth()];
+const fmtDateLong = d => DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS_S[d.getMonth()] + ' ' + d.getFullYear();
+
+/* ================= Mata uang buku & bahasa tampilan =================
+   Mata uang hanya mengubah simbol dan format angka. Nominal tetap satuan utuh (tanpa sen) dan angka yang sudah tercatat TIDAK dikonversi.
+   Bahasa tersimpan di perangkat (localStorage); mata uang tersimpan di pengaturan akun (ikut ke semua perangkat). */
+const CURRENCIES = {
+  IDR: { sym: 'Rp', sp: 1, name: 'rupiah', label: 'Rupiah Indonesia', ctry: 'ID' },
+  USD: { sym: '$', sp: 0, name: 'dolar Amerika Serikat', label: 'Dolar Amerika Serikat', ctry: 'US' },
+  CNY: { sym: 'CN¥', sp: 0, name: 'yuan China', label: 'Yuan China', ctry: 'CN' },
+  MYR: { sym: 'RM', sp: 1, name: 'ringgit Malaysia', label: 'Ringgit Malaysia', ctry: 'MY' },
+  JPY: { sym: '¥', sp: 0, name: 'yen Jepang', label: 'Yen Jepang', ctry: 'JP' },
+  KRW: { sym: '₩', sp: 0, name: 'won Korea', label: 'Won Korea', ctry: 'KR' }
+};
+const CUR_LIST = Object.keys(CURRENCIES);
+const CUR_LS = 'saku.cur.v1', LANG_LS = 'saku.lang.v1';
+const isCur = c => typeof c === 'string' && Object.prototype.hasOwnProperty.call(CURRENCIES, c);
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* abaikan */ } }
+let CUR = isCur(lsGet(CUR_LS)) ? lsGet(CUR_LS) : 'IDR';
+let LANG = lsGet(LANG_LS) === 'en' ? 'en' : 'id';
+const NUM = { grp: LANG === 'en' ? ',' : '.', dec: LANG === 'en' ? '.' : ',' };
+const curSym = () => CURRENCIES[CUR].sym;
+const curName = () => CURRENCIES[CUR].name;
+/* Judul kolom rekap kategori: tetap "Rupiah Pengeluaran" untuk Rupiah, selain itu memuat kode mata uang */
+const curColHead = () => CUR === 'IDR' ? 'Rupiah Pengeluaran' : 'Pengeluaran (' + CUR + ')';
+/* true bila mata uang berubah */
+function setCur(c) { c = isCur(c) ? c : 'IDR'; if (c === CUR) return false; CUR = c; lsSet(CUR_LS, c); return true; }
+function applyLangData() {
+  const N = LNAMES[LANG];
+  DAYS.splice(0, 7, ...N.d); DAYS_S.splice(0, 7, ...N.ds); MONTHS.splice(0, 12, ...N.m); MONTHS_S.splice(0, 12, ...N.ms);
+  NUM.grp = LANG === 'en' ? ',' : '.'; NUM.dec = LANG === 'en' ? '.' : ',';
+  try { document.documentElement.lang = LANG; } catch (e) { /* abaikan */ }
+}
+/* true bila bahasa berubah */
+function setLang(l) { l = l === 'en' ? 'en' : 'id'; const ch = l !== LANG; LANG = l; lsSet(LANG_LS, l); applyLangData(); return ch; }
+applyLangData();
+const dots = n => String(Math.round(Math.abs(Number(n) || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, NUM.grp);
+const fmtRp = n => (n < 0 ? '-' : '') + curSym() + (CURRENCIES[CUR].sp ? ' ' : '') + dots(n);
+/* Bilangan pecahan (kurs, hasil konversi): `d` angka di belakang koma, pemisah mengikuti bahasa */
+function fmtNum(x, d) {
+  x = Number(x); if (!isFinite(x)) return '–'; d = d == null ? 2 : d;
+  const neg = x < 0, a = Math.abs(x), parts = a.toFixed(d).split('.');
+  return (neg ? '-' : '') + parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, NUM.grp) + (parts[1] ? NUM.dec + parts[1] : '');
+}
+/* Jumlah dalam mata uang tertentu (untuk konverter): simbol + angka dengan jumlah desimal yang pantas untuk mata uang itu */
+function fmtMoneyIn(code, x) {
+  const c = CURRENCIES[code] || CURRENCIES.IDR, a = Math.abs(Number(x) || 0);
+  const d = c.sym === '₩' || c.sym === '¥' || code === 'IDR' ? (a < 1 && a > 0 ? 4 : 0) : (a < 1 && a > 0 ? 4 : 2);
+  return (x < 0 ? '-' : '') + c.sym + (c.sp ? ' ' : '') + fmtNum(a, d);
+}
+function trim1(x) { return (x >= 100 ? Math.round(x) : Math.round(x * 10) / 10).toString().replace('.', NUM.dec); }
+function fmtCompact(n) {
+  const a = Math.abs(n), en = LANG === 'en'; let s;
+  if (a >= 1e9) s = trim1(a / 1e9) + (en ? 'B' : ' M');
+  else if (a >= 1e6) s = trim1(a / 1e6) + (en ? 'M' : ' jt');
+  else if (a >= 1e3) s = trim1(a / 1e3) + (en ? 'K' : ' rb');
+  else s = String(Math.round(a));
+  return (n < 0 ? '-' : '') + s;
+}
+function fmtPct(p) { return (p >= 10 ? String(Math.round(p)) : String(Math.round(p * 10) / 10).replace('.', NUM.dec)) + '%'; }
+function slug(s) {
+  return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+}
+function initials(name) {
+  const w = String(name || '?').trim().split(/\s+/).slice(0, 2);
+  return w.map(x => (x[0] || '').toUpperCase()).join('') || '?';
+}
+function cyrb53(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0, ch; i < str.length; i++) { ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+async function hashPw(id, pw, alg) {
+  const s = SALT + id + '::' + pw;
+  if (alg !== 'c53') {
+    try {
+      if (window.crypto && crypto.subtle) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+        return 's256:' + Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (e) { /* jatuh ke cyrb53 */ }
+    if (alg === 's256') return null;
+  }
+  return 'c53:' + cyrb53(s);
+}
+async function checkPw(acc, pw) {
+  if (acc.isDefault || !acc.hash) return pw === DEFAULT_PW;
+  const alg = String(acc.hash).split(':')[0];
+  const h = await hashPw(acc.id, pw, alg);
+  return h !== null && h === acc.hash;
+}
+
+/* ================= Ikon (garis, 24px) ================= */
+const ICONS = {
+  utensils: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+  cart: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
+  coffee: '<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>',
+  car: '<path d="M5 17H3v-5l2-5h14l2 5v5h-2"/><path d="M5 12h14"/><circle cx="7.5" cy="17" r="1.8"/><circle cx="16.5" cy="17" r="1.8"/>',
+  bus: '<rect x="4" y="3" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M7 18v3M17 18v3"/><path d="M8 14h.01M16 14h.01"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  wifi: '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>',
+  home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  card: '<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>',
+  pill: '<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+  cap: '<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/>',
+  film: '<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/>',
+  repeat: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  package: '<line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+  shirt: '<path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
+  gift: '<polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
+  heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+  smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>',
+  plane: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+  tool: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  landmark: '<line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  briefcase: '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
+  award: '<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>',
+  laptop: '<rect x="3" y="4" width="18" height="12" rx="2"/><line x1="2" y1="20" x2="22" y2="20"/>',
+  bag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  swap: '<path d="M7 3 3 7l4 4"/><path d="M3 7h13a4 4 0 0 1 4 4"/><path d="m17 21 4-4-4-4"/><path d="M21 17H8a4 4 0 0 1-4-4"/>',
+  trend: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
+  fuel: '<path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"/><path d="M3 21h12"/><path d="M14 9h2.5A1.5 1.5 0 0 1 18 10.5V16a1.5 1.5 0 0 0 3 0V9l-3-3"/><path d="M7 8h4"/>',
+  userplus: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/>',
+  star: '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  wallet: '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  chevl: '<polyline points="15 18 9 12 15 6"/>',
+  chevr: '<polyline points="9 18 15 12 9 6"/>',
+  chevd: '<polyline points="6 9 12 15 18 9"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  settings: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+  pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+  chart: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+  list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+  sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/>',
+  eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  down: '<line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/>',
+  up: '<line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>',
+  scale: '<line x1="12" y1="3" x2="12" y2="21"/><path d="M5 7h14"/><path d="M3 14l2-7 2 7a2.5 2.5 0 0 1-4 0z"/><path d="M17 14l2-7 2 7a2.5 2.5 0 0 1-4 0z"/>',
+  info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  cloudoff: '<path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6"/><path d="M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><path d="M1 1l22 22"/>',
+  cloudup: '<path d="M16 16l-4-4-4 4"/><path d="M12 12v9"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>',
+  sunrise: '<path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="2" x2="12" y2="9"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/><polyline points="8 6 12 2 16 6"/>',
+  sun: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
+  cpu: '<rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>',
+  gauge: '<path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  droplet: '<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>',
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  phone: '<rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  umbrella: '<path d="M23 12a11.05 11.05 0 0 0-22 0z"/><path d="M12 12v7a3 3 0 0 0 6 0"/>',
+  receipt: '<path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  home2: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  road: '<path d="M8 3 4 21M16 3l4 18M12 5v3M12 11v3M12 17v3"/>',
+  plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/>',
+  ewallet: '<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M12 13v4M10 15h4"/><path d="M8 6V4h8v2"/>',
+  dumbbell: '<path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>',
+  paw: '<circle cx="6" cy="11" r="2"/><circle cx="10" cy="6.5" r="2"/><circle cx="15" cy="6.5" r="2"/><circle cx="19" cy="11" r="2"/><path d="M12.5 12c-3 0-6 3-6 6 0 2 2 2.8 4 2 1.2-.5 3.8-.5 5 0 2 .8 4 0 4-2 0-3-3-6-7-6z"/>',
+  gamepad: '<rect x="2" y="7" width="20" height="11" rx="5"/><path d="M7 10v5M4.5 12.5h5"/><circle cx="16" cy="11.5" r=".7"/><circle cx="18.5" cy="14" r=".7"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  percent: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  ticket: '<path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 1 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1z"/><path d="M13 5v2M13 11v2M13 17v2"/>',
+  cog: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14"/><path d="M9 14h.01M15 14h.01"/><path d="M8 17l-2 4M16 17l2 4"/>',
+  metro: '<path d="M12 2v3M8 2h8"/><rect x="5" y="5" width="14" height="13" rx="2"/><path d="M5 12h14"/><path d="M9 15h.01M15 15h.01"/><path d="M8 18l-2 4M16 18l2 4"/>',
+  bed: '<path d="M3 20V5"/><path d="M3 16h18v4"/><path d="M21 16v-4a3 3 0 0 0-3-3h-7v7"/><circle cx="7" cy="11.5" r="1.8"/>',
+  ship: '<path d="M3 15l1.5 5h15L21 15z"/><path d="M5 15v-5h14v5"/><path d="M12 10V4"/><path d="M9 4h6"/>',
+  taxi: '<path d="M10 2h4v3h-4z"/><path d="M5 18H3v-5l2-5h14l2 5v5h-2"/><path d="M3 13h18"/><circle cx="7.5" cy="18" r="1.8"/><circle cx="16.5" cy="18" r="1.8"/>',
+  luggage: '<rect x="5" y="7" width="14" height="14" rx="2"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><path d="M9 11v6M15 11v6"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+  snowflake: '<line x1="12" y1="2" x2="12" y2="22"/><path d="M4.93 6.5l14.14 11M19.07 6.5 4.93 17.5"/><path d="M9 3.5l3 2 3-2M9 20.5l3-2 3 2"/>',
+  leaf: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>'
+};
+function ic(n, s) {
+  s = s || 20;
+  return '<svg class="ic" width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[n] || ICONS.more) + '</svg>';
+}
+const WM = '<span class="wm" role="img" aria-label="SaKu"></span>';   // tulisan SaKu (topeng CSS di skin.css)
+const LOGO = '<img class="logo" src="data:image/webp;base64,UklGRiIYAABXRUJQVlA4WAoAAAAQAAAAewAAjwAAQUxQSBQKAAABoIf9fyFJ+lVVr+3xnG3btm3btm3b1tq27m5t7w6a1cZ0V+X3PEkqVZVK/x8RECRJchoVGtSCYc+NWcx9AFRd9BD161U7GOhiQFUtmm4A9L5x5Pq21sVfnVFdL439iLu+vREdy4xjwagmFTr62yKiZdmE2JaF1jVV8mJj9712HlJlO1cWwZur4KUZGkDNoxsQiUVQtBC7dAjo6vvDIR9GEG2nv0DieE1pdB2g2yVj+LE9LDY5EAylx97h+WWIWOHH9vD2EoQUzuXDv04h2hZVXpmsaaqGV9cLJ9iOsb1i48buoCmpBt2zgs9g9MXWPqApGF57vrLVMbZPtvVVC43L5W/zjrF909ofNMXC6/IRhB9bBi39QFNJ1T6+BF2UhM3qhFfz62FEiylZbOkNmirhdehHSUF4yVwpMXavy0bZ/NhSaaGHKTB277tWIq+kQrBtCGiBj733GxtYFUFE+QwMEp2qLpeMLvHhFQj9g8Ng4XXdv6w/elQq1zRDB6h/co2jZAdJUOF11Fcx4TQomA/tAwJAZ+qk3wkfXoESpi4BTMD6XDfNkcuBYnMu0qvIzh9uQSRylJTeLTm89v8qxZoFIqpAH3noVGmnjCry4aUGW3uDJi+8+t40wxFeVYVmULXDc86TGrWQNc9OuI9dFS6sWZz+t80rxWj1ja5B15sXOcJLMQi2DvGJAXDVIkGzUG7VUu/XbbuhLs1Cwc2+7LQWLrwUxd7a0weaATdYWEFVF9KBP2iGH7sfibpbK4irdvBxwYOZTZQ9CnHL47R7+rCL0VLULKoW3d8fRKbphmHomqCewP45FfPKUZ9mnGcAGM6fUTCk4aTXfLRUDGxOnUuPDbmonU+59vQ9nC8dHsWKgor9JGNOA+YhnBB0vmxKFhHL404AnbMdEjZRzwMx993R3N9WqPrftJC7zEeo3wNMGvA5Wgom87a3dnJROkDTS5u4TuGIg2tY36rJEKKWshDN1waw0wnxVGTnD+LitmzbZgOE4D60VFPrn29gyuWazPcZ1wmBhY+BBnPQUkutfXaAazJ3v3Col5N1i4wG2C6DRKUCtvjWnq7J3Ou+xd6mIjZu6gcXoq1OSuG8qzuLkzkE0PeOZV6nIgQjdfA+qSijxp4pKmD8jponNnqf9xEM1+mj0FJDVf4+jitgwsDe7Y0WwYzT26q+1ya0VSid5Z8O5k5YherYP0rOywTeVwO3IQneo/jZXqxsCZV2yQTCX0j3RW1NG5KgVenrPQRlhHc3LpopYZZNsK1m+wiSYFX5+71dVfeLJ1t80PslUldHCbJdxL/aR6D4nQ0vrbGKqQ6CMqivbUcSXOkMv9wIoIvVvp9EkBSLgitRfjcPoZuD8tj8RC3zEKbUwd/ksFKo2ISgHOoYAbWLO3u7lpEjf4qTQr7DcW4h50MQWFStupu1C6EKnT4iXjQT2VLZItKINkre7MjY/27o6ubR7ZwpxVwslkzlOyo2SiPW1BxGIlvNur4r56GFnCl147BoIRpNpjM57l3eaodamXANZ8ypgnah8er+RdvazUQqlckVS+xdIg11FJlz7VEniBoVp3Z9am0lEU4mU5lMnlmFKAhfH/8+DEAXn1Xs8uz8ZWviZjqVzmTzhSI1GyUSqZcFa85jTmJKfD3o5Wn/zpzXkjSpyuUKTFtEQSy0vtrPTWmnfbtqxaxJSxPJJGfFYkdZZLJqmpSBiI3TjnVT3c4Z3r528eIFG1ImZ4VCyWFyV4Nb/UMIPqHToi0K7H6XjN7WtmXt0k3RpJnKcGMUS5zJhq3862sEHuykebvbhy1av2rV1pawySxLrcD22gQlE2uqjyCRYJ00gdr9wcn/zZuycN3qLXTMZIrtZbpi2wRlk2j2j4W3QciZzcY5f2xbO3PyjJmz1rbEzVSaKmalUsWyCUon3twQ9YmFn0Mn56WJPYYm8/F1c2fPnLk8njKTnGLWwVkA+P5g47qeOl+4NTj9f3PTxkh42dx5G9lRKY4iNef4qm22yanAjabpcO9/C9dt3dQa27A8QrdSlcnk8k4LhkafWDhMYM9tnj13fevWrbGYmTRNZtk8bR3cXgyGqF9I+XCNQ4fbt6xYMn9pOBJLJk3OHJWM00HRUNPuBwtng8bbacsWLl+5fHPcTCZTbMlms/z4LuVEqZpm4R1aiKvejTPWL160MWYmEiaFjknJs9bBf8nAPvhaEbT3cFyGejy9af2mhJlg46SZGx0tLxwtKBdfKxtXduHnRXWrsq2tcerBiglXTVjr4EcLlrAPLBzL7THgskTMZFuTJueWy1PzMzFTY35cwa/B4FbvtWym/nThqzdVpRI3MQuYhiFtvngDOjHrPC0WjSXMFD2CU2yr8IggDwv74j2GDk1r0/F4gnNzqI6OMndE0Kv6iC++BIO7vJ3ImiabGDmPKtOtVAdPQ9QXn/McnM2k6JLO5AqsljB/ixBUnxDjoFSGLcxK5YrtmJ4oQcwXn/EcGDX5hHavJIG7NEnhgHAszX2Rjgr1UIndojIOOyhmsnO8Mq/UIVy3kz/e5Tk4lS3SwObuGKpE+5Cadl+8yXMIl1Lq3R5d0rnWH2/xHIqIRL17Vzgc6sK+eApCPCouFfzILw/wHKzmPTu8Gnx9sJSGYLEZhrTKWB2k5q3KKaAPavGD/aDC2HgJhPxcv7bLeBfDgEOVtMWdNa0x6hXbQpzfBDrjSCW9LwYD6j3CKtjKm7o4pomHq2iz2bWLxogX2HTk32u6AmigKKRSPpLNSAasQtvTraZL+JtcqlLGN/jTyx9IxVWR0ac47lmrSgWHduJ/qjOw4qLsP45yPLAn4AjlbGpP5+nln9hBBDcCIt8d4LhnLeRI1W7Jj+oNuuO60cA5LJO55tz2Uh2A7vIUinI9zEL8KgSC22jQ860IsmXDs038DR93DlLq0YvEraDpAIIXNFz8yocPntqHD2yl8JK4Q3cDXfSzCcKKv3+rLraFmPvzOADDwzOZdGEenlFEtb+/Jwtiz0/m+kAJtfqJgbyqMljiLrm1F58+AXBI4IH97/VdWPoE8+g5HBGwmnFlpyBU8H2ENSgy7DhH4lYXNvcYwmGOnhQghwWVUvGP9mX3swL+X5YgsGzEDc84bowHzaHy592IC+7owydzdUGYmnJJiA9sFThIdjKPO9kx3VKDA6Umc2HYCY6UUoWDJaZU8r1dHdMtdThEmoq9uQOfzEpxqCS18u4ajymlel2xbapu7+FHBVtPJaTUouu68cmsIEf4VrOucjyqpyTHIfH1wNw/RwKvFOUoP6fnsa8PECo1P/h5kMprn1K9rlgW4vpHBwMYSisADfpuQ+KhTy29tbdgbLXfhhLLNaWmX+raIRXecRqWibhPjTgJBB5V8PYdVixCFxbYmY/3cu2Qiu/Wev3u3Nb6wnZe+pTqh8BZw7flivG5t/YVplT1SICBu+9F/SGkkAJWUDgg6A0AAHBDAJ0BKnwAkAA+KRSHQqGhCZVusAwBQloAMzODXgB1w2Mu7/jt+03/A+W2vv3v77ft9/m+w1Sr2P/tv7B+UHbh8wD+Dfxz+3f1X9sP7b3gPMB/EP6d/3P7X7sPoh+zP4AP5n/afV2/w3sQ/0v/h+wV/Lv6x6rH+j/ZP4Ff2G/8v+h+AL+Rf0v/nfnv8gHoAegB1yPWV7i3td+0n7eZm0OfkA/jX8n4N0AH5d/Qv9xxyfXvzUf9j5Tnin/Wv87+p/wDfx3+b/7/+++63/P/+D/OeeX81/yf/n9wP+S/0P/e/2n/Jdyr9lvYp/WJkz0K4lHEHbo0xzDl3ChVrwmzVh3BjOAKf6JPOq8Baa8fkv416BwPfNrie4wfiOG34AzKZcSl0+n4TxFp+Hjwvnqjg0tXx9jKqWb2IkX8iN1e9CnqesigTVBe0f316zUlY/wRHG8JWNGFHgrSCZJ2bBoyVF4MEwIdN1Tj9+hr7qJpoLnILJG/EvQyhn8UgqFE3+6G4N2KRzlolkL/s2Scm61wV51OnY2Oq2scfDRkwVBAKs3wbbOuqIj9lNDerutgitahAmzXLuXDECbf77A8xbze9Vo6aIdstkvneWZ03Ze3p7vgxettbYzdgGUk/0COZ7TPQ8K6bt02OSaiIWIpMsGv/qmRmzNc/eB4H7uQ0G3VuRheK1P0Ek/cKHY4kpgxThD7Mk2gZVpKuTFND0OAaEeFx5uHxBgAAP7/j7wBF//VvMnWKDcmUCx+Mhj5Pm8og8bUIvNNy7qCXwO97uvmuublJRyB4L5EyMpV04WN8q2b75nlPKGnaY36B6vTDtf5L//mY2soUd79Mg1vITzNgOlSb1r7nbLloBgbhy0GfG8+Yfp58SdLoVKx+NLyYbbNw50RvL8eoxr5LHqpab1nsE/Qw1r5ot6sj1El1iuF5QbPH9MLvV9rO3e6BqgSocccI+rzkIqtnK/69bVs95s0VvQEmdqnKhBGhXETOPkKytXposfSVrRLjeyoza4MdfhvCZXXYMDq68F4pPikZ5BXuWvZzCTU+DutPs6zcNwT9gcrjCjq3mUCnIX8Q1ZhHq31O2wq5/waggPRDqUnaW9400w2NTkE3VqZlLyO3LsQbwwb1pWrB0WO/ulAIxJmQPU/lBkLf9rYAHdL5A2Q/SiNzr+L//nbUAKH+xDZDl9C6ce05di/4jZkHlJvZie7EHizwY6/JkNBV5bhBz2nJS3qPm9pqjs4Rhi3+gTwZCLyQkLxQ0EMhT0Pvm6wimoePgeM4W0GeUrBET0b7+i2VwyV+tfsLJBAbFNT73VvuwsfkCfw577nFKO24EvRgWUMlqgSEfDp+Xqg8EiFZb84yN/0BQTXE9vKYOgh/3BED+93kFF82ZecfEX6fJGxsCLFtGg3RwHvh/JI8EmhCN7sNbrF++PdY1AF36vBS9Ku7ZVio+MfR02nEVojt8tKi4aI9LZzBMTt++W6CnwAlNw5IHLvLZBEOmhJYgK99cJZVSdtvRshtd1QQP308fR/8yHdpEE6RMJACR0dzzobO1MraFX3aEoz3KCkYOSnGEBllFb271BF83QJMqwJVWhnhaj1WfgZWiG8YzptQDA0KeX49Rl4mbfML53+WVDCIHtcCCFwgS51N6cET394C/P4VZB0I/G75H9gM++ALdHR89OHM94JgBjEPRc54TBCrS5zY1FV8mgJQoiKxrS9XFgJij4FapHSvaBXxLflHVwuA1p3cz6FDgEtg/PfJQjmEdqwrwb69QO7EYWNpDmO00zVRIIT5doFZug9wt9qUUH8q+5T7ZetB5chXeeJWWCIh3McRzN7t/MM1Cp6SyIduWXLmEmSov4p21DJIZrQVflhsdEFC47uyMoJTpaSI0RFXttOmqM6wssUxAbr4RWU3MjwUsHCMmfzkab9S2Y9/TxdqHhf7M9s0Z7QnL/m44uf89e+VeKK33HDuXZITsZLVrj5WC3YnVGdVqyWpDs4t+dedzW9or/Cjcf12QMk3Re+ruihMcILd2m6z3qlRDtIdEO1FWpxhQZ4cScSU3O0v2La8JuGLr72HlU+aYxw9+KVVSAIH2r1OxdTZFPALhgK6i3EgdMHdXvLLg8FWas6xAeK/Jx5aBQTeXBJnxvnPlRBIcwaDdQvFfN8nTyuJxKxuTmgvWndyQZ81RjsLdMSsvAjyXBS2S4elp+1ymO4Hh1/zh0XAgnBknhs0XniHv0+kb5BP5zo5/eFdvmBZ+vdxq2//0NMa1Bhr6BVk/jXwykMjDAido4QC4wZNN1ccTLGx4cdW/jPxY7nn4O7xBjJ8ZPwmPpLfI88unW7R+VTAhxcBq0EdH2gBuIh0fT4c//NwGRJOnV/Unp4Rke7oHOsYiq5TtZJs6LPXc+CaUlwu+I/ucnrhUcQAc/f85TsRc/MbCzccyYh74LXH6q4j+bP91/idxkyXODvCyHrSDugxFewt+JF/COXcRR5xhRp5h1dojz8u8efN/z0+MT9Fu+rYCmuSNutYI9rWdbfkDj4eEhUdLoRefVN1noDKMy47R4a26sLBZ19Cz7PLyBXDJsds+IyiKTbdYnbkG9PgBqNZn5s8OQouvy1w8v8H26MRZWrtXJygYgPKQHSoxZlx6Ua3vECAmrOlxvHYLk91E3I+fBQES9F2QewGxRY7GUlCPL05LffHGo828/BpI6xBDVVPJMi2/h/KYzcAHu9YTpzS6Dx8Bg6NWfx9NhzDXNPRL451JOajnunNtZjsPy66WNJrk6+QbMpJiy0/oYBU6IoouNlKTX2fYCx6iQsUfvcWams3wzBfjVi+jPmVEkqGDj8vbHFTqJnr0tXKLQmiNJNBVAoanfnvmnfES5+OXni2DRF1ajynZ7PgLP4UK0cykL8YElgfpT1ClBwYDkVdiK5v2X5hiwNUS8pnCdo0GStW2D/7su3u7MZj8jzzNafk4TnJPNReRkyIWc9AZELvTUi95Ll3/nkH1Mu+JeH0TqxvpGnohdAkHUVUiiRwlcUzGEbGqMmmpoUFlWYwIIX9tsn+RWMdpBtLxzzXqKG4GMHgTDbK3hRaOmX9ZYTD3a54xbVAcWj6/TZPxkQ0wO3B4E+tFAluhBxA6RCUDbQ1ypceLMe6l57Lq0870h1FIzfA0cxBjqiG7JaSQTopCcmGvK8erc7Dx9bk4YcpHj8LwM05CV5IQ/84SeaFEOLOMK1lTC1wPsz2xJ3IW09vdM8EPEulO8lTFFxzE/zcC9Jt31pfIF83RLfnXlNx6lnH6fhJW2SkntJUO9aewAeD4qUZyvtYxVvW3GMVmU0x4dsohGJu6f7rLh+0vPu9IAGW4PpUFTe3B/70gLTgQVP+/k6MUdSUJ8alZERi3YwO4OYciIesquVrZF7xI7Pxypc1n+NG4xQM/2Zv0NAoi7j133/NhmftUlpka/qLfX6Kr7uXdFZbuKKdBVBOCmM/WxbriuN/X5aA7I4+uPyjC/r1+wAH5eCcMROKAeqZBBVB7jknDJCw+0Wkn380P1j+/vxcGolJuYo62k1BTGzl//2jFNp3GTF03HkMwR3g0Y9j9ckred5sQXov236hpaEH0V1sHgk07mk+KeBdADu3kghp/7a75TH5MZcFgHPk6W/yxMhCNJNdhVY4GpdV4Ydghozv4+768MfI2zqa2tcpkKpCWTIMVIwpnRIuWI4SEmZeBNn6OqfpL4jvmAhYQRrGuq4doA/qcyzbZZK7NBPfu8nV/vkkggJkjK8bFqS7Cf4W+RSejkGqZ3Q+P4q5hH0bwQptYn/8Qq3ZXHfONtIpdH7H3xU/Qm1rNs2u881elu/VFDOam8TlbgR0SuX36rOZFKmXopfaQfhOZhp8rsb6B5/QuhL/3RBinFRYRf/ZZwtMVxFQ8/FBXUqLV6QL+jreq0QgBI0AeFoQyl5w98SO6ksCtaXMmSF1U//IghdCeWcPKB6DWFP0+1dPHmueCL0MtSVFe7GKE6bZpWfqWZsnf40UcIeNOVJUhT1a3CaA+ejRUS/78L4lNobvIg/BQThEjXJXU+QShynoHVvCFXP9jKvf21v6TduNlDEdAsMUxs8SpFHPoygRtcBBjscIo7eKVpjpbKhaqVsfQ/iB70TIavP16g1kiAHr/OchXr8Z8z1Bcbzq4VCFZ9kXKsTf4RmdHw+JWAks+oDqOPWmmds79w7CdVvP8WOZQUHgc0wZv8t/2nWvp6KrYTvfuoQrjOeAY/fbBm0yHcynu5HlYpXp5vRonhey/UiCwdpSbEzSQVYwhclSIEE6jb6hM4nS+8/LmC44t7vCHcItTOnr1WBBk0nKd0FNNFHJXc4DScdri/yEn1qld6dIH/xI2mPcYEpadMl4K4b7qUACAyPKVD/ZFI5oy4K0DA6+fC760TuV2rB5HV432KXf+02lBU0mDH5FX7+kflq20RIy5BzpTTjoKxUxUVL2r5+PYf7qtV/43n2ok/sFrqLxeZq8CZSKl2Ob1Hh9dqtInQTtuWx+H6TJaC6BZpfnug9s4EKNTzK4laPB6rqct4KkW8kQYUmT7VP+k4Lq6fOMvrM2oSi9ENPGFi1KbYwgs8h7HwOVzEQ2aE/BseKysY7dO0nx/479pp85pgPHCfYL+Pc2mk4/3NOt369Ue6IxxGC1RaIOsfYdoBZ6bweuBvwWS4IRmRRtvRoXs2ujqNhzWjU9alQS5q3neUAQBobjWW+dDD3w9gjau36r2EPpqIstEHkMWLKi9s4+jIppy55Z84AAPggAAAA" width="31" height="36" alt="" aria-hidden="true" decoding="async">';
+
+/* ================= Kategori ================= */
+const GROUPS_OUT = [
+  { id: 'makan_g', label: 'Makan & Minum' },
+  { id: 'harian', label: 'Belanja & Kebutuhan Harian' },
+  { id: 'rumah', label: 'Rumah & Tagihan' },
+  { id: 'transport', label: 'Transportasi Harian' },
+  { id: 'wisata', label: 'Perjalanan & Wisata' },
+  { id: 'kendaraan', label: 'Kendaraan Pribadi' },
+  { id: 'kesehatan', label: 'Kesehatan' },
+  { id: 'keluarga', label: 'Keluarga & Sosial' },
+  { id: 'gaya', label: 'Gaya Hidup & Hiburan' },
+  { id: 'cicil', label: 'Keuangan, Cicilan & Pajak' },
+  { id: 'simpan', label: 'Tabungan & Investasi' },
+  { id: 'lain', label: 'Lainnya' }
+];
+const GROUPS_IN = [
+  { id: 'tetap', label: 'Pendapatan Rutin' },
+  { id: 'lepas', label: 'Usaha & Sampingan' },
+  { id: 'simpan_in', label: 'Tabungan & Investasi' },
+  { id: 'pinjam', label: 'Hutang & Piutang' },
+  { id: 'lain_g', label: 'Lainnya' }
+];
+const mk = (id, type, label, group, icon, slot) => ({ id, type, label, group, icon, slot });
+const CATS_OUT = [
+  mk('makan', 'out', 'Makanan & Minuman', 'makan_g', 'utensils', 1),
+  mk('sarapan', 'out', 'Sarapan', 'makan_g', 'sunrise', 4),
+  mk('pesan_antar', 'out', 'Pesan Antar Makanan', 'makan_g', 'bag', 5),
+  mk('makan_siang', 'out', 'Makan Siang', 'makan_g', 'sun', 2),
+  mk('makan_malam', 'out', 'Makan Malam', 'makan_g', 'moon', 7),
+  mk('kopi', 'out', 'Kopi & Jajan', 'makan_g', 'coffee', 6),
+  mk('dapur', 'out', 'Belanja Dapur', 'harian', 'cart', 3),
+  mk('rumah_tangga', 'out', 'Kebutuhan Rumah Tangga', 'harian', 'home2', 1),
+  mk('gas_galon', 'out', 'Gas LPG & Galon', 'harian', 'flame', 5),
+  mk('laundry', 'out', 'Laundry', 'harian', 'shirt', 3),
+  mk('online', 'out', 'Belanja Online', 'harian', 'package', 5),
+  mk('pakaian', 'out', 'Pakaian & Fashion', 'harian', 'shirt', 8),
+  mk('gadget', 'out', 'Gadget & Elektronik', 'harian', 'phone', 2),
+  mk('buku', 'out', 'Buku & Alat Tulis', 'harian', 'book', 7),
+  mk('listrik', 'out', 'Listrik & Air', 'rumah', 'zap', 4),
+  mk('pulsa', 'out', 'Pulsa & Internet', 'rumah', 'wifi', 7),
+  mk('sewa', 'out', 'Sewa & KPR', 'rumah', 'home', 7),
+  mk('perbaikan', 'out', 'Perbaikan & Perabot', 'rumah', 'tool', 2),
+  mk('service_elektronik', 'out', 'Service Elektronik', 'rumah', 'cpu', 4),
+  mk('servis_ac', 'out', 'Servis AC', 'rumah', 'snowflake', 6),
+  mk('art_jasa', 'out', 'Asisten Rumah Tangga & Jasa', 'rumah', 'users', 3),
+  mk('tanaman', 'out', 'Tanaman & Taman', 'rumah', 'leaf', 5),
+  mk('pbb', 'out', 'PBB & Pajak Rumah', 'rumah', 'landmark', 8),
+  mk('angkot', 'out', 'Ojek Online & Angkutan Umum', 'transport', 'bus', 8),
+  mk('krl', 'out', 'KRL Commuter Line', 'transport', 'train', 1),
+  mk('mrt_lrt', 'out', 'MRT & LRT', 'transport', 'metro', 2),
+  mk('transjakarta', 'out', 'TransJakarta & BRT', 'transport', 'bus', 3),
+  mk('taksi', 'out', 'Taksi', 'transport', 'taxi', 6),
+  mk('liburan', 'out', 'Liburan & Perjalanan', 'wisata', 'plane', 4),
+  mk('tiket_pesawat', 'out', 'Tiket Pesawat', 'wisata', 'plane', 2),
+  mk('hotel', 'out', 'Hotel & Penginapan', 'wisata', 'bed', 7),
+  mk('kereta_api', 'out', 'Kereta Api', 'wisata', 'train', 5),
+  mk('bus_antarkota', 'out', 'Bus Antar Kota', 'wisata', 'bus', 6),
+  mk('kapal_ferry', 'out', 'Kapal & Ferry', 'wisata', 'ship', 1),
+  mk('sewa_mobil', 'out', 'Sewa Mobil & Motor', 'wisata', 'car', 3),
+  mk('tour_travel', 'out', 'Tur & Paket Wisata', 'wisata', 'luggage', 8),
+  mk('visa_paspor', 'out', 'Visa & Paspor', 'wisata', 'book', 4),
+  mk('tiket_wisata', 'out', 'Tiket Wisata & Hiburan', 'wisata', 'ticket', 2),
+  mk('oleh_oleh', 'out', 'Oleh-oleh', 'wisata', 'gift', 5),
+  mk('asuransi_perjalanan', 'out', 'Asuransi Perjalanan', 'wisata', 'shield', 6),
+  mk('mobil_perbaikan', 'out', 'Perbaikan Mobil', 'kendaraan', 'tool', 1),
+  mk('mobil_perawatan', 'out', 'Perawatan Mobil', 'kendaraan', 'gauge', 2),
+  mk('mobil_sparepart', 'out', 'Sparepart Mobil', 'kendaraan', 'cog', 7),
+  mk('mobil_aksesoris', 'out', 'Aksesoris Mobil', 'kendaraan', 'sparkle', 5),
+  mk('motor_perbaikan', 'out', 'Perbaikan Motor', 'kendaraan', 'tool', 3),
+  mk('motor_perawatan', 'out', 'Perawatan Motor', 'kendaraan', 'gauge', 6),
+  mk('motor_sparepart', 'out', 'Sparepart Motor', 'kendaraan', 'cog', 8),
+  mk('motor_aksesoris', 'out', 'Aksesoris Motor', 'kendaraan', 'sparkle', 4),
+  mk('bensin', 'out', 'Bensin & Parkir', 'kendaraan', 'car', 2),
+  mk('tol', 'out', 'Tol', 'kendaraan', 'road', 1),
+  mk('charge_ev', 'out', 'Charge EV', 'kendaraan', 'plug', 5),
+  mk('cuci_kendaraan', 'out', 'Cuci Motor/Mobil', 'kendaraan', 'droplet', 3),
+  mk('pajak_kendaraan', 'out', 'Pajak Kendaraan (STNK)', 'kendaraan', 'receipt', 6),
+  mk('asuransi_kendaraan', 'out', 'Asuransi Kendaraan', 'kendaraan', 'shield', 4),
+  mk('sehat', 'out', 'Kesehatan & Obat', 'kesehatan', 'pill', 5),
+  mk('dokter', 'out', 'Dokter & Rumah Sakit', 'kesehatan', 'heart', 8),
+  mk('lab_medis', 'out', 'Lab & Medical Check-up', 'kesehatan', 'droplet', 3),
+  mk('gigi_mata', 'out', 'Gigi & Kacamata', 'kesehatan', 'eye', 2),
+  mk('vitamin', 'out', 'Vitamin & Suplemen', 'kesehatan', 'pill', 4),
+  mk('bpjs', 'out', 'BPJS Kesehatan & Ketenagakerjaan', 'kesehatan', 'heart', 3),
+  mk('hiburan', 'out', 'Hiburan & Nonton', 'gaya', 'film', 2),
+  mk('langganan', 'out', 'Langganan Digital', 'gaya', 'repeat', 1),
+  mk('kosmetik', 'out', 'Skincare & Kosmetik', 'gaya', 'sparkle', 6),
+  mk('olahraga', 'out', 'Olahraga & Gym', 'gaya', 'dumbbell', 6),
+  mk('hobi', 'out', 'Hobi & Koleksi', 'gaya', 'sparkle', 7),
+  mk('game', 'out', 'Game & Top-up Game', 'gaya', 'gamepad', 3),
+  mk('hewan', 'out', 'Hewan Peliharaan', 'gaya', 'paw', 4),
+  mk('rawat', 'out', 'Perawatan Diri', 'gaya', 'scissors', 3),
+  mk('anak', 'out', 'Anak & Keluarga', 'keluarga', 'smile', 6),
+  mk('bayi', 'out', 'Popok & Perlengkapan Bayi', 'keluarga', 'smile', 2),
+  mk('sekolah', 'out', 'Pendidikan & Kursus', 'keluarga', 'cap', 7),
+  mk('hadiah', 'out', 'Hadiah & Donasi', 'keluarga', 'gift', 4),
+  mk('zakat', 'out', 'Zakat & Sedekah', 'keluarga', 'heart', 3),
+  mk('iuran', 'out', 'Iuran-iuran', 'keluarga', 'users', 2),
+  mk('kirim_keluarga', 'out', 'Kirim ke Keluarga', 'keluarga', 'users', 5),
+  mk('acara', 'out', 'Acara & Kondangan', 'keluarga', 'ticket', 8),
+  mk('ibadah', 'out', 'Ibadah & Keagamaan', 'keluarga', 'sparkle', 1),
+  mk('cicilan', 'out', 'Cicilan & Kartu Kredit', 'cicil', 'card', 8),
+  mk('cicilan_kpr', 'out', 'Cicilan KPR', 'cicil', 'home', 7),
+  mk('cicilan_mobil', 'out', 'Cicilan Mobil', 'cicil', 'car', 2),
+  mk('cicilan_hp', 'out', 'Cicilan HP', 'cicil', 'phone', 5),
+  mk('cicilan_motor', 'out', 'Cicilan Motor', 'cicil', 'gauge', 6),
+  mk('cicilan_elektronik', 'out', 'Cicilan Elektronik & Furnitur', 'cicil', 'cpu', 1),
+  mk('paylater', 'out', 'Paylater & Pinjaman Online', 'cicil', 'card', 3),
+  mk('cicilan_multi', 'out', 'Cicilan Multiguna', 'cicil', 'briefcase', 4),
+  mk('hutang_bayar', 'out', 'Bayar Hutang', 'cicil', 'down', 8),
+  mk('piutang_beri', 'out', 'Beri Pinjaman', 'cicil', 'up', 3),
+  mk('asuransi', 'out', 'Asuransi', 'cicil', 'shield', 1),
+  mk('topup_ewallet', 'out', 'Topup E-Wallet', 'cicil', 'ewallet', 6),
+  mk('pindah_saldo', 'out', 'Pindah Saldo Antar Rekening', 'cicil', 'swap', 3),
+  mk('topup_emoney', 'out', 'Topup E-Money (Kartu)', 'cicil', 'card', 2),
+  mk('biaya_bank', 'out', 'Biaya Admin & Bank', 'cicil', 'percent', 5),
+  mk('pajak', 'out', 'Pajak & Administrasi', 'cicil', 'landmark', 6),
+  mk('arisan', 'out', 'Arisan', 'cicil', 'users', 4),
+  mk('tabung', 'out', 'Setor Tabungan', 'simpan', 'wallet', 3),
+  mk('inv_setor', 'out', 'Setor Investasi', 'simpan', 'trend', 7),
+  mk('denda', 'out', 'Denda & Tilang', 'lain', 'alert', 8),
+  mk('darurat', 'out', 'Darurat & Tak Terduga', 'lain', 'umbrella', 3),
+  mk('lain', 'out', 'Lainnya', 'lain', 'more', 5)
+];
+const CATS_IN = [
+  mk('gaji', 'in', 'Gaji', 'tetap', 'briefcase', 3),
+  mk('bonus', 'in', 'Bonus & THR', 'tetap', 'award', 4),
+  mk('komisi', 'in', 'Komisi & Insentif', 'tetap', 'award', 5),
+  mk('lembur', 'in', 'Lembur & Tunjangan', 'tetap', 'clock', 6),
+  mk('pensiun', 'in', 'Pensiun & Santunan', 'tetap', 'landmark', 8),
+  mk('beasiswa', 'in', 'Beasiswa & Uang Saku', 'tetap', 'cap', 1),
+  mk('freelance', 'in', 'Freelance & Proyek', 'lepas', 'laptop', 1),
+  mk('usaha', 'in', 'Hasil Usaha & Jualan', 'lepas', 'bag', 2),
+  mk('sewa_in', 'in', 'Hasil Sewa (Kos/Properti)', 'lepas', 'home', 4),
+  mk('tab_tarik', 'in', 'Tarik Tabungan', 'simpan_in', 'wallet', 3),
+  mk('bunga', 'in', 'Bunga Tabungan', 'simpan_in', 'landmark', 3),
+  mk('inv_tarik', 'in', 'Cairkan Investasi', 'simpan_in', 'trend', 7),
+  mk('hutang_terima', 'in', 'Pinjaman Diterima', 'pinjam', 'down', 8),
+  mk('piutang_terima', 'in', 'Pelunasan Piutang', 'pinjam', 'up', 3),
+  mk('investasi', 'in', 'Hasil & Dividen Investasi', 'simpan_in', 'trend', 7),
+  mk('jual', 'in', 'Jual Barang Bekas', 'lepas', 'package', 5),
+  mk('keluarga', 'in', 'Kiriman Keluarga', 'lain_g', 'users', 5),
+  mk('hadiah_in', 'in', 'Hadiah & Angpao', 'lain_g', 'gift', 8),
+  mk('cashback', 'in', 'Cashback & Pengembalian', 'lain_g', 'repeat', 6),
+  mk('reimburse', 'in', 'Reimburse & Ganti Biaya', 'lain_g', 'receipt', 4),
+  mk('lain_in', 'in', 'Pemasukan Lainnya', 'lain_g', 'more', 2)
+];
+const CATS = {};
+CATS_OUT.concat(CATS_IN).forEach(c => { CATS[c.id] = c; });
+const catOf = id => CATS[id] || { id, type: 'out', label: 'Lainnya', group: 'lain', icon: 'more', slot: 5 };
+
+/* ================= Tabungan & investasi (saldo terpisah dari kas) =================
+   Setoran (keluar) dan penarikan (masuk) hanya menggeser saldo kas: setoran mengurangi saldo, penarikan menambahnya.
+   Keduanya BUKAN pengeluaran dan BUKAN pemasukan, jadi tidak masuk Rekap, grafik, kategori, perbandingan maupun anggaran.
+   "Hasil" (bunga, dividen) langsung masuk ke saldo tabungan/investasi dan tidak menyentuh kas sama sekali. */
+const POCKETS = [
+  { id: 'tabungan', label: 'Tabungan', slot: 3, icon: 'wallet', cats: { setor: 'tabung', tarik: 'tab_tarik', hasil: 'bunga' }, hasilLabel: 'Bunga', hasilBtn: 'Catat bunga' },
+  { id: 'investasi', label: 'Investasi', slot: 7, icon: 'trend', cats: { setor: 'inv_setor', tarik: 'inv_tarik', hasil: 'investasi' }, hasilLabel: 'Hasil', hasilBtn: 'Catat hasil' }
+];
+const POCKET_OF = {};
+POCKETS.forEach(p => Object.keys(p.cats).forEach(k => { POCKET_OF[p.cats[k]] = { p: p.id, k }; }));
+/* null bila bukan kategori simpanan, atau jenisnya tidak cocok (setor harus keluar; tarik dan hasil harus masuk) */
+function potOf(t) { const p = POCKET_OF[t && t.cat]; return p && ((p.k === 'setor') === (t.type === 'out')) ? p : null; }
+function isHasil(t) { const p = potOf(t); return !!p && p.k === 'hasil'; }
+/* Hutang & Memberi Hutang: uang pinjaman yang berpindah. Sama seperti simpanan, BUKAN pengeluaran dan BUKAN pemasukan; hanya menggeser saldo kas.
+   k 'setor' = uang keluar dari kas, 'tarik' = uang masuk ke kas. */
+const DEBT_OF = {
+  hutang_terima: { p: 'hutang', k: 'tarik', t: 'in' }, hutang_bayar: { p: 'hutang', k: 'setor', t: 'out' },
+  piutang_beri: { p: 'piutang', k: 'setor', t: 'out' }, piutang_terima: { p: 'piutang', k: 'tarik', t: 'in' }
+};
+function debtOf(t) { const d = DEBT_OF[t && t.cat]; return d && d.t === t.type ? d : null; }
+/* catatan simpanan (setor, tarik, hasil) dan pinjaman: dikeluarkan dari hitungan pemasukan dan pengeluaran */
+function isXfer(t) { return !!potOf(t) || !!debtOf(t) || accXf(t); }
+/* Pindah saldo antar rekening dan Topup E-Wallet: uang hanya berpindah dari rekening acc ke rekening to, jadi bukan pengeluaran
+   dan tidak mengubah saldo total. Tanpa rekening tujuan (to) catatannya dianggap pengeluaran biasa (data lama). */
+const ACC_XFER = { topup_ewallet: 'ewallet', pindah_saldo: 'any' };
+function accXf(t) { return !!(t && t.type === 'out' && ACC_XFER[t.cat] && t.to); }
+/* pengaruh ke saldo kas: bertanda + untuk masuk, - untuk keluar; hasil dan pindah saldo antar rekening tidak menyentuh kas */
+function cashOf(t) { if (isHasil(t) || accXf(t)) return 0; const a = Number(t.amount) || 0; return t.type === 'in' ? a : -a; }
+/* pengaruh bersih setoran dan penarikan pada kas dari sekumpulan catatan (setoran negatif, penarikan positif) */
+function xferNet(list) { let s = 0; for (const t of list) if (potOf(t)) s += cashOf(t); return s; }
+
+/* ================= Periode bulanan = periode gajian =================
+   Tanggal mulai periode (CYCLE.day): 1 = bulan kalender. Bila 25, satu periode berjalan dari tanggal 25 sampai 24 bulan berikutnya.
+   Tanggal yang tidak ada di bulan pendek dipangkas ke hari terakhir bulan itu. */
+const CYCLE = { day: 1 };
+function cleanCycleDay(v) { const n = Math.round(Number(v)); return n >= 1 && n <= 31 ? n : 1; }
+function setCycleDay(v) { CYCLE.day = cleanCycleDay(v); }
+function cycleStart(y, m, D) { return new Date(y, m, Math.min(D, new Date(y, m + 1, 0).getDate())); }
+function dayDiff(a, b) { return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 864e5); }
+function cycleOf(A, D) {
+  D = D || CYCLE.day; const a = startOfDay(A);
+  let st = cycleStart(a.getFullYear(), a.getMonth(), D); if (a < st) st = cycleStart(a.getFullYear(), a.getMonth() - 1, D);
+  return { start: st, end: addDays(cycleStart(st.getFullYear(), st.getMonth() + 1, D), -1) };
+}
+function cycleName(rg, withYear) {
+  const s0 = rg.start, e0 = rg.end;
+  return s0.getDate() + ' ' + MONTHS_S[s0.getMonth()] + (s0.getFullYear() !== e0.getFullYear() ? ' ' + s0.getFullYear() : '') + ' – ' + e0.getDate() + ' ' + MONTHS_S[e0.getMonth()] + (withYear ? ' ' + e0.getFullYear() : '');
+}
+/* nama periode untuk ringkasan: "Oktober" (kalender) atau "25 Sep – 24 Okt" (gajian) */
+function cycleLabel(rg) { return CYCLE.day === 1 ? MONTHS[rg.start.getMonth()] : cycleName(rg, false); }
+/* kunci periode = bulan tanggal mulainya, mis. "2026-09" untuk 25 Sep – 24 Okt */
+function cycleKey(rg) { return ymd(rg.start).slice(0, 7); }
+
+/* ================= Periode & agregasi ================= */
+function rangeFor(P, A) {
+  if (P === 'day') return { start: startOfDay(A), end: startOfDay(A) };
+  if (P === 'week') { const s = startOfWeek(A); return { start: s, end: addDays(s, 6) }; }
+  return cycleOf(A);
+}
+function shiftAnchor(P, A, dir) {
+  if (P === 'day') return addDays(A, dir);
+  if (P === 'week') return addDays(A, 7 * dir);
+  const c = cycleOf(A); return cycleStart(c.start.getFullYear(), c.start.getMonth() + dir, CYCLE.day);
+}
+function rangeLabel(P, rg, A) {
+  if (P === 'day') return (ymd(A) === ymd(new Date()) ? 'Hari ini · ' : '') + fmtDateLong(A);
+  if (P === 'week') {
+    const s = rg.start, e = rg.end;
+    return s.getMonth() === e.getMonth()
+      ? s.getDate() + ' – ' + e.getDate() + ' ' + MONTHS_S[e.getMonth()] + ' ' + e.getFullYear()
+      : s.getDate() + ' ' + MONTHS_S[s.getMonth()] + ' – ' + e.getDate() + ' ' + MONTHS_S[e.getMonth()] + ' ' + e.getFullYear();
+  }
+  if (CYCLE.day === 1) return MONTHS[A.getMonth()] + ' ' + A.getFullYear();
+  return cycleName(rg, true);
+}
+function sumType(list, type, withXfer) { let s = 0; for (const t of list) if (t.type === type && (withXfer || !isXfer(t))) s += Number(t.amount) || 0; return s; }
+function catTotals(list, type) {
+  const m = new Map();
+  for (const t of list) {
+    if (t.type !== type || isXfer(t)) continue;
+    const k = CATS[t.cat] ? t.cat : (type === 'out' ? 'lain' : 'lain_in');
+    const o = m.get(k) || { id: k, v: 0, n: 0 };
+    o.v += Number(t.amount) || 0; o.n++; m.set(k, o);
+  }
+  return Array.from(m.values()).sort((a, b) => b.v - a.v);
+}
+function assignSlots(rows, max) {
+  const used = new Set(), res = {};
+  rows.slice(0, max).forEach(r => {
+    let s = catOf(r.id).slot || 1;
+    if (used.has(s)) { for (let k = 1; k <= 8; k++) { if (!used.has(k)) { s = k; break; } } }
+    used.add(s); res[r.id] = s;
+  });
+  return res;
+}
+function niceMax(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 4 ? 4 : m <= 5 ? 5 : 10) * p;
+}
+function weekChunks(bk) {
+  const rows = []; let cur = null;
+  bk.forEach(b => {
+    const dow = (b.d.getDay() + 6) % 7;
+    if (!cur || dow === 0) { cur = { from: b.d, to: b.d, in: 0, out: 0 }; rows.push(cur); }
+    cur.to = b.d; cur.in += b.in; cur.out += b.out;
+  });
+  return rows;
+}
+
+/* ================= Foto ================= */
+function dataUrlToBlob(d) {
+  const i = d.indexOf(','), bin = atob(d.slice(i + 1)), u = new Uint8Array(bin.length);
+  for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+  return new Blob([u], { type: 'image/jpeg' });
+}
+function loadImgEl(file) {
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { URL.revokeObjectURL(u); res(im); };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('img')); };
+    im.src = u;
+  });
+}
+async function compressImage(file) {
+  let src, w, h;
+  try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); w = src.width; h = src.height; }
+  catch (e) { src = await loadImgEl(file); w = src.naturalWidth; h = src.naturalHeight; }
+  let max = 1100, q = 0.72, dataUrl = '';
+  for (let k = 0; k < 6; k++) {
+    const sc = Math.min(1, max / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(h * sc));
+    const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+    const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cw, ch); cx.drawImage(src, 0, 0, cw, ch);
+    dataUrl = cv.toDataURL('image/jpeg', q);
+    if (dataUrl.length <= 190000) break;
+    max = Math.round(max * 0.82); q = Math.max(0.5, q - 0.06);
+  }
+  if (src && src.close) { try { src.close(); } catch (e) { /* abaikan */ } }
+  return { dataUrl, blob: dataUrlToBlob(dataUrl) };
+}
+
+/* ================= Data contoh ================= */
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function demoTx() {
+  const rnd = mulberry32(20261025);
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const rr = (a, b, step) => Math.round((a + rnd() * (b - a)) / (step || 1000)) * (step || 1000);
+  const today = startOfDay(new Date()), out = [];
+  const add = (ago, type, cat, amount, note, items) => out.push({ type, cat, amount, date: ymd(addDays(today, -ago)), note: note || '', items: items || [], photo: null, demo: true });
+  const pool = [['Beras 5 kg', 1, 68000], ['Telur 1 kg', 1, 29000], ['Minyak goreng 2 L', 1, 38000], ['Gula 1 kg', 1, 17500], ['Bayam & kangkung', 2, 5000], ['Tempe', 2, 8000], ['Ayam 1/2 kg', 1, 25000], ['Susu UHT', 2, 18000], ['Mi instan', 5, 3500], ['Sabun cuci piring', 1, 12000], ['Bawang merah & putih', 1, 22000], ['Tahu', 3, 6000]];
+  for (let i = 35; i >= 0; i--) {
+    const d = addDays(today, -i), dow = (d.getDay() + 6) % 7, dom = d.getDate();
+    if (rnd() < 0.92) add(i, 'out', 'makan', rr(14000, 48000, 500), pick(['Makan siang', 'Warteg', 'Nasi goreng', 'Soto ayam', 'Bakso', 'Ayam geprek', 'Mi ayam']));
+    if (rnd() < 0.35) add(i, 'out', 'makan', rr(18000, 42000, 500), pick(['Makan malam', 'Sate', 'Nasi padang']));
+    if (rnd() < 0.45) add(i, 'out', 'kopi', rr(12000, 38000, 500), pick(['Kopi susu', 'Es teh', 'Jajan sore', 'Boba']));
+    if (rnd() < 0.5) add(i, 'out', rnd() < 0.6 ? 'bensin' : 'angkot', rr(10000, 60000, 1000), pick(['Isi bensin', 'Parkir', 'Ojek online', 'Kereta commuter']));
+    if (dow === 5 || (dow === 1 && rnd() < 0.4)) {
+      const n = 4 + Math.floor(rnd() * 3), chosen = [], used = new Set();
+      while (chosen.length < n) { const k = Math.floor(rnd() * pool.length); if (!used.has(k)) { used.add(k); chosen.push({ n: pool[k][0], q: pool[k][1], p: pool[k][2] }); } }
+      add(i, 'out', 'dapur', chosen.reduce((s, x) => s + x.q * x.p, 0), 'Belanja mingguan', chosen);
+    }
+    if (dow >= 5 && rnd() < 0.6) add(i, 'out', 'hiburan', rr(60000, 150000, 5000), pick(['Nonton bioskop', 'Main bareng teman', 'Karaoke']));
+    if (rnd() < 0.06) add(i, 'out', 'online', rr(85000, 350000, 5000), 'Belanja online');
+    if (dow === 4 && rnd() < 0.5) add(i, 'out', 'zakat', 20000, 'Sedekah Jumat');
+    if (dom === 1) add(i, 'out', 'sewa', 1500000, 'Sewa kamar');
+    if (dom === 5) add(i, 'out', 'listrik', 250000, 'Token listrik');
+    if (dom === 10) add(i, 'out', 'tabung', 500000, 'Tabungan bulanan');
+    if (dom === 12) add(i, 'out', 'pulsa', 330000, 'Internet rumah');
+    if (dom === 15) add(i, 'out', 'langganan', 54000, 'Langganan streaming');
+    if (dom === 25) add(i, 'in', 'gaji', 6500000, 'Gaji bulanan');
+    if (rnd() < 0.08) add(i, 'in', 'freelance', rr(500000, 1200000, 50000), 'Proyek lepas');
+    if (rnd() < 0.05) add(i, 'in', 'cashback', rr(5000, 25000, 500), 'Cashback dompet digital');
+    if (i === 20) add(i, 'out', 'pakaian', 235000, 'Kemeja kerja');
+    if (i === 9) add(i, 'out', 'sehat', 85000, 'Apotek');
+    if (i === 15) add(i, 'out', 'hadiah', 150000, 'Kado ulang tahun teman');
+  }
+  return out;
+}
+/* Daftar bank dan e-wallet di Indonesia (untuk rekening pengguna) */
+const BANK_GROUPS = [
+  {id:'bumn', label:'Bank BUMN'},
+  {id:'swasta', label:'Bank Swasta Nasional'},
+  {id:'digital', label:'Bank Digital'},
+  {id:'syariah', label:'Bank Syariah'},
+  {id:'bpd', label:'Bank Pembangunan Daerah'},
+  {id:'asing', label:'Bank Asing & Campuran'}
+];
+const BANKS = [
+  /* BUMN */
+  {id:'mandiri', name:'Mandiri', abbr:'MDR', group:'bumn', color:'#003D79'},
+  {id:'bri', name:'BRI', abbr:'BRI', group:'bumn', color:'#00529C'},
+  {id:'bni', name:'BNI', abbr:'BNI', group:'bumn', color:'#9A3412'},
+  {id:'btn', name:'BTN', abbr:'BTN', group:'bumn', color:'#0B4F8C'},
+
+  /* Swasta nasional */
+  {id:'bca', name:'BCA', abbr:'BCA', group:'swasta', color:'#0060AF'},
+  {id:'cimb', name:'CIMB Niaga', abbr:'CN', group:'swasta', color:'#A4161A'},
+  {id:'danamon', name:'Danamon', abbr:'DNM', group:'swasta', color:'#9B1C20'},
+  {id:'permata', name:'Permata', abbr:'PMT', group:'swasta', color:'#00664F'},
+  {id:'maybank', name:'Maybank Indonesia', abbr:'MBK', group:'swasta', color:'#8A5A00'},
+  {id:'ocbc', name:'OCBC NISP', abbr:'OCBC', group:'swasta', color:'#A01C1C'},
+  {id:'panin', name:'Panin Bank', abbr:'PAN', group:'swasta', color:'#1B3F7A'},
+  {id:'uob', name:'UOB Indonesia', abbr:'UOB', group:'swasta', color:'#0A3D8F'},
+  {id:'mega', name:'Bank Mega', abbr:'MEGA', group:'swasta', color:'#0F4C81'},
+  {id:'btpn', name:'BTPN', abbr:'BTPN', group:'swasta', color:'#0B3B70'},
+  {id:'kb', name:'KB Bukopin', abbr:'KBB', group:'swasta', color:'#7A1F2B'},
+  {id:'sinarmas', name:'Sinarmas', abbr:'SMS', group:'swasta', color:'#1F4E3D'},
+  {id:'mayapada', name:'Mayapada', abbr:'MYP', group:'swasta', color:'#7A1F3D'},
+  {id:'mnc', name:'MNC Bank', abbr:'MNC', group:'swasta', color:'#0A2F5C'},
+  {id:'victoria', name:'Bank Victoria', abbr:'BVI', group:'swasta', color:'#1F4E79'},
+  {id:'arthagraha', name:'Artha Graha', abbr:'AG', group:'swasta', color:'#3B2A6B'},
+  {id:'ina', name:'Bank Ina Perdana', abbr:'INP', group:'swasta', color:'#2E5A88'},
+  {id:'woori', name:'Woori Saudara', abbr:'WS', group:'swasta', color:'#0A4A8A'},
+  {id:'capital', name:'Bank Capital Indonesia', abbr:'BCI', group:'swasta', color:'#0A3A73'},
+  {id:'qnb', name:'QNB Indonesia', abbr:'QNB', group:'swasta', color:'#5B1F55'},
+  {id:'boi', name:'Bank of India Indonesia', abbr:'BOI', group:'swasta', color:'#9A4D00'},
+  {id:'index', name:'Bank Index Selindo', abbr:'IS', group:'swasta', color:'#2F4F4F'},
+  {id:'sahabat', name:'Bank Sahabat Sampoerna', abbr:'BSS', group:'swasta', color:'#0E4D64'},
+  {id:'nobu', name:'Bank Nobu', abbr:'NOBU', group:'swasta', color:'#1E6B3A'},
+  {id:'amar', name:'Bank Amar Indonesia', abbr:'AMAR', group:'swasta', color:'#3E4A8C'},
+  {id:'ganesha', name:'Bank Ganesha', abbr:'GNS', group:'swasta', color:'#5C3A1E'},
+  {id:'harda', name:'Bank Harda Internasional', abbr:'HIN', group:'swasta', color:'#6E2B2B'},
+  {id:'mestika', name:'Bank Mestika Dharma', abbr:'MSD', group:'swasta', color:'#1B5E4F'},
+  {id:'jtrust', name:'JTrust Indonesia', abbr:'JTI', group:'swasta', color:'#2B2B6E'},
+  {id:'maspion', name:'Bank Maspion Indonesia', abbr:'MSP', group:'swasta', color:'#5A3A00'},
+  {id:'yudha', name:'Bank Yudha Bhakti', abbr:'YB', group:'swasta', color:'#244A6B'},
+  {id:'multiarta', name:'Bank Multiarta Sentosa', abbr:'BMS', group:'swasta', color:'#2C3E50'},
+  {id:'bumiarta', name:'Bank Bumi Arta', abbr:'BBA', group:'swasta', color:'#8B1E3F'},
+  {id:'bbi', name:'Bank Bisnis Internasional', abbr:'BBI', group:'swasta', color:'#1D3557'},
+  {id:'royal', name:'Bank Royal Indonesia', abbr:'ROY', group:'swasta', color:'#4B2E83'},
+  {id:'saudara1906', name:'Bank Himpunan Saudara 1906', abbr:'HS', group:'swasta', color:'#6B4226'},
+  {id:'fama', name:'Bank Fama Internasional', abbr:'FAMA', group:'swasta', color:'#2E4A62'},
+  {id:'bnp', name:'Bank Nusantara Parahyangan', abbr:'BNP', group:'swasta', color:'#1F5F5B'},
+
+  /* Bank digital */
+  {id:'jago', name:'Bank Jago', abbr:'JAGO', group:'digital', color:'#9A6B00'},
+  {id:'seabank', name:'SeaBank', abbr:'SEA', group:'digital', color:'#B45309'},
+  {id:'blu', name:'blu by BCA Digital', abbr:'BLU', group:'digital', color:'#0A4D8C'},
+  {id:'allo', name:'Allo Bank', abbr:'ALO', group:'digital', color:'#B0245C'},
+  {id:'neo', name:'Neo Commerce', abbr:'NEO', group:'digital', color:'#2B2F77'},
+  {id:'raya', name:'Bank Raya', abbr:'RAYA', group:'digital', color:'#0F6B63'},
+  {id:'superbank', name:'Superbank', abbr:'SB', group:'digital', color:'#153E75'},
+  {id:'linebank', name:'Line Bank', abbr:'LB', group:'digital', color:'#067A3A'},
+  {id:'jenius', name:'Jenius', abbr:'JNS', group:'digital', color:'#1B4E89'},
+  {id:'aladin', name:'Aladin Syariah', abbr:'ALD', group:'digital', color:'#166B52'},
+  {id:'krom', name:'Bank Krom', abbr:'KROM', group:'digital', color:'#5B21B6'},
+  {id:'motion', name:'Motion Banking', abbr:'MTN', group:'digital', color:'#334155'},
+  {id:'saqu', name:'Saqu', abbr:'SAQU', group:'digital', color:'#6D28D9'},
+  {id:'oke', name:'Bank OKE Indonesia', abbr:'OK', group:'digital', color:'#0369A1'},
+  {id:'octo', name:'Octo Bank', abbr:'OCTO', group:'digital', color:'#7B1E5A'},
+
+  /* Bank syariah */
+  {id:'bsi', name:'Bank Syariah Indonesia', abbr:'BSI', group:'syariah', color:'#00776F'},
+  {id:'muamalat', name:'Bank Muamalat', abbr:'BM', group:'syariah', color:'#7F1D1D'},
+  {id:'bcasyariah', name:'BCA Syariah', abbr:'BCAS', group:'syariah', color:'#0B5C7A'},
+  {id:'btnsyariah', name:'BTN Syariah', abbr:'BTNS', group:'syariah', color:'#124E78'},
+  {id:'permatasyariah', name:'Permata Syariah', abbr:'PMS', group:'syariah', color:'#0B5E4B'},
+  {id:'megasyariah', name:'Bank Mega Syariah', abbr:'MGS', group:'syariah', color:'#0A4A6E'},
+  {id:'panindubai', name:'Panin Dubai Syariah', abbr:'PDS', group:'syariah', color:'#14365E'},
+  {id:'kbsyariah', name:'KB Bukopin Syariah', abbr:'KBS', group:'syariah', color:'#5E1A24'},
+  {id:'bjbsyariah', name:'BJB Syariah', abbr:'BJBS', group:'syariah', color:'#1E5B3F'},
+  {id:'victoriasyariah', name:'Bank Victoria Syariah', abbr:'VS', group:'syariah', color:'#2D5B63'},
+  {id:'dinar', name:'Bank Dinar Indonesia', abbr:'DI', group:'syariah', color:'#6B4E16'},
+  {id:'banknet', name:'Bank Net Indonesia Syariah', abbr:'NET', group:'syariah', color:'#2C3E7A'},
+
+  /* Bank Pembangunan Daerah */
+  {id:'dki', name:'Bank DKI', abbr:'DKI', group:'bpd', color:'#0B3C6B'},
+  {id:'bjb', name:'Bank BJB', abbr:'BJB', group:'bpd', color:'#004D40'},
+  {id:'jateng', name:'Bank Jateng', abbr:'JTG', group:'bpd', color:'#7A3B00'},
+  {id:'jatim', name:'Bank Jatim', abbr:'JTM', group:'bpd', color:'#204F2B'},
+  {id:'bali', name:'BPD Bali', abbr:'BLI', group:'bpd', color:'#7A3311'},
+  {id:'sumut', name:'Bank Sumut', abbr:'SMT', group:'bpd', color:'#0E4C5C'},
+  {id:'nagari', name:'Bank Nagari', abbr:'NGR', group:'bpd', color:'#6A2E12'},
+  {id:'riaukepri', name:'Bank Riau Kepri', abbr:'RKP', group:'bpd', color:'#2A4B6D'},
+  {id:'sumselbabel', name:'Bank Sumsel Babel', abbr:'SSB', group:'bpd', color:'#3A4F2B'},
+  {id:'kalbar', name:'Bank Kalbar', abbr:'KLB', group:'bpd', color:'#3F2E6B'},
+  {id:'kaltimtara', name:'Bank Kaltimtara', abbr:'KTR', group:'bpd', color:'#2E5E4E'},
+  {id:'kalsel', name:'Bank Kalsel', abbr:'KSL', group:'bpd', color:'#2B5B7A'},
+  {id:'sulselbar', name:'Bank Sulselbar', abbr:'SLB', group:'bpd', color:'#6B2D2D'},
+  {id:'sulutgo', name:'Bank SulutGo', abbr:'SLG', group:'bpd', color:'#3B4F6B'},
+  {id:'ntbsyariah', name:'Bank NTB Syariah', abbr:'NTBS', group:'bpd', color:'#2F5E3E'},
+  {id:'ntt', name:'Bank NTT', abbr:'NTT', group:'bpd', color:'#5F3A10'},
+  {id:'papua', name:'Bank Papua', abbr:'PPA', group:'bpd', color:'#3D2B1F'},
+  {id:'malukumalut', name:'Bank Maluku Malut', abbr:'MM', group:'bpd', color:'#1F4A5C'},
+  {id:'lampung', name:'Bank Lampung', abbr:'LPG', group:'bpd', color:'#5C2F5C'},
+  {id:'jambi', name:'Bank Jambi', abbr:'JMB', group:'bpd', color:'#2D4A3E'},
+  {id:'bengkulu', name:'Bank Bengkulu', abbr:'BKL', group:'bpd', color:'#4B3B6B'},
+  {id:'acehsyariah', name:'Bank Aceh Syariah', abbr:'BAS', group:'bpd', color:'#2E4B2E'},
+  {id:'banten', name:'Bank Banten', abbr:'BNT', group:'bpd', color:'#243B6B'},
+  {id:'sulteng', name:'Bank Sulteng', abbr:'STG', group:'bpd', color:'#5E2F3F'},
+  {id:'sultra', name:'Bank Sultra', abbr:'STR', group:'bpd', color:'#3A3F5C'},
+  {id:'diy', name:'BPD DIY', abbr:'DIY', group:'bpd', color:'#1E3D59'},
+  {id:'kalteng', name:'Bank Kalteng', abbr:'KTG', group:'bpd', color:'#4B5320'},
+
+  /* Bank asing & campuran */
+  {id:'hsbc', name:'HSBC Indonesia', abbr:'HSBC', group:'asing', color:'#9B0B14'},
+  {id:'stanchart', name:'Standard Chartered Indonesia', abbr:'SCB', group:'asing', color:'#0B4F6C'},
+  {id:'citibank', name:'Citibank Indonesia', abbr:'CITI', group:'asing', color:'#003B70'},
+  {id:'dbs', name:'DBS Indonesia', abbr:'DBS', group:'asing', color:'#A3122A'},
+  {id:'boc', name:'Bank of China Indonesia', abbr:'BOC', group:'asing', color:'#8B1A1A'},
+  {id:'icbc', name:'ICBC Indonesia', abbr:'ICBC', group:'asing', color:'#A8201A'},
+  {id:'mufg', name:'MUFG Bank Indonesia', abbr:'MUFG', group:'asing', color:'#8E0E24'},
+  {id:'smbc', name:'SMBC Indonesia', abbr:'SMBC', group:'asing', color:'#0B6E4F'},
+  {id:'mizuho', name:'Mizuho Indonesia', abbr:'MZH', group:'asing', color:'#0B3F73'},
+  {id:'commonwealth', name:'Bank Commonwealth', abbr:'CWL', group:'asing', color:'#8B1A22'},
+  {id:'ctbc', name:'Bank CTBC Indonesia', abbr:'CTBC', group:'asing', color:'#0F3E6E'},
+  {id:'shinhan', name:'Bank Shinhan Indonesia', abbr:'SHN', group:'asing', color:'#00306B'},
+  {id:'kebhana', name:'KEB Hana Indonesia', abbr:'KEBH', group:'asing', color:'#006E5C'},
+  {id:'deutsche', name:'Deutsche Bank Indonesia', abbr:'DB', group:'asing', color:'#1B2F6E'},
+  {id:'jpmorgan', name:'JP Morgan Chase Bank Indonesia', abbr:'JPM', group:'asing', color:'#333A47'},
+  {id:'bofa', name:'Bank of America Indonesia', abbr:'BOA', group:'asing', color:'#8A1119'},
+  {id:'resona', name:'Resona Perdania', abbr:'RSN', group:'asing', color:'#8A3B12'},
+  {id:'anzpanin', name:'ANZ Panin', abbr:'ANZ', group:'asing', color:'#0B2A6B'},
+  {id:'ibk', name:'IBK Indonesia', abbr:'IBK', group:'asing', color:'#0E4D92'}
+];
+const EWALLETS = [
+  {id:'shopeepay', name:'ShopeePay', abbr:'SP', color:'#EE4D2D'},
+  {id:'gopay', name:'GoPay', abbr:'GP', color:'#00AED6'},
+  {id:'ovo', name:'OVO', abbr:'OVO', color:'#4C3494'},
+  {id:'dana', name:'DANA', abbr:'DA', color:'#108EE9'},
+  {id:'linkaja', name:'LinkAja', abbr:'LA', color:'#E82529'}
+];
+const HW = {H:[278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584, 761, 556, 556, 222, 556, 333, 1000, 556, 556, 333, 1000, 667, 333, 1000, 556, 611, 556, 556, 222, 222, 333, 333, 350, 556, 1000, 333, 1000, 500, 333, 944, 556, 500, 667, 278, 333, 556, 556, 556, 556, 260, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 556, 537, 278, 333, 333, 365, 556, 834, 834, 834, 611, 667, 667, 667, 667, 667, 667, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 500, 556, 556, 556, 556, 278, 278, 278, 278, 556, 556, 556, 556, 556, 556, 556, 584, 611, 556, 556, 556, 556, 500, 556, 500],B:[278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584, 761, 556, 556, 278, 556, 500, 1000, 556, 556, 333, 1000, 667, 333, 1000, 556, 611, 556, 556, 278, 278, 500, 500, 350, 556, 1000, 333, 1000, 556, 333, 944, 556, 500, 667, 278, 333, 556, 556, 556, 556, 280, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 611, 556, 278, 333, 333, 365, 556, 834, 834, 834, 611, 722, 722, 722, 722, 722, 722, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 556, 556, 556, 556, 556, 278, 278, 278, 278, 611, 611, 611, 611, 611, 611, 611, 584, 611, 611, 611, 611, 611, 556, 611, 556]};
+/* ================= Model laporan & perbandingan ================= */
+/* in/out = pemasukan dan pengeluaran sebenarnya; xf = pengaruh bersih setor/tarik simpanan pada kas; saldo kas = in - out + xf */
+function fundOf(list) {
+  let i = 0, o = 0, x = 0;
+  for (const t of list) { if (isXfer(t)) { x += cashOf(t); continue; } const a = Number(t.amount) || 0; if (t.type === 'in') i += a; else o += a; }
+  return { in: i, out: o, xf: x, saldo: i - o + x };
+}
+/* Perbandingan pengeluaran kumulatif: periode A vs periode sebelumnya, sampai hari ini. d = hari ke-d dalam periode. */
+function compareModel(list, A, now) {
+  const c = cycleOf(A), pc = cycleOf(addDays(c.start, -1)), cs = c.start;
+  const dc = dayDiff(c.start, c.end) + 1, pdim = dayDiff(pc.start, pc.end) + 1;
+  const kcs = ymd(c.start), kce = ymd(c.end), kps = ymd(pc.start), kpe = ymd(pc.end);
+  const dcur = new Array(dc + 1).fill(0), dprev = new Array(pdim + 1).fill(0);
+  for (const t of list) {
+    if (t.type !== 'out' || !t.date || isXfer(t)) continue;
+    const a = Number(t.amount) || 0;
+    if (t.date >= kcs && t.date <= kce) dcur[dayDiff(c.start, parseYmd(t.date)) + 1] += a;
+    else if (t.date >= kps && t.date <= kpe) dprev[dayDiff(pc.start, parseYmd(t.date)) + 1] += a;
+  }
+  const today = startOfDay(now), last = c.end;
+  const upto = today < cs ? 0 : today >= last ? dc : dayDiff(cs, today) + 1;
+  const cur = [], prev = []; let cc = 0, p = 0;
+  for (let d = 1; d <= dc; d++) { cc += dcur[d]; cur.push(d <= upto ? cc : null); }
+  for (let d = 1; d <= pdim; d++) { p += dprev[d]; prev.push(p); }
+  const curTo = upto > 0 ? cur[upto - 1] : 0, prevTo = upto > 0 ? prev[Math.min(upto, pdim) - 1] : 0;
+  const isCurrent = today >= cs && today <= last, cyc = CYCLE.day !== 1;
+  return {
+    y: cs.getFullYear(), m: cs.getMonth(), cs, cyc, dc, pdim, N: Math.max(dc, pdim), upto, isCurrent, cur, prev, dcur, dprev, curTo, prevTo, prevTotal: p,
+    diff: curTo - prevTo, pct: prevTo > 0 ? (curTo - prevTo) / prevTo * 100 : null,
+    proj: isCurrent && upto >= 3 ? Math.round(curTo / upto * dc) : null,
+    curLabel: cycleLabel(c), prevLabel: cycleLabel(pc), prevShort: cyc ? cycleName(pc, false) : MONTHS_S[pc.start.getMonth()], has: curTo > 0 || p > 0
+  };
+}
+/* Ringkasan per periode bulanan (n periode terakhir sampai periode A), termasuk saldo berjalan */
+function monthsModel(list, A, n) {
+  const cur = cycleOf(A), D = CYCLE.day, f0 = cycleStart(cur.start.getFullYear(), cur.start.getMonth() - (n - 1), D), fk = ymd(f0);
+  const map = {}; let open = 0;
+  for (const t of list) {
+    const a = Number(t.amount) || 0;
+    if (t.date < fk) { open += cashOf(t); continue; }
+    const k = cycleKey(cycleOf(parseYmd(t.date))), o = map[k] || (map[k] = { in: 0, out: 0, xf: 0 });
+    if (isXfer(t)) o.xf += cashOf(t); else if (t.type === 'in') o.in += a; else o.out += a;
+  }
+  const rows = []; let bal = open;
+  for (let i = 0; i < n; i++) {
+    const st = cycleStart(f0.getFullYear(), f0.getMonth() + i, D), rg = cycleOf(st), k = cycleKey(rg), o = map[k] || { in: 0, out: 0, xf: 0 };
+    bal += o.in - o.out + o.xf;
+    const yy = String(rg.end.getFullYear()).slice(2);
+    rows.push({ key: k, label: D === 1 ? MONTHS_S[st.getMonth()] + ' ' + String(st.getFullYear()).slice(2) : cycleName(rg, false) + ' ' + yy, full: D === 1 ? MONTHS[st.getMonth()] + ' ' + st.getFullYear() : cycleName(rg, true), in: o.in, out: o.out, net: o.in - o.out, xf: o.xf, saldo: bal });
+  }
+  return rows;
+}
+function dayBuckets(byDay, P, A) {
+  const days = [];
+  if (P === 'day') { for (let i = 6; i >= 0; i--) days.push(addDays(A, -i)); }
+  else if (P === 'week') { const s = startOfWeek(A); for (let i = 0; i < 7; i++) days.push(addDays(s, i)); }
+  else { const rg = cycleOf(A); for (let d = rg.start; d <= rg.end; d = addDays(d, 1)) days.push(d); }
+  return days.map(d => { const k = ymd(d), o = byDay[k] || { in: 0, out: 0 }; return { d, key: k, in: o.in, out: o.out }; });
+}
+function byDayOf(list) {
+  const m = {};
+  for (const t of list) { if (isXfer(t)) continue; const o = m[t.date] || (m[t.date] = { in: 0, out: 0 }), a = Number(t.amount) || 0; if (t.type === 'in') o.in += a; else o.out += a; }
+  return m;
+}
+/* Model lengkap untuk laporan PDF pada periode P dengan jangkar A */
+function periodModel(list, P, A, meta) {
+  meta = meta || {}; if (meta.settings) setCycleDay(meta.settings.budgetDay);
+  const now = meta.now || new Date(), rg = rangeFor(P, A), s = ymd(rg.start), e = ymd(rg.end);
+  const items = list.filter(t => t.date >= s && t.date <= e && !isXfer(t)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.createdAt || '').localeCompare(String(b.createdAt || ''))));
+  const tin = sumType(items, 'in'), tout = sumType(items, 'out');
+  const pr = rangeFor(P, shiftAnchor(P, A, -1)), ps = ymd(pr.start), pe = ymd(pr.end);
+  const prevItems = list.filter(t => t.date >= ps && t.date <= pe);
+  const byDay = byDayOf(list), bk = dayBuckets(byDay, P, A);
+  const outRows = catTotals(items, 'out'), inRows = catTotals(items, 'in');
+  const withPct = (rows, tot) => rows.map(r => Object.assign({ label: catOf(r.id).label, pct: tot > 0 ? r.v / tot * 100 : 0 }, r));
+  const monthAnchor = P === 'month' ? A : (A > now ? now : A);
+  const bm = budgetModel(list, A, meta.settings || { budget: meta.budget }, now);
+  const pk = { setor: 0, tarik: 0, hasil: 0, net: 0 };
+  list.forEach(t => { if (t.date < s || t.date > e) return; const p = potOf(t); if (p) { pk[p.k] += Number(t.amount) || 0; } });
+  pk.net = pk.tarik - pk.setor;
+  return {
+    user: meta.user || '', now, P, A, label: rangeLabel(P, rg, A), periodName: P === 'day' ? 'Harian' : P === 'week' ? 'Mingguan' : 'Bulanan',
+    start: s, end: e, items, tin, tout, net: tin - tout, saldo: fundOf(list).saldo, nIn: items.filter(t => t.type === 'in').length, nOut: items.filter(t => t.type === 'out').length,
+    prevLabel: P === 'day' ? 'kemarin' : P === 'week' ? 'minggu lalu' : 'bulan lalu', prevOut: sumType(prevItems, 'out'), prevIn: sumType(prevItems, 'in'),
+    bk, weeks: P === 'month' ? weekChunks(bk) : null, outCats: withPct(outRows, tout), inCats: withPct(inRows, tin),
+    slotsOut: assignSlots(outRows, 5), slotsIn: assignSlots(inRows, 8),
+    biggest: items.filter(t => t.type === 'out').sort((a, b) => b.amount - a.amount).slice(0, 6),
+    budget: bm.budget, bud: bm, pocket: pk, avg: avgModel(list, now), cmp: compareModel(list, monthAnchor, now)
+  };
+}
+
+/* Isi satu kategori pada rentang s..e (yyyy-mm-dd): catatan, daftar barang yang digabung per nama, dan ringkasan.
+   Setoran/penarikan simpanan tidak ikut karena bukan pengeluaran atau pemasukan. */
+function catDetailModel(list, id, type, s, e) {
+  const per = list.filter(t => t.date >= s && t.date <= e && !isXfer(t) && t.type === type);
+  const keyOf = t => CATS[t.cat] ? t.cat : (type === 'out' ? 'lain' : 'lain_in');
+  const typeTotal = per.reduce((a, t) => a + (Number(t.amount) || 0), 0);
+  const rows = per.filter(t => keyOf(t) === id).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.createdAt || '').localeCompare(String(a.createdAt || ''))));
+  const total = rows.reduce((a, t) => a + (Number(t.amount) || 0), 0), map = {}, noItems = { n: 0, amount: 0 };
+  rows.forEach(t => {
+    const its = (Array.isArray(t.items) ? t.items : []).filter(i => i && String(i.n || '').trim());
+    if (!its.length) { noItems.n++; noItems.amount += Number(t.amount) || 0; return; }
+    its.forEach(i => {
+      const name = String(i.n).trim(), k = name.toLowerCase(), q = Number(i.q) > 0 ? Number(i.q) : 1, p = Number(i.p) > 0 ? Number(i.p) : 0;
+      const o = map[k] || (map[k] = { name, q: 0, total: 0, n: 0, last: '' });
+      o.q += q; o.total += q * p; o.n++; if (t.date > o.last) o.last = t.date;
+    });
+  });
+  const items = Object.keys(map).map(k => map[k]).sort((a, b) => b.total - a.total || b.q - a.q || a.name.localeCompare(b.name));
+  const biggest = rows.reduce((m, t) => (!m || (Number(t.amount) || 0) > (Number(m.amount) || 0) ? t : m), null);
+  return { id, type, rows, count: rows.length, total, typeTotal, share: typeTotal > 0 ? total / typeTotal * 100 : 0, avg: rows.length ? total / rows.length : 0, biggest, items, itemsTotal: items.reduce((a, o) => a + o.total, 0), noItems };
+}
+
+/* Rekap pengeluaran per kategori pada rentang s..e (yyyy-mm-dd), urut dari yang terbesar.
+   Kolom: No, Kategori, Rupiah pengeluaran, Persentase terhadap total. Setoran/penarikan simpanan tidak ikut. */
+function insightModel(list, s, e) {
+  const per = list.filter(t => t.date >= s && t.date <= e && !isXfer(t));
+  const total = sumType(per, 'out'), rows = catTotals(per, 'out');
+  return {
+    s, e, total, count: rows.reduce((a, r) => a + r.n, 0),
+    rows: rows.map((r, i) => ({ no: i + 1, id: r.id, label: catOf(r.id).label, v: r.v, n: r.n, pct: total > 0 ? r.v / total * 100 : 0 }))
+  };
+}
+
+/* Rata-rata pengeluaran dari semua catatan (tanpa setoran simpanan), dihitung dari catatan pengeluaran pertama sampai hari ini.
+   Per hari = total / jumlah hari; per minggu = per hari x 7; per bulan (periode) = rata-rata total periode yang sudah selesai
+   (periode pertama yang baru dimulai di tengah jalan tidak ikut bila sudah ada periode penuh lain). */
+function avgModel(list, now) {
+  now = now || new Date();
+  const today = startOfDay(now), tk = ymd(today), byDate = {}; let first = null, total = 0, n = 0;
+  for (const t of list) {
+    if (t.type !== 'out' || isXfer(t) || !t.date || t.date > tk) continue;
+    const a = Number(t.amount) || 0; byDate[t.date] = (byDate[t.date] || 0) + a; total += a; n++;
+    if (first === null || t.date < first) first = t.date;
+  }
+  if (first === null) return { has: false, total: 0, n: 0 };
+  const fd = parseYmd(first), days = dayDiff(fd, today) + 1, cur = cycleOf(today), sums = {};
+  for (const k in byDate) { const key = cycleKey(cycleOf(parseYmd(k))); sums[key] = (sums[key] || 0) + byDate[k]; }
+  const done = []; let c = cycleOf(fd), guard = 0;
+  const partial = fd > c.start;
+  while (c.end < cur.start && guard++ < 600) { done.push(sums[cycleKey(c)] || 0); c = cycleOf(addDays(c.end, 1)); }
+  if (done.length > 1 && partial) done.shift();
+  const perDay = total / days, dim = dayDiff(cur.start, cur.end) + 1, dn = dayDiff(cur.start, today) + 1, curOut = sums[cycleKey(cur)] || 0, curPerDay = curOut / dn;
+  return {
+    has: true, total, n, first, firstDate: fd, days, perDay, perWeek: perDay * 7,
+    perMonth: done.length ? done.reduce((s, v) => s + v, 0) / done.length : null, months: done.length, perMonthEst: perDay * dim, dim,
+    curOut, curDays: dn, curPerDay, diffPct: perDay > 0 ? (curPerDay - perDay) / perDay * 100 : null, cyc: CYCLE.day > 1
+  };
+}
+
+/* Saldo & rekap Tabungan / Investasi dari semua catatan: saldo = setoran - penarikan + hasil.
+   months = n bulan terakhir sampai bulan A (saldo berjalan), net = perubahan di bulan A. */
+function pocketModel(list, A, n) {
+  n = n || 6;
+  const cur = cycleOf(A), D = CYCLE.day, f0 = cycleStart(cur.start.getFullYear(), cur.start.getMonth() - (n - 1), D), fk = ymd(f0), curKey = cycleKey(cur);
+  const res = { total: 0 };
+  POCKETS.forEach(p => { res[p.id] = Object.assign({}, p, { setor: 0, tarik: 0, hasil: 0, saldo: 0, count: 0, open: 0, map: {}, months: [], net: 0 }); });
+  for (const t of list) {
+    const p = potOf(t); if (!p) continue;
+    const o = res[p.p], a = Number(t.amount) || 0, d = p.k === 'tarik' ? -a : a;
+    o[p.k] += a; o.saldo += d; o.count++;
+    if (t.date < fk) o.open += d;
+    else { const k = cycleKey(cycleOf(parseYmd(t.date))), m = o.map[k] || (o.map[k] = { setor: 0, tarik: 0, hasil: 0 }); m[p.k] += a; }
+  }
+  POCKETS.forEach(p => {
+    const o = res[p.id]; let bal = o.open;
+    for (let i = 0; i < n; i++) {
+      const st = cycleStart(f0.getFullYear(), f0.getMonth() + i, D), rg = cycleOf(st), k = cycleKey(rg), m = o.map[k] || { setor: 0, tarik: 0, hasil: 0 };
+      const net = m.setor + m.hasil - m.tarik; bal += net;
+      o.months.push({ key: k, label: D === 1 ? MONTHS_S[st.getMonth()] + ' ' + String(st.getFullYear()).slice(2) : cycleName(rg, false), setor: m.setor, tarik: m.tarik, hasil: m.hasil, net, saldo: bal, now: k === curKey });
+    }
+    o.net = o.months.length ? o.months[o.months.length - 1].net : 0;
+    delete o.map; res.total += o.saldo;
+  });
+  return res;
+}
+
+/* Anggaran bulanan untuk bulan A. Dasar perhitungan: batas anggaran (ditambah tambahan bulan itu). Bila anggaran 0,
+   dasarnya saldo pemasukan: dana tersedia = saldo awal bulan + pemasukan bulan ini + penarikan simpanan - setoran ke tabungan/investasi.
+   Setoran dan penarikan simpanan bukan pengeluaran dan bukan pemasukan; keduanya hanya menggeser saldo kas. Anggaran yang masih tersisa dicadangkan, jadi mengurangi saldo pemasukan:
+   saldo bebas = saldo kas - sisa anggaran. */
+function budgetModel(list, A, settings, now) {
+  settings = settings || {}; now = now || new Date();
+  const rg = cycleOf(A), key = cycleKey(rg), ms = ymd(rg.start), me = ymd(rg.end), dim = dayDiff(rg.start, rg.end) + 1;
+  const base = Math.max(0, Math.round(Number(settings.budget)) || 0);
+  const add = Math.max(0, Math.round(Number(settings.budgetAdds && settings.budgetAdds[key])) || 0);
+  let open = 0, inM = 0, outM = 0, setorM = 0, tarikM = 0, saldo = 0; const dayOut = {};
+  for (const t of list) {
+    const a = Number(t.amount) || 0, c = cashOf(t); saldo += c;
+    if (t.date < ms) open += c;
+    else if (t.date <= me) {
+      const p = potOf(t) || debtOf(t);
+      if (p) { if (p.k === 'setor') setorM += a; else if (p.k === 'tarik') tarikM += a; }
+      else if (t.type === 'in') inM += a; else { outM += a; dayOut[t.date] = (dayOut[t.date] || 0) + a; }
+    }
+  }
+  const budget = base + add, basis = budget > 0 ? 'anggaran' : 'dana';
+  const avail = Math.max(0, open) + inM + tarikM - setorM, cap = basis === 'anggaran' ? budget : Math.max(0, avail);
+  const left = cap - outM, ratio = cap > 0 ? outM / cap : (outM > 0 ? 2 : 0);
+  const today = startOfDay(now), isCur = today >= rg.start && today <= rg.end;
+  const daysLeft = isCur ? dayDiff(today, rg.end) + 1 : 0, reserved = basis === 'anggaran' && isCur ? Math.max(0, budget - outM) : 0;
+  /* tren pengeluaran periode berjalan: campuran laju 7 hari terakhir (60%) dan rata-rata periode (40%); sebelum hari ke-7 memakai rata-rata periode.
+     Dari laju itu: perkiraan tanggal anggaran (atau dana) habis dan proyeksi total di akhir periode. */
+  let rate = 0, rate7 = 0, rateAll = 0, eta = null, proj = null;
+  if (isCur) {
+    const n = dayDiff(rg.start, today) + 1, w = Math.min(7, n), tk = ymd(today); let sAll = 0, s7 = 0;
+    for (const k in dayOut) if (k <= tk) sAll += dayOut[k];
+    for (let i = 0; i < w; i++) s7 += dayOut[ymd(addDays(today, -i))] || 0;
+    rateAll = sAll / n; rate7 = s7 / w; rate = n >= 7 ? 0.6 * rate7 + 0.4 * rateAll : rateAll;
+    const after = dayDiff(today, rg.end);
+    if (cap > 0) {
+      if (left <= 0) {
+        let cum = 0, on = null;
+        for (let d = rg.start; d <= today; d = addDays(d, 1)) { cum += dayOut[ymd(d)] || 0; if (cum >= cap) { on = d; break; } }
+        eta = { over: true, date: on };
+      } else if (rate > 0) {
+        const days = Math.ceil(left / rate);
+        eta = { over: false, days, date: addDays(today, days), after, within: days <= after, slack: after - days };
+      }
+      proj = Math.round(outM + rate * after);
+    }
+  }
+  return {
+    key, label: cycleLabel(rg), start: rg.start, end: rg.end, dim, base, add, budget, basis, open, inM, outM, setorM, tarikM, avail, cap, left, ratio, used: cap > 0 ? outM / cap * 100 : (outM > 0 ? 100 : 0),
+    isCur, daysLeft, rate, rate7, rateAll, eta, proj, projPct: proj != null && cap > 0 ? proj / cap * 100 : null, perDay: isCur && left > 0 && daysLeft > 0 ? Math.floor(left / daysLeft) : null, saldo, reserved, free: saldo - reserved
+  };
+}
+
+/* Budget per kategori: pecahan dari batas pengeluaran (settings.budget). Dipilih manual oleh pengguna dan boleh kosong.
+   Terpakai dihitung dari pengeluaran biasa di periode A (setoran simpanan dan hutang tidak dihitung), sama seperti anggaran induknya. */
+function catBudgetModel(list, A, settings, now) {
+  settings = settings || {};
+  const bm = budgetModel(list, A, settings, now), cb = settings.catBudgets || {}, rg = cycleOf(A), ms = ymd(rg.start), me = ymd(rg.end), spent = {};
+  for (const t of list) {
+    if (t.type === 'in' || t.date < ms || t.date > me || potOf(t) || debtOf(t)) continue;
+    spent[t.cat] = (spent[t.cat] || 0) + (Number(t.amount) || 0);
+  }
+  const base = bm.base, rows = []; let alloc = 0, inBud = 0;
+  Object.keys(cb).forEach(id => {
+    const amt = Math.round(Number(cb[id])) || 0; if (amt <= 0) return;
+    const sp = spent[id] || 0; alloc += amt; inBud += sp;
+    rows.push({ id, amt, spent: sp, left: amt - sp, used: sp / amt * 100, over: sp > amt, share: base > 0 ? amt / base * 100 : 0 });
+  });
+  rows.sort((a, b) => b.amt - a.amt || (a.id < b.id ? -1 : 1));
+  return { rows, alloc, base, free: base - alloc, other: Math.max(0, bm.outM - inBud), outM: bm.outM, label: bm.label, has: rows.length > 0, overCount: rows.filter(r => r.over).length };
+}
+/* ================= PDF (vektor, tanpa pustaka) ================= */
+const CP1252 = { 0x20AC: 128, 0x201A: 130, 0x0192: 131, 0x201E: 132, 0x2026: 133, 0x2020: 134, 0x2021: 135, 0x02C6: 136, 0x2030: 137, 0x0160: 138, 0x2039: 139, 0x0152: 140, 0x017D: 142, 0x2018: 145, 0x2019: 146, 0x201C: 147, 0x201D: 148, 0x2022: 149, 0x2013: 150, 0x2014: 151, 0x02DC: 152, 0x2122: 153, 0x0161: 154, 0x203A: 155, 0x0153: 156, 0x017E: 158, 0x0178: 159 };
+function pdfStr(s) {
+  let o = '';
+  for (const ch of String(s == null ? '' : s)) {
+    const c = ch.codePointAt(0);
+    if ((c >= 32 && c < 127) || (c >= 160 && c < 256)) o += String.fromCharCode(c);
+    else if (CP1252[c]) o += String.fromCharCode(CP1252[c]);
+    else if (c === 0x20A9) o += 'KRW ';
+    else if (c === 9 || c === 10 || c === 13) o += ' ';
+    else if (c < 32 || c === 127 || c >= 0x1F000 || c === 0xFE0F || c === 0x200D || (c >= 0x300 && c < 0x370)) continue;
+    else o += '?';
+  }
+  return o;
+}
+const pdfEsc = s => s.replace(/[\\()]/g, '\\$&');
+const f2 = v => String(Math.round(v * 100) / 100);
+function tw(s, size, bold) {
+  const t = HW[bold ? 'B' : 'H']; let w = 0;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); w += c >= 32 ? (t[c - 32] || 556) : 0; }
+  return w * size / 1000;
+}
+function fitText(s, maxW, size, bold) {
+  s = i18n(String(s == null ? '' : s));
+  if (tw(pdfStr(s), size, bold) <= maxW) return s;
+  while (s.length > 1 && tw(pdfStr(s + '\u2026'), size, bold) > maxW) s = s.slice(0, -1);
+  return s.replace(/\s+$/, '') + '\u2026';
+}
+function wrapText(s, maxW, size, bold) {
+  const words = i18n(String(s == null ? '' : s)).split(/\s+/).filter(Boolean), lines = []; let cur = '';
+  words.forEach(w => { const t = cur ? cur + ' ' + w : w; if (tw(pdfStr(t), size, bold) <= maxW || !cur) cur = t; else { lines.push(cur); cur = w; } });
+  if (cur) lines.push(cur);
+  return lines;
+}
+function fitSize(s, maxW, size, bold, min) {
+  s = pdfStr(i18n(s));
+  while (size > (min || 8) && tw(s, size, bold) > maxW) size -= 0.25;
+  return size;
+}
+class PdfPage {
+  constructor(doc) { this.d = doc; this.o = []; }
+  yy(v) { return f2(this.d.H - v); }
+  col(hex, stroke) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => f2(v / 255)).join(' ') + (stroke ? ' RG' : ' rg');
+  }
+  rrPath(x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    const k = r * 0.5523, yt = this.d.H - y, yb = yt - h, x2 = x + w, n = f2;
+    if (r === 0) return n(x) + ' ' + n(yb) + ' ' + n(w) + ' ' + n(h) + ' re';
+    return [n(x + r) + ' ' + n(yt) + ' m', n(x2 - r) + ' ' + n(yt) + ' l', n(x2 - r + k) + ' ' + n(yt) + ' ' + n(x2) + ' ' + n(yt - r + k) + ' ' + n(x2) + ' ' + n(yt - r) + ' c',
+      n(x2) + ' ' + n(yb + r) + ' l', n(x2) + ' ' + n(yb + r - k) + ' ' + n(x2 - r + k) + ' ' + n(yb) + ' ' + n(x2 - r) + ' ' + n(yb) + ' c',
+      n(x + r) + ' ' + n(yb) + ' l', n(x + r - k) + ' ' + n(yb) + ' ' + n(x) + ' ' + n(yb + r - k) + ' ' + n(x) + ' ' + n(yb + r) + ' c',
+      n(x) + ' ' + n(yt - r) + ' l', n(x) + ' ' + n(yt - r + k) + ' ' + n(x + r - k) + ' ' + n(yt) + ' ' + n(x + r) + ' ' + n(yt) + ' c h'].join(' ');
+  }
+  paint(o) { return o.fill && o.stroke ? 'B' : o.fill ? 'f' : 'S'; }
+  style(o) {
+    let s = '';
+    if (o.fill) s += this.col(o.fill) + ' ';
+    if (o.stroke) s += this.col(o.stroke, true) + ' ' + f2(o.lw || 0.75) + ' w ';
+    return s;
+  }
+  rect(x, y, w, h, o) {
+    o = o || {}; if (w <= 0 || h <= 0) return;
+    this.o.push('q ' + this.style(o) + this.rrPath(x, y, w, h, o.r || 0) + ' ' + this.paint(o) + ' Q');
+  }
+  line(x1, y1, x2, y2, o) {
+    o = o || {};
+    this.o.push('q ' + this.col(o.color || '#000000', true) + ' ' + f2(o.lw || 0.75) + ' w ' + (o.cap ? '1 J ' : '') + (o.dash ? '[' + o.dash.join(' ') + '] 0 d ' : '') + f2(x1) + ' ' + this.yy(y1) + ' m ' + f2(x2) + ' ' + this.yy(y2) + ' l S Q');
+  }
+  poly(pts, o) {
+    o = o || {}; if (pts.length < 2) return;
+    let s = 'q ' + this.style(o) + (o.stroke ? '1 J 1 j ' : '') + (o.dash ? '[' + o.dash.join(' ') + '] 0 d ' : '');
+    pts.forEach((p, i) => { s += f2(p[0]) + ' ' + this.yy(p[1]) + (i ? ' l ' : ' m '); });
+    this.o.push(s + (o.close ? 'h ' : '') + this.paint(o) + ' Q');
+  }
+  circle(cx, cy, r, o) {
+    o = o || {}; const k = r * 0.5523, X = cx, Y = this.d.H - cy, n = f2;
+    this.o.push('q ' + this.style(o) + [n(X + r) + ' ' + n(Y) + ' m', n(X + r) + ' ' + n(Y + k) + ' ' + n(X + k) + ' ' + n(Y + r) + ' ' + n(X) + ' ' + n(Y + r) + ' c', n(X - k) + ' ' + n(Y + r) + ' ' + n(X - r) + ' ' + n(Y + k) + ' ' + n(X - r) + ' ' + n(Y) + ' c', n(X - r) + ' ' + n(Y - k) + ' ' + n(X - k) + ' ' + n(Y - r) + ' ' + n(X) + ' ' + n(Y - r) + ' c', n(X + k) + ' ' + n(Y - r) + ' ' + n(X + r) + ' ' + n(Y - k) + ' ' + n(X + r) + ' ' + n(Y) + ' c h'].join(' ') + ' ' + this.paint(o) + ' Q');
+  }
+  text(str, x, y, o) {
+    o = o || {}; const size = o.size || 10, s = pdfStr(i18n(str)); if (!s) return;
+    const w = tw(s, size, o.bold) + (o.spacing ? o.spacing * s.length : 0);
+    if (o.align === 'r') x -= w; else if (o.align === 'c') x -= w / 2;
+    this.o.push('q BT /' + (o.bold ? 'F2' : 'F1') + ' ' + f2(size) + ' Tf ' + this.col(o.color || '#000000') + (o.spacing ? ' ' + f2(o.spacing) + ' Tc' : '') + ' ' + f2(x) + ' ' + this.yy(y) + ' Td (' + pdfEsc(s) + ') Tj ET Q');
+  }
+}
+class PdfDoc {
+  constructor() { this.W = 595.28; this.H = 841.89; this.pages = []; this.info = {}; }
+  addPage() { const p = new PdfPage(this); this.pages.push(p); return p; }
+  build() {
+    const objs = [];
+    const add = b => { objs.push(b); return objs.length; };
+    add(''); add('');
+    add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    const dt = new Date(), inf = this.info;
+    add('<< /Title (' + pdfEsc(pdfStr(inf.title || '')) + ') /Author (' + pdfEsc(pdfStr(inf.author || '')) + ') /Producer (SaKu) /CreationDate (D:' + dt.getFullYear() + pad(dt.getMonth() + 1) + pad(dt.getDate()) + pad(dt.getHours()) + pad(dt.getMinutes()) + pad(dt.getSeconds()) + ') >>');
+    const kids = [];
+    this.pages.forEach(pg => {
+      const content = pg.o.join('\n');
+      const cn = add('<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream');
+      const pn = add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + f2(this.W) + ' ' + f2(this.H) + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + cn + ' 0 R >>');
+      kids.push(pn + ' 0 R');
+    });
+    objs[0] = '<< /Type /Catalog /Pages 2 0 R >>';
+    objs[1] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + kids.length + ' >>';
+    let out = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'; const offs = [];
+    objs.forEach((b, i) => { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + b + '\nendobj\n'; });
+    const xr = out.length;
+    out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' + offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+    out += 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R /Info 5 0 R >>\nstartxref\n' + xr + '\n%%EOF';
+    const u = new Uint8Array(out.length);
+    for (let i = 0; i < out.length; i++) u[i] = out.charCodeAt(i) & 255;
+    return u;
+  }
+}
+
+/* ---------- Tata letak laporan ---------- */
+const PC = { ink: '#10241D', ink2: '#41544B', ink3: '#64756C', line: '#DAE2DB', line2: '#C4D0C6', deep: '#0F2A24', deepInk2: '#A9BDB3', accent: '#F2B01E', accentSoft: '#FBEBC3', inC: '#17794F', outC: '#C2391F', inBar: '#2FA36B', outBar: '#E2593C', sunken: '#EEF2EE', white: '#FFFFFF', s: ['#98A69E', '#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'] };
+
+function buildReportPdf(M) {
+  const doc = new PdfDoc(), W = doc.W, L = 40, R = W - 40, CW = R - L, BOT = 792;
+  doc.info = { title: 'Laporan Keuangan ' + M.label, author: M.user };
+  let p = doc.addPage(), y = 0;
+  const hhmm = pad(M.now.getHours()) + '.' + pad(M.now.getMinutes());
+
+  function band() {
+    p.rect(0, 0, W, 112, { fill: PC.deep }); p.rect(0, 112, W, 4, { fill: PC.accent });
+    p.rect(L, 34, 36, 36, { fill: PC.accent, r: 10 });
+    p.line(L + 11, 41, L + 11, 63, { color: '#9A6F08', lw: 1.2, cap: 1 });
+    p.line(L + 16, 46, L + 29, 46, { color: PC.deep, lw: 2.2, cap: 1 }); p.line(L + 16, 52, L + 29, 52, { color: PC.deep, lw: 2.2, cap: 1 }); p.line(L + 16, 58, L + 24, 58, { color: PC.deep, lw: 2.2, cap: 1 });
+    p.text('Laporan Keuangan', L + 50, 53, { size: 21, bold: true, color: '#FFFFFF' });
+    p.text('SaKu  \xB7  ' + M.user, L + 50, 71, { size: 9.5, color: PC.deepInk2 });
+    p.text('REKAP ' + M.periodName.toUpperCase(), R, 41, { size: 7.5, bold: true, color: PC.accent, align: 'r', spacing: 1.2 });
+    p.text(M.label, R, 59, { size: 13, bold: true, color: '#FFFFFF', align: 'r' });
+    p.text('Dibuat ' + fmtDateLong(M.now) + ', ' + hhmm, R, 76, { size: 8.5, color: PC.deepInk2, align: 'r' });
+    y = 138;
+  }
+  function miniHead() {
+    p.text('SaKu', L, 36, { size: 9.5, bold: true, color: PC.ink });
+    p.text('Laporan ' + M.label, R, 36, { size: 9, color: PC.ink3, align: 'r' });
+    p.line(L, 46, R, 46, { color: PC.line }); y = 70;
+  }
+  function ensure(h) { if (y + h > BOT) { p = doc.addPage(); miniHead(); } }
+  /* sel tabel rincian: masuk +hijau, keluar -merah, selisih hitam (minus: merah dalam kurung) */
+  const sIn = n => n > 0 ? ['+' + fmtRp(n), PC.inC] : '-';
+  const sOut = n => n > 0 ? ['-' + fmtRp(n), PC.outC] : '-';
+  const sNet = n => n < 0 ? ['(' + fmtRp(Math.abs(n)) + ')', PC.outC] : n === 0 ? '-' : fmtRp(n);
+  function section(title, right) {
+    p.rect(L, y - 9, 3, 12, { fill: PC.accent, r: 1.5 });
+    p.text(title, L + 10, y, { size: 11.5, bold: true, color: PC.ink });
+    if (right) p.text(right, R, y, { size: 8.5, color: PC.ink3, align: 'r' });
+    y += 18;
+  }
+
+  /* --- halaman 1 --- */
+  band();
+  const cw = (CW - 30) / 4, ch = 64;
+  const dOut = M.prevOut > 0 ? (M.tout - M.prevOut) / M.prevOut * 100 : null;
+  const cards = [
+    ['PEMASUKAN', fmtRp(M.tin), M.nIn + ' catatan masuk', PC.inBar],
+    ['PENGELUARAN', fmtRp(M.tout), dOut == null ? M.nOut + ' catatan keluar' : (dOut >= 0 ? 'Naik ' : 'Turun ') + fmtPct(Math.abs(dOut)) + ' dari ' + M.prevLabel, PC.outBar],
+    ['SELISIH', (M.net > 0 ? '+' : '') + fmtRp(M.net), M.net >= 0 ? 'Surplus' + (M.tin > 0 ? ' ' + fmtPct(M.net / M.tin * 100) + ' dari pemasukan' : '') : 'Defisit', M.net >= 0 ? PC.inBar : PC.outBar],
+    ['SALDO KESELURUHAN', fmtRp(M.saldo), 'Semua catatan', PC.accent]
+  ];
+  cards.forEach((c, i) => {
+    const x = L + i * (cw + 10);
+    p.rect(x, y, cw, ch, { fill: PC.white, stroke: PC.line, lw: 0.8, r: 10 });
+    p.rect(x + 12, y + 14, 14, 3, { fill: c[3], r: 1.5 });
+    p.text(c[0], x + 12, y + 29, { size: 6.8, bold: true, color: PC.ink3, spacing: 0.7 });
+    p.text(c[1], x + 12, y + 45, { size: fitSize(c[1], cw - 22, 13.5, true, 8.5), bold: true, color: PC.ink });
+    p.text(fitText(c[2], cw - 22, 6.8, false), x + 12, y + 57, { size: 6.8, color: PC.ink3 });
+  });
+  y += ch + 16;
+  if (M.bud && M.bud.cap > 0 && M.P === 'month') {
+    const used = M.bud.outM / M.bud.cap * 100;
+    p.text((M.bud.basis === 'anggaran' ? 'Anggaran bulanan  ' : 'Dana tersedia  ') + fmtRp(M.bud.outM) + ' dari ' + fmtRp(M.bud.cap) + (M.bud.add > 0 ? ' (termasuk tambahan ' + fmtRp(M.bud.add) + ')' : ''), L, y + 8, { size: 8.5, bold: true, color: PC.ink2 });
+    p.text(fmtPct(used) + ' terpakai', R, y + 8, { size: 8.5, bold: true, color: used > 100 ? PC.outC : PC.ink2, align: 'r' });
+    p.rect(L, y + 14, CW, 6, { fill: PC.sunken, r: 3 }); p.rect(L, y + 14, Math.max(4, Math.min(CW, CW * used / 100)), 6, { fill: used > 100 ? PC.outBar : used > 85 ? PC.s[4] : PC.inBar, r: 3 });
+    y += 44;
+  } else y += 6;
+  const nt = [], rr = n => fmtRp(Math.round(n));
+  if (M.bud && M.bud.cap > 0 && M.P === 'month' && M.bud.eta) {
+    const e = M.bud.eta, w = M.bud.basis === 'anggaran' ? 'anggaran' : 'dana', per = CYCLE.day > 1 ? 'periode' : 'bulan', tr = ' (tren ' + rr(M.bud.rate) + ' per hari)';
+    nt.push(e.over ? 'Estimasi: ' + w + ' sudah habis' + (e.date ? ' sejak ' + fmtDM(e.date) : '') + '.' : e.within ? 'Estimasi ' + w + ' habis sekitar ' + fmtDM(e.date) + ', ' + e.days + ' hari lagi' + tr + '.' : 'Estimasi: ' + w + ' cukup sampai akhir ' + per + ', perkiraan total ' + rr(M.bud.proj) + tr + '.');
+  }
+  if (M.avg && M.avg.has) nt.push('Rata-rata pengeluaran: ' + rr(M.avg.perDay) + ' per hari · ' + rr(M.avg.perWeek) + ' per minggu · ' + (M.avg.perMonth != null ? rr(M.avg.perMonth) : M.avg.days >= 14 ? 'sekitar ' + rr(M.avg.perMonthEst) : '-') + ' per ' + (CYCLE.day > 1 ? 'periode' : 'bulan') + '.');
+  if (M.pocket && (M.pocket.setor > 0 || M.pocket.tarik > 0 || M.pocket.hasil > 0)) {
+    const pk = M.pocket, pr = [];
+    if (pk.setor > 0) pr.push('setor ' + fmtRp(pk.setor)); if (pk.tarik > 0) pr.push('tarik ' + fmtRp(pk.tarik)); if (pk.hasil > 0) pr.push('bunga/hasil ' + fmtRp(pk.hasil));
+    nt.push('Tabungan & investasi periode ini: ' + pr.join(' · ') + '. Bukan pengeluaran atau pemasukan, hanya menggeser saldo.');
+  }
+  nt.forEach(s => { p.text(fitText(s, CW, 7.6, false), L, y + 6, { size: 7.6, color: PC.ink3 }); y += 13; });
+  if (nt.length) y += 5;
+
+  if (M.items.length === 0) {
+    p.rect(L, y, CW, 70, { fill: PC.sunken, r: 12 });
+    p.text('Belum ada transaksi pada periode ini.', W / 2, y + 40, { size: 11, bold: true, color: PC.ink2, align: 'c' });
+    y += 90;
+  } else {
+    /* arus kas */
+    ensure(190);
+    section('Arus kas', null);
+    const lgx = R - 130; p.rect(lgx, y - 26, 8, 8, { fill: PC.inBar, r: 2 }); p.text('Pemasukan', lgx + 12, y - 18, { size: 8, color: PC.ink2 });
+    p.rect(lgx + 66, y - 26, 8, 8, { fill: PC.outBar, r: 2 }); p.text('Pengeluaran', lgx + 78, y - 18, { size: 8, color: PC.ink2 });
+    drawBars(p, L, y + 4, CW, 100, M.bk, M.P);
+    y += 100 + 42;
+
+    /* kategori */
+    ensure(160);
+    section('Pengeluaran per kategori', M.tout > 0 ? 'Total ' + fmtRp(M.tout) : null);
+    if (M.outCats.length) {
+      const top = M.outCats.slice(0, 5), rest = M.outCats.slice(5).reduce((s, r) => s + r.v, 0), parts = top.map(r => ({ v: r.v, color: PC.s[M.slotsOut[r.id]] || PC.s[1] }));
+      if (rest > 0) parts.push({ v: rest, color: PC.s[0] });
+      drawDonut(p, L + 68, y + 66, 64, 40, parts, M.tout, 'TOTAL KELUAR', fmtCompact(M.tout));
+      const lx = L + 160, rows = top.map(r => ({ label: r.label, v: r.v, pct: r.pct, n: r.n, color: PC.s[M.slotsOut[r.id]] || PC.s[1] }));
+      if (rest > 0) rows.push({ label: 'Lainnya (' + (M.outCats.length - 5) + ' kategori)', v: rest, pct: rest / M.tout * 100, n: 0, color: PC.s[0] });
+      p.text('Terbesar: ' + M.outCats[0].label + ' \xB7 ' + fmtPct(M.outCats[0].pct), lx, y + 4, { size: 9.5, bold: true, color: PC.ink });
+      rows.forEach((r, i) => {
+        const ry = y + 26 + i * 21;
+        p.rect(lx, ry - 8, 9, 9, { fill: r.color, r: 2.5 });
+        p.text(fitText(r.label, 160, 9, false), lx + 16, ry, { size: 9, color: PC.ink });
+        p.text(fmtRp(r.v), R - 52, ry, { size: 8.5, color: PC.ink2, align: 'r' });
+        p.text(fmtPct(r.pct), R, ry, { size: 9, bold: true, color: PC.ink, align: 'r' });
+        if (i < rows.length - 1) p.line(lx, ry + 7, R, ry + 7, { color: PC.line, lw: 0.5 });
+      });
+    } else p.text('Belum ada pengeluaran pada periode ini.', L, y + 10, { size: 9.5, color: PC.ink3 });
+    y += 152;
+  }
+
+  /* perbandingan bulan lalu */
+  const C = M.cmp;
+  if (C.has) {
+    ensure(190);
+    section('Pengeluaran ' + C.curLabel + ' vs ' + C.prevLabel + ' (kumulatif)', null);
+    const off = C.cyc ? 112 : 76, lgx = R - 150 - (C.cyc ? 78 : 0);
+    p.line(lgx, y - 21, lgx + 16, y - 21, { color: PC.outBar, lw: 2.2, cap: 1 }); p.text(C.curLabel, lgx + 21, y - 18, { size: 8, color: PC.ink2 });
+    p.line(lgx + off, y - 21, lgx + off + 16, y - 21, { color: PC.ink3, lw: 1.6, dash: [3, 2.5], cap: 1 }); p.text(C.prevLabel, lgx + off + 21, y - 18, { size: 8, color: PC.ink2 });
+    drawCompare(p, L, y + 4, CW, 92, C);
+    y += 92 + 38;
+    let msg;
+    if (C.upto === 0) msg = 'Bulan ini belum dimulai.';
+    else {
+      const upto = C.upto, ws = C.pct == null ? '' : C.pct >= 0 ? ' (lebih boros ' + fmtPct(C.pct) + ')' : ' (lebih hemat ' + fmtPct(Math.abs(C.pct)) + ')';
+      msg = 'Sampai tanggal ' + upto + ': ' + fmtRp(C.curTo) + ' dibanding ' + fmtRp(C.prevTo) + ' pada ' + C.prevLabel + ws + '.';
+      if (C.proj) msg += ' Perkiraan akhir bulan: ' + fmtRp(C.proj) + '.';
+    }
+    const ml = wrapText(msg, CW - 24, 9, true).slice(0, 3), bh = 14 + ml.length * 12;
+    p.rect(L, y - 12, CW, bh, { fill: PC.accentSoft, r: 8 });
+    ml.forEach((l, i) => p.text(l, L + 12, y + 3 + i * 12, { size: 9, bold: true, color: '#3D2F06' }));
+    y += bh + 8;
+  }
+
+  /* --- halaman berikutnya --- */
+  if (M.items.length) {
+    /* rincian */
+    const rows = M.P === 'month' && M.weeks
+      ? M.weeks.map(r => ({ label: ymd(r.from) === ymd(r.to) ? r.from.getDate() + ' ' + MONTHS_S[r.to.getMonth()] : r.from.getMonth() === r.to.getMonth() ? r.from.getDate() + '-' + r.to.getDate() + ' ' + MONTHS_S[r.to.getMonth()] : r.from.getDate() + ' ' + MONTHS_S[r.from.getMonth()] + '-' + r.to.getDate() + ' ' + MONTHS_S[r.to.getMonth()], in: r.in, out: r.out }))
+      : M.bk.map(b => ({ label: DAYS[b.d.getDay()] + ', ' + b.d.getDate() + ' ' + MONTHS_S[b.d.getMonth()], in: b.in, out: b.out }));
+    ensure(40 + (rows.length + 2) * 19); y += 6;
+    section(M.P === 'month' ? 'Rincian per minggu' : M.P === 'week' ? 'Rincian per hari' : 'Rincian 7 hari terakhir', null);
+    table(p, L, y, CW, [['Periode', 0.4, 'l'], ['Masuk', 0.2, 'r'], ['Keluar', 0.2, 'r'], ['Selisih', 0.2, 'r']],
+      rows.map(r => [r.label, sIn(r.in), sOut(r.out), sNet(r.in - r.out)]),
+      [['Total', sIn(rows.reduce((s, r) => s + r.in, 0)), sOut(rows.reduce((s, r) => s + r.out, 0)), sNet(M.net)]], 19);
+    y += 19 * (rows.length + 2) + 22;
+
+    /* rekap pengeluaran per kategori: No, Kategori, Rupiah Pengeluaran, Persentase terhadap Total (semua kategori, bisa lanjut ke halaman berikutnya) */
+    if (M.outCats.length) {
+      const rh = 19, cols = [['No', 0.08, 'l'], ['Kategori', 0.31, 'l'], [curColHead(), 0.24, 'r'], ['Persentase Pengeluaran terhadap Total', 0.37, 'r']];
+      const rows = M.outCats.map((r, i) => [String(i + 1), r.label, fmtRp(r.v), fmtPct(r.pct)]), foot = ['', 'Total', fmtRp(M.tout), fmtPct(100)];
+      ensure(40 + rh * Math.min(rows.length + 2, 5));
+      section('Rekap pengeluaran per kategori', M.label);
+      let i = 0;
+      for (;;) {
+        let room = Math.floor((BOT - y) / rh) - 1;
+        if (room < 3) { p = doc.addPage(); miniHead(); room = Math.floor((BOT - y) / rh) - 1; }
+        const left = rows.length - i, fitsAll = left + 1 <= room, take = fitsAll ? left : Math.min(room, left <= room ? left - 1 : room);
+        table(p, L, y, CW, cols, rows.slice(i, i + take), fitsAll ? [foot] : null, rh);
+        y += rh * (1 + take + (fitsAll ? 1 : 0)) + 22; i += take;
+        if (fitsAll) break;
+        p = doc.addPage(); miniHead();
+      }
+    }
+    /* sumber pemasukan */
+    if (M.inCats.length) {
+      ensure(110);
+      section('Sumber pemasukan', fmtRp(M.tin));
+      M.inCats.slice(0, 8).forEach(r => {
+        ensure(22);
+        const sl = M.slotsIn[r.id], col = PC.s[sl] || PC.s[3];
+        p.text(fitText(r.label, 150, 9, false), L, y + 10, { size: 9, color: PC.ink });
+        p.rect(L + 160, y + 4, 200, 7, { fill: PC.sunken, r: 3.5 }); p.rect(L + 160, y + 4, Math.max(3, 200 * r.pct / 100), 7, { fill: col, r: 3.5 });
+        p.text(fmtRp(r.v), R - 40, y + 10, { size: 8.5, color: PC.ink2, align: 'r' }); p.text(fmtPct(r.pct), R, y + 10, { size: 9, bold: true, color: PC.ink, align: 'r' });
+        y += 22;
+      });
+      y += 18;
+    }
+    /* pengeluaran terbesar */
+    if (M.biggest.length) {
+      ensure(40 + M.biggest.length * 19);
+      section('Pengeluaran terbesar', null);
+      table(p, L, y, CW, [['Tanggal', 0.2, 'l'], ['Kategori', 0.28, 'l'], ['Catatan', 0.3, 'l'], ['Jumlah', 0.22, 'r']],
+        M.biggest.map(t => [t.date.slice(8) + ' ' + MONTHS_S[Number(t.date.slice(5, 7)) - 1], catOf(t.cat).label, t.note || (t.items && t.items[0] ? t.items[0].n : ''), fmtRp(t.amount)]), null, 19);
+      y += 19 * (M.biggest.length + 1) + 22;
+    }
+    /* daftar transaksi */
+    ensure(80);
+    section('Daftar transaksi', M.items.length + ' catatan');
+    const cols = [['Tanggal', 0.14, 'l'], ['Kategori', 0.24, 'l'], ['Catatan / barang', 0.38, 'l'], ['Jumlah', 0.24, 'r']];
+    let i = 0;
+    while (i < M.items.length) {
+      const room = Math.floor((BOT - y - 22) / 19) - 1;
+      if (room < 3) { p = doc.addPage(); miniHead(); continue; }
+      const chunk = M.items.slice(i, i + room);
+      table(p, L, y, CW, cols, chunk.map(t => {
+        const its = (t.items || []).map(x => (x.q > 1 ? x.q + 'x ' : '') + x.n).join(', ');
+        return [t.date.slice(8) + ' ' + MONTHS_S[Number(t.date.slice(5, 7)) - 1], catOf(t.cat).label, [t.note, its].filter(Boolean).join(' - '), (t.type === 'in' ? '+' : '-') + fmtRp(t.amount).replace('-', ''), t.type];
+      }), null, 19);
+      i += chunk.length; y += 19 * (chunk.length + 1) + 8;
+      if (i < M.items.length) { p = doc.addPage(); miniHead(); }
+    }
+  }
+
+  /* footer */
+  const n = doc.pages.length;
+  doc.pages.forEach((pg, i) => {
+    pg.line(L, 812, R, 812, { color: PC.line, lw: 0.6 });
+    pg.text('SaKu \xB7 ' + M.user + ' \xB7 ' + M.label, L, 826, { size: 7.5, color: PC.ink3 });
+    pg.text('Halaman ' + (i + 1) + ' dari ' + n, R, 826, { size: 7.5, color: PC.ink3, align: 'r' });
+  });
+  return doc.build();
+}
+
+function table(p, x, y, w, cols, rows, foot, rh) {
+  const xs = []; let cx = x;
+  cols.forEach(c => { xs.push(cx); cx += w * c[1]; });
+  p.rect(x, y, w, rh, { fill: PC.deep, r: 6 });
+  cols.forEach((c, i) => p.text(c[0], c[2] === 'r' ? xs[i] + w * c[1] - 8 : xs[i] + 8, y + rh / 2 + 3, { size: 7.8, bold: true, color: '#FFFFFF', align: c[2] === 'r' ? 'r' : 'l' }));
+  const all = rows.map(r => ({ r, foot: false })).concat((foot || []).map(r => ({ r, foot: true })));
+  all.forEach((o, ri) => {
+    const ry = y + rh * (ri + 1);
+    if (o.foot) p.rect(x, ry, w, rh, { fill: PC.sunken, r: 0 });
+    else if (ri % 2 === 1) p.rect(x, ry, w, rh, { fill: '#F7F9F6' });
+    cols.forEach((c, i) => {
+      const cell = o.r[i], pair = Array.isArray(cell), raw = pair ? cell[0] : cell;
+      const txt = fitText(String(raw == null ? '' : raw), w * c[1] - 14, 8.5, o.foot);
+      const colr = pair && cell[1] ? cell[1] : c[2] === 'r' && i === cols.length - 1 && o.r[4] === 'in' ? PC.inC : PC.ink;
+      p.text(txt, c[2] === 'r' ? xs[i] + w * c[1] - 8 : xs[i] + 8, ry + rh / 2 + 3, { size: 8.5, bold: o.foot || (c[2] === 'r' && i === cols.length - 1), color: colr, align: c[2] === 'r' ? 'r' : 'l' });
+    });
+    if (!o.foot) p.line(x, ry + rh, x + w, ry + rh, { color: PC.line, lw: 0.4 });
+  });
+}
+
+function drawBars(p, x, y, w, h, bk, P) {
+  const pl = 34, pw = w - pl, maxV = Math.max(1, ...bk.map(b => Math.max(b.in, b.out))), top = niceMax(maxV), n = bk.length, slot = pw / n, bw = Math.max(1.4, Math.min(8, (slot - 3) / 2));
+  const yv = v => y + h - v / top * h;
+  [0, top / 2, top].forEach(v => {
+    p.line(x + pl, yv(v), x + w, yv(v), { color: v === 0 ? PC.line2 : PC.line, lw: v === 0 ? 0.8 : 0.5 });
+    p.text(v === 0 ? '0' : fmtCompact(v), x + pl - 6, yv(v) + 2.8, { size: 7, color: PC.ink3, align: 'r' });
+  });
+  bk.forEach((b, i) => {
+    const cx = x + pl + slot * i + slot / 2;
+    if (b.out > 0) p.rect(cx - bw - 0.6, yv(b.out), bw, y + h - yv(b.out), { fill: PC.outBar, r: Math.min(2, bw / 2) });
+    if (b.in > 0) p.rect(cx + 0.6, yv(b.in), bw, y + h - yv(b.in), { fill: PC.inBar, r: Math.min(2, bw / 2) });
+    const d = b.d.getDate();
+    if (P === 'month') { if (d === 1 || d % 5 === 0) p.text(String(d), cx, y + h + 12, { size: 7, color: PC.ink3, align: 'c' }); }
+    else p.text(DAYS_S[b.d.getDay()] + ' ' + d, cx, y + h + 12, { size: 7, color: PC.ink3, align: 'c' });
+  });
+}
+function drawDonut(p, cx, cy, R, r, parts, total, topTxt, valTxt) {
+  p.circle(cx, cy, (R + r) / 2, { stroke: PC.sunken, lw: R - r });
+  let a = -Math.PI / 2; const gap = parts.length > 1 ? 0.035 : 0;
+  parts.forEach(pt => {
+    const sweep = pt.v / total * Math.PI * 2; if (sweep <= 0) return;
+    const a0 = a + gap / 2, a1 = a + sweep - gap / 2, steps = Math.max(2, Math.ceil((a1 - a0) / 0.06)), pts = [];
+    if (a1 > a0) {
+      for (let i = 0; i <= steps; i++) { const t = a0 + (a1 - a0) * i / steps; pts.push([cx + R * Math.cos(t), cy + R * Math.sin(t)]); }
+      for (let i = steps; i >= 0; i--) { const t = a0 + (a1 - a0) * i / steps; pts.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); }
+      p.poly(pts, { fill: pt.color, close: true });
+    }
+    a += sweep;
+  });
+  p.text(topTxt, cx, cy - 2, { size: 6, bold: true, color: PC.ink3, align: 'c', spacing: 0.6 });
+  p.text(valTxt, cx, cy + 13, { size: 13, bold: true, color: PC.ink, align: 'c' });
+}
+function drawCompare(p, x, y, w, h, C) {
+  const pl = 34, pw = w - pl, N = C.N, maxV = Math.max(1, C.prevTotal, ...C.cur.filter(v => v != null)), top = niceMax(maxV);
+  const xv = d => x + pl + (N > 1 ? (d - 1) / (N - 1) * pw : 0), yv = v => y + h - v / top * h;
+  [0, top / 2, top].forEach(v => {
+    p.line(x + pl, yv(v), x + w, yv(v), { color: v === 0 ? PC.line2 : PC.line, lw: v === 0 ? 0.8 : 0.5 });
+    p.text(v === 0 ? '0' : fmtCompact(v), x + pl - 6, yv(v) + 2.8, { size: 7, color: PC.ink3, align: 'r' });
+  });
+  for (let d = 1; d <= N; d++) if (d === 1 || d % 5 === 0) p.text(String(d), xv(d), y + h + 12, { size: 7, color: PC.ink3, align: 'c' });
+  p.poly(C.prev.map((v, i) => [xv(i + 1), yv(v)]), { stroke: PC.ink3, lw: 1.5, dash: [3, 2.5] });
+  const pts = []; C.cur.forEach((v, i) => { if (v != null) pts.push([xv(i + 1), yv(v)]); });
+  if (pts.length) {
+    p.poly(pts, { stroke: PC.outBar, lw: 2.2 });
+    const e = pts[pts.length - 1]; p.circle(e[0], e[1], 3.4, { fill: PC.outBar, stroke: '#FFFFFF', lw: 1.4 });
+  }
+}
+/* ================= Excel (.xlsx) tanpa pustaka: zip + OOXML ================= */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u) { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC_T[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {
+  const enc = new TextEncoder(), chunks = [], cd = []; let off = 0;
+  const u16 = v => [v & 255, (v >> 8) & 255], u32 = v => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+  files.forEach(f => {
+    const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+    const lh = new Uint8Array([0x50, 0x4b, 3, 4].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)));
+    chunks.push(lh, name, data); cd.push({ name, crc, size: data.length, off }); off += lh.length + name.length + data.length;
+  });
+  const start = off;
+  cd.forEach(e => {
+    const h = new Uint8Array([0x50, 0x4b, 1, 2].concat(u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(e.crc), u32(e.size), u32(e.size), u16(e.name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(e.off)));
+    chunks.push(h, e.name); off += h.length + e.name.length;
+  });
+  chunks.push(new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0].concat(u16(cd.length), u16(cd.length), u32(off - start), u32(start), [0, 0])));
+  let total = 0; chunks.forEach(c => { total += c.length; });
+  const out = new Uint8Array(total); let p = 0; chunks.forEach(c => { out.set(c, p); p += c.length; });
+  return out;
+}
+const xe = s => String(s == null ? '' : s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const colName = c => { let s = ''; while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); } return s; };
+const xlDate = s => Math.round(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000) + 25569;
+
+/* gaya sel */
+const XS = { def: 0, hdr: 1, hdrL: 2, txt: 3, money: 4, pct: 5, date: 6, int: 7, totL: 8, totM: 9, totP: 10, banner: 11, sub: 12, kLab: 13, kVal: 14, kCap: 15, sec: 16, moneyNeg: 17, note: 18, wrap: 19, kValNeg: 20, totI: 21 };
+function stylesXml() {
+  const font = (sz, o) => '<font>' + (o.b ? '<b/>' : '') + (o.i ? '<i/>' : '') + '<sz val="' + sz + '"/><color rgb="FF' + o.c + '"/><name val="Calibri"/><family val="2"/></font>';
+  const fonts = [font(11, { c: '10241D' }), font(11, { c: 'FFFFFF', b: 1 }), font(22, { c: 'FFFFFF', b: 1 }), font(10, { c: 'A9BDB3' }), font(9, { c: '64756C', b: 1 }), font(20, { c: '10241D', b: 1 }), font(9, { c: '64756C' }), font(13, { c: '10241D', b: 1 }), font(11, { c: '10241D', b: 1 }), font(10, { c: '64756C', i: 1 })];
+  const fill = c => '<fill><patternFill patternType="solid"><fgColor rgb="FF' + c + '"/><bgColor indexed="64"/></patternFill></fill>';
+  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill('0F2A24'), fill('EEF2EE'), fill('FBEBC3'), fill('F2B01E')];
+  const side = (n, st, c) => '<' + n + (st ? ' style="' + st + '"><color rgb="FF' + c + '"/></' + n + '>' : '/>');
+  const border = (b, t) => '<border><left/><right/>' + side('top', t && t[0], t && t[1]) + side('bottom', b && b[0], b && b[1]) + '<diagonal/></border>';
+  const borders = [border(), border(['thin', 'DAE2DB']), border(['medium', 'F2B01E']), border(null, ['thin', 'C4D0C6'])];
+  const cq = '"' + (curSym() + (CURRENCIES[CUR].sp ? ' ' : '')).replace(/"/g, '""') + '"';
+  const nf = [[164, cq + '#,##0;\\-' + cq + '#,##0;"-"'], [165, cq + '#,##0;[Red]\\-' + cq + '#,##0;"-"'], [166, '0.0%'], [167, 'dd mmm yyyy'], [168, '#,##0']];
+  const xf = (font, fill, bd, num, al) => '<xf numFmtId="' + (num || 0) + '" fontId="' + font + '" fillId="' + fill + '" borderId="' + bd + '" xfId="0"' + (num ? ' applyNumberFormat="1"' : '') + ' applyFont="1"' + (fill ? ' applyFill="1"' : '') + (bd ? ' applyBorder="1"' : '') + (al ? ' applyAlignment="1"><alignment ' + al + '/></xf>' : '/>');
+  const V = 'vertical="center"';
+  const xfs = [
+    xf(0, 0, 0, 0, V), xf(1, 2, 0, 0, 'horizontal="center" ' + V + ' wrapText="1"'), xf(1, 2, 0, 0, 'horizontal="left" ' + V + ' indent="1"'),
+    xf(0, 0, 1, 0, V), xf(0, 0, 1, 164, V), xf(0, 0, 1, 166, V), xf(0, 0, 1, 167, 'horizontal="left" ' + V), xf(0, 0, 1, 168, V),
+    xf(8, 3, 3, 0, V), xf(8, 3, 3, 164, V), xf(8, 3, 3, 166, V), xf(2, 2, 0, 0, 'horizontal="left" ' + V + ' indent="1"'), xf(3, 2, 0, 0, 'horizontal="left" ' + V + ' indent="1"'),
+    xf(4, 4, 0, 0, 'horizontal="left" ' + V + ' indent="1"'), xf(5, 3, 0, 164, 'horizontal="left" ' + V + ' indent="1"'), xf(6, 3, 0, 0, 'horizontal="left" ' + V + ' indent="1"'),
+    xf(7, 0, 2, 0, V), xf(0, 0, 1, 165, V), xf(9, 0, 0, 0, V), xf(0, 0, 1, 0, V + ' wrapText="1"'), xf(5, 3, 0, 165, 'horizontal="left" ' + V + ' indent="1"'), xf(8, 3, 3, 168, V)
+  ];
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<numFmts count="' + nf.length + '">' + nf.map(n => '<numFmt numFmtId="' + n[0] + '" formatCode="' + xe(n[1]) + '"/>').join('') + '</numFmts>' +
+    '<fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts><fills count="' + fills.length + '">' + fills.join('') + '</fills><borders count="' + borders.length + '">' + borders.join('') + '</borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + xfs.length + '">' + xfs.join('') + '</cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+}
+
+class XSheet {
+  constructor(name, o) { this.name = name; this.o = o || {}; this.cells = new Map(); this.merges = []; this.cols = []; this.rowH = {}; this.charts = []; this.maxR = 1; this.maxC = 1; }
+  put(r, c, v, s, f) { this.cells.set(r + ',' + c, { r, c, v, s: s || 0, f }); if (r > this.maxR) this.maxR = r; if (c > this.maxC) this.maxC = c; return this; }
+  merge(r1, c1, r2, c2, s) {
+    this.merges.push(colName(c1) + r1 + ':' + colName(c2) + r2);
+    for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) if (!this.cells.has(r + ',' + c)) this.put(r, c, null, s);
+  }
+  xml(tabSelected) {
+    const rows = {}; this.cells.forEach(c => { (rows[c.r] = rows[c.r] || []).push(c); });
+    Object.keys(this.rowH).forEach(k => { if (!rows[k]) rows[k] = []; });
+    const rn = Object.keys(rows).map(Number).sort((a, b) => a - b);
+    const o = this.o;
+    let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
+    x += '<sheetPr>' + (o.tab ? '<tabColor rgb="FF' + o.tab + '"/>' : '') + '<pageSetUpPr fitToPage="1"/></sheetPr>';
+    x += '<dimension ref="A1:' + colName(this.maxC) + this.maxR + '"/>';
+    x += '<sheetViews><sheetView workbookViewId="0"' + (o.grid === false ? ' showGridLines="0"' : '') + (tabSelected ? ' tabSelected="1"' : '') + '>';
+    if (o.freeze) x += '<pane ySplit="' + o.freeze + '" topLeftCell="A' + (o.freeze + 1) + '" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A' + (o.freeze + 1) + '" sqref="A' + (o.freeze + 1) + '"/>';
+    x += '</sheetView></sheetViews><sheetFormatPr defaultRowHeight="18" customHeight="1"/>';
+    if (this.cols.length) x += '<cols>' + this.cols.map(c => '<col min="' + c[0] + '" max="' + c[1] + '" width="' + c[2] + '" customWidth="1"/>').join('') + '</cols>';
+    x += '<sheetData>';
+    rn.forEach(r => {
+      const cs = rows[r].sort((a, b) => a.c - b.c);
+      x += '<row r="' + r + '"' + (this.rowH[r] ? ' ht="' + this.rowH[r] + '" customHeight="1"' : '') + '>';
+      cs.forEach(c => {
+        const ref = colName(c.c) + r, s = c.s ? ' s="' + c.s + '"' : '';
+        if (c.v == null && !c.f) x += '<c r="' + ref + '"' + s + '/>';
+        else if (typeof c.v === 'number' || c.f) x += '<c r="' + ref + '"' + s + '>' + (c.f ? '<f>' + xe(c.f) + '</f>' : '') + (typeof c.v === 'number' && isFinite(c.v) ? '<v>' + c.v + '</v>' : '') + '</c>';
+        else x += '<c r="' + ref + '"' + s + ' t="inlineStr"><is><t xml:space="preserve">' + xe(i18n(c.v)) + '</t></is></c>';
+      });
+      x += '</row>';
+    });
+    x += '</sheetData>';
+    if (o.filter) x += '<autoFilter ref="' + o.filter + '"/>';
+    if (this.merges.length) x += '<mergeCells count="' + this.merges.length + '">' + this.merges.map(m => '<mergeCell ref="' + m + '"/>').join('') + '</mergeCells>';
+    x += '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>';
+    x += '<pageSetup paperSize="9" orientation="' + (o.landscape ? 'landscape' : 'portrait') + '" fitToWidth="1" fitToHeight="0"/>';
+    if (this.charts.length) x += '<drawing r:id="rId1"/>';
+    return x + '</worksheet>';
+  }
+}
+
+/* ---------- grafik ---------- */
+const NSC = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+const rpr = (sz, color, b) => '<a:defRPr sz="' + sz + '" b="' + (b ? 1 : 0) + '"><a:solidFill><a:srgbClr val="' + color + '"/></a:solidFill><a:latin typeface="Calibri"/></a:defRPr>';
+const txPr = (sz, color, b) => '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>' + rpr(sz, color, b) + '</a:pPr><a:endParaRPr lang="id-ID"/></a:p></c:txPr>';
+const solid = c => '<a:solidFill><a:srgbClr val="' + c + '"/></a:solidFill>';
+const strRef = (f, vals) => '<c:strRef><c:f>' + xe(f) + '</c:f><c:strCache><c:ptCount val="' + vals.length + '"/>' + vals.map((v, i) => '<c:pt idx="' + i + '"><c:v>' + xe(i18n(v)) + '</c:v></c:pt>').join('') + '</c:strCache></c:strRef>';
+const numRef = (f, vals, fmt) => '<c:numRef><c:f>' + xe(f) + '</c:f><c:numCache><c:formatCode>' + xe(fmt || 'General') + '</c:formatCode><c:ptCount val="' + vals.length + '"/>' + vals.map((v, i) => v == null ? '' : '<c:pt idx="' + i + '"><c:v>' + v + '</c:v></c:pt>').join('') + '</c:numCache></c:numRef>';
+const axfmt = () => LANG === 'en' ? '[>=1000000000]#,##0.0,,,"B";[>=1000000]#,##0.0,,"M";[>=1000]#,##0,"K";0' : '[>=1000000]#,##0.0,,"jt";[>=1000]#,##0,"rb";0';
+const LINE_PAL = ['6250D6', '2A78D6', '1BAF7A', 'EB6834', 'EDA100', 'E87BA4', '008300', 'E34948', '98A69E'];
+
+function chartXml(c) {
+  const t = c.type, ser = c.series;
+  const serXml = ser.map((s, i) => {
+    let x = '<c:ser><c:idx val="' + i + '"/><c:order val="' + i + '"/><c:tx>' + (s.nameRef ? strRef(s.nameRef, [s.name]) : '<c:v>' + xe(i18n(s.name)) + '</c:v>') + '</c:tx>';
+    if (t === 'line') {
+      x += '<c:spPr><a:ln w="' + (s.w || 28575) + '" cap="rnd">' + solid(s.color) + (s.dash ? '<a:prstDash val="dash"/>' : '') + '<a:round/></a:ln></c:spPr>';
+      x += s.marker ? '<c:marker><c:symbol val="circle"/><c:size val="6"/><c:spPr>' + solid(s.color) + '<a:ln w="12700">' + solid('FFFFFF') + '</a:ln></c:spPr></c:marker>' : '<c:marker><c:symbol val="none"/></c:marker>';
+    } else if (t === 'bar') x += '<c:spPr>' + solid(s.color) + '</c:spPr><c:invertIfNegative val="0"/>';
+    else x += '<c:spPr><a:ln w="19050">' + solid('FFFFFF') + '</a:ln></c:spPr>';
+    if (s.ptColors) x += s.ptColors.map((col, k) => '<c:dPt><c:idx val="' + k + '"/>' + (t === 'bar' ? '<c:invertIfNegative val="0"/>' : '') + '<c:bubble3D val="0"/><c:spPr>' + solid(col) + '<a:ln w="19050">' + solid('FFFFFF') + '</a:ln></c:spPr></c:dPt>').join('');
+    if (c.labels) x += '<c:dLbls>' + (c.labels === 'pct' ? '<c:numFmt formatCode="0%" sourceLinked="0"/>' : '<c:numFmt formatCode="' + xe(axfmt()) + '" sourceLinked="0"/>') + '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>' + txPr(900, '10241D', 1) + (c.labels === 'pct' ? '' : '<c:dLblPos val="outEnd"/>') + '<c:showLegendKey val="0"/><c:showVal val="' + (c.labels === 'pct' ? 0 : 1) + '"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="' + (c.labels === 'pct' ? 1 : 0) + '"/><c:showBubbleSize val="0"/>' + (c.labels === 'pct' ? '<c:showLeaderLines val="0"/>' : '') + '</c:dLbls>';
+    x += '<c:cat>' + strRef(c.catRef, c.cats) + '</c:cat><c:val>' + numRef(s.valRef, s.vals) + '</c:val>';
+    if (t === 'line') x += '<c:smooth val="0"/>';
+    return x + '</c:ser>';
+  }).join('');
+  let plot;
+  const axes = (horizontal, line) => {
+    const cat = '<c:catAx><c:axId val="111"/><c:scaling><c:orientation val="' + (horizontal ? 'maxMin' : 'minMax') + '"/></c:scaling><c:delete val="0"/><c:axPos val="' + (horizontal ? 'l' : 'b') + '"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:spPr><a:ln w="9525">' + solid('C4D0C6') + '</a:ln></c:spPr>' + txPr(900, '41544B', 0) + '<c:crossAx val="112"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/>' + (c.tickSkip ? '<c:tickLblSkip val="' + c.tickSkip + '"/>' : '') + '<c:noMultiLvlLbl val="0"/></c:catAx>';
+    const val = '<c:valAx><c:axId val="112"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="' + (horizontal ? 'b' : 'l') + '"/><c:majorGridlines><c:spPr><a:ln w="6350">' + solid('DAE2DB') + '</a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="' + xe(axfmt()) + '" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr>' + txPr(900, '64756C', 0) + '<c:crossAx val="111"/><c:crosses val="' + (horizontal ? 'max' : 'autoZero') + '"/><c:crossBetween val="between"/></c:valAx>';
+    return cat + val;
+  };
+  if (t === 'bar') plot = '<c:barChart><c:barDir val="' + (c.horizontal ? 'bar' : 'col') + '"/><c:grouping val="clustered"/><c:varyColors val="0"/>' + serXml + '<c:gapWidth val="' + (c.gap || 60) + '"/>' + (ser.length > 1 ? '<c:overlap val="-8"/>' : '') + '<c:axId val="111"/><c:axId val="112"/></c:barChart>' + axes(c.horizontal, false);
+  else if (t === 'line') plot = '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>' + serXml + '<c:marker val="1"/><c:axId val="111"/><c:axId val="112"/></c:lineChart>' + axes(false, true);
+  else plot = '<c:doughnutChart><c:varyColors val="1"/>' + serXml + '<c:firstSliceAng val="0"/><c:holeSize val="58"/></c:doughnutChart>';
+  const legend = c.legend === false ? '' : '<c:legend><c:legendPos val="' + (t === 'doughnut' ? 'r' : 'b') + '"/><c:overlay val="0"/>' + txPr(900, '41544B', 0) + '</c:legend>';
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<c:chartSpace ' + NSC + '><c:roundedCorners val="0"/><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr>' + rpr(1200, '10241D', 1) + '</a:pPr><a:r><a:rPr lang="id-ID" sz="1200" b="1">' + solid('10241D') + '<a:latin typeface="Calibri"/></a:rPr><a:t>' + xe(i18n(c.title)) + '</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/>' + plot + '<c:spPr><a:noFill/></c:spPr></c:plotArea>' + legend + '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:spPr>' + solid('FFFFFF') + '<a:ln w="9525">' + solid('DAE2DB') + '</a:ln></c:spPr>' + txPr(900, '41544B', 0) + '</c:chartSpace>';
+}
+function drawingXml(charts) {
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' + charts.map((c, i) =>
+    '<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>' + c.a[0] + '</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>' + c.a[1] + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>' + c.a[2] + '</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>' + c.a[3] + '</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>' +
+    '<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="' + (i + 2) + '" name="Grafik ' + (i + 1) + '" descr="' + xe(i18n(c.title)) + '"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId' + (i + 1) + '"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>').join('') + '</xdr:wsDr>';
+}
+
+/* ---------- model data workbook ---------- */
+function xlsxModel(list, A, meta) {
+  if (meta.settings) setCycleDay(meta.settings.budgetDay);
+  const now = meta.now || new Date(), cr = cycleOf(A), ymk = cycleKey(cr), c0 = ymd(cr.start), c1 = ymd(cr.end);
+  const monthItems = list.filter(t => t.date >= c0 && t.date <= c1 && !isXfer(t));
+  const cmp = compareModel(list, A, now), months = monthsModel(list, A, 12);
+  const outRows = catTotals(monthItems, 'out'), inRows = catTotals(monthItems, 'in'), allRows = catTotals(list, 'out');
+  const dinc = new Array(cmp.dc + 1).fill(0);
+  monthItems.forEach(t => { if (t.type === 'in') dinc[dayDiff(cr.start, parseYmd(t.date)) + 1] += Number(t.amount) || 0; });
+  const dow = [0, 0, 0, 0, 0, 0, 0], dowN = [0, 0, 0, 0, 0, 0, 0];
+  list.forEach(t => { if (t.type === 'out' && !isXfer(t)) { const i = (parseYmd(t.date).getDay() + 6) % 7; dow[i] += Number(t.amount) || 0; dowN[i]++; } });
+  return { user: meta.user || '', now, A, ymk, label: CYCLE.day === 1 ? MONTHS[A.getMonth()] + ' ' + A.getFullYear() : cycleName(cr, true), short: CYCLE.day === 1 ? MONTHS_S[A.getMonth()] : cycleName(cr, false), monthItems, cmp, months, outRows, inRows, allRows, dinc, dow, dowN, tin: sumType(monthItems, 'in'), tout: sumType(monthItems, 'out'), fund: fundOf(list), list: list.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.createdAt || '').localeCompare(String(a.createdAt || '')))) };
+}
+
+function buildXlsx(X) {
+  const SH = {}; const sheets = [];
+  const mk = (n, o) => { const s = new XSheet(n, o); SH[n] = s; sheets.push(s); return s; };
+  const dash = mk('Ringkasan', { grid: false, tab: 'F2B01E' }), mo = mk('Bulanan', { tab: '2FA36B', freeze: 1 }), rek = mk('Rekap Kategori', { tab: '7B61D6', freeze: 1 }), kat = mk('Kategori', { tab: '2A78D6', freeze: 1 }), har = mk('Harian', { tab: 'E2593C', freeze: 1 }), trx = mk('Transaksi', { tab: '0F2A24', freeze: 1, landscape: true });
+  const C = X.cmp, ML = X.label;
+
+  /* --- Bulanan --- */
+  mo.cols = [[1, 1, 14], [2, 5, 18], [6, 6, 22], [7, 7, 16]];
+  ['Bulan', 'Pemasukan', 'Pengeluaran', 'Selisih', 'Saldo akhir', 'Simpanan (setor −, tarik +)', 'Rasio tabungan'].forEach((h, i) => mo.put(1, i + 1, h, i ? XS.hdr : XS.hdrL)); mo.rowH[1] = 26;
+  X.months.forEach((m, i) => {
+    const r = i + 2;
+    mo.put(r, 1, m.label, XS.txt).put(r, 2, m.in, XS.money).put(r, 3, m.out, XS.money).put(r, 4, m.net, XS.moneyNeg, 'B' + r + '-C' + r).put(r, 5, m.saldo, XS.moneyNeg, i ? 'E' + (r - 1) + '+D' + r + '+F' + r : null).put(r, 6, m.xf, XS.moneyNeg).put(r, 7, m.in > 0 ? m.net / m.in : 0, XS.pct, 'IF(B' + r + '>0,D' + r + '/B' + r + ',0)');
+  });
+  const mt = X.months.length + 2, sum = k => X.months.reduce((s, m) => s + m[k], 0);
+  mo.put(mt, 1, 'Total 12 bulan', XS.totL).put(mt, 2, sum('in'), XS.totM, 'SUM(B2:B' + (mt - 1) + ')').put(mt, 3, sum('out'), XS.totM, 'SUM(C2:C' + (mt - 1) + ')').put(mt, 4, sum('in') - sum('out'), XS.totM, 'B' + mt + '-C' + mt).put(mt, 5, null, XS.totL).put(mt, 6, sum('xf'), XS.totM, 'SUM(F2:F' + (mt - 1) + ')').put(mt, 7, sum('in') > 0 ? (sum('in') - sum('out')) / sum('in') : 0, XS.totP, 'IF(B' + mt + '>0,D' + mt + '/B' + mt + ',0)');
+  mo.put(mt + 2, 1, 'Saldo akhir = saldo bulan sebelumnya + selisih + setor/tarik simpanan (setoran mengurangi saldo, penarikan menambahnya; keduanya bukan pengeluaran atau pemasukan).', XS.note);
+
+  /* --- Rekap Kategori: No, Kategori, Rupiah Pengeluaran, Persentase Pengeluaran terhadap Total (periode yang dipilih, semua kategori) --- */
+  rek.cols = [[1, 1, 7], [2, 2, 34], [3, 3, 22], [4, 4, 38]];
+  ['No', 'Kategori', curColHead(), 'Persentase Pengeluaran terhadap Total'].forEach((h, i) => rek.put(1, i + 1, h, i === 1 ? XS.hdrL : XS.hdr)); rek.rowH[1] = 30;
+  const rr0 = X.outRows.length ? X.outRows.map(r => [catOf(r.id).label, r.v]) : [['(belum ada pengeluaran)', 0]], rt = rr0.length + 2, rtot = rr0.reduce((a, r) => a + r[1], 0);
+  rr0.forEach((r, i) => { const rw = i + 2; rek.put(rw, 1, X.outRows.length ? i + 1 : null, XS.int).put(rw, 2, r[0], XS.txt).put(rw, 3, r[1], XS.money).put(rw, 4, rtot > 0 ? r[1] / rtot : 0, XS.pct, 'IF($C$' + rt + '>0,C' + rw + '/$C$' + rt + ',0)'); });
+  rek.put(rt, 1, null, XS.totL).put(rt, 2, 'Total', XS.totL).put(rt, 3, rtot, XS.totM, 'SUM(C2:C' + (rt - 1) + ')').put(rt, 4, rtot > 0 ? 1 : 0, XS.totP, 'IF(C' + rt + '>0,1,0)');
+  rek.put(rt + 2, 1, 'Periode: ' + X.label + '. Urut dari pengeluaran terbesar. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.', XS.note);
+
+  /* --- Kategori --- */
+  kat.cols = [[1, 1, 28], [2, 2, 17], [3, 3, 10], [4, 4, 3], [5, 5, 28], [6, 6, 17], [7, 7, 10], [8, 8, 3], [9, 9, 28], [10, 10, 17], [11, 11, 10]];
+  const topOut = X.outRows.slice(0, 8), restOut = X.outRows.slice(8).reduce((s, r) => s + r.v, 0), pieRows = topOut.map(r => [catOf(r.id).label, r.v]);
+  if (restOut > 0) pieRows.push(['Lainnya (' + (X.outRows.length - 8) + ' kategori)', restOut]);
+  if (!pieRows.length) pieRows.push(['(belum ada pengeluaran)', 0]);
+  const block = (c0, title, rows, total) => {
+    kat.put(1, c0, title, XS.hdrL).put(1, c0 + 1, 'Jumlah', XS.hdr).put(1, c0 + 2, 'Porsi', XS.hdr);
+    rows.forEach((r, i) => { const rr = i + 2; kat.put(rr, c0, r[0], XS.txt).put(rr, c0 + 1, r[1], XS.money).put(rr, c0 + 2, total > 0 ? r[1] / total : 0, XS.pct, 'IF(' + colName(c0 + 1) + '$' + (rows.length + 2) + '>0,' + colName(c0 + 1) + rr + '/' + colName(c0 + 1) + '$' + (rows.length + 2) + ',0)'); });
+    const tr = rows.length + 2, cl = colName(c0 + 1);
+    kat.put(tr, c0, 'Total', XS.totL).put(tr, c0 + 1, total, XS.totM, 'SUM(' + cl + '2:' + cl + (tr - 1) + ')').put(tr, c0 + 2, total > 0 ? 1 : 0, XS.totP, 'IF(' + cl + tr + '>0,1,0)');
+  };
+  kat.rowH[1] = 26;
+  const pieTot = pieRows.reduce((s, r) => s + r[1], 0);
+  block(1, 'Pengeluaran ' + X.label, pieRows, pieTot);
+  const inList = X.inRows.map(r => [catOf(r.id).label, r.v]); if (!inList.length) inList.push(['(belum ada pemasukan)', 0]);
+  block(5, 'Pemasukan ' + X.label, inList, inList.reduce((s, r) => s + r[1], 0));
+  const allList = X.allRows.map(r => [catOf(r.id).label, r.v]); if (!allList.length) allList.push(['(belum ada pengeluaran)', 0]);
+  block(9, 'Pengeluaran seluruh data', allList, allList.reduce((s, r) => s + r[1], 0));
+
+  /* --- Harian --- */
+  har.cols = [[1, 1, 9], [2, 3, 18], [4, 5, 20], [6, 6, 3], [7, 7, 16], [8, 9, 18]];
+  ['Tanggal', 'Pengeluaran', 'Pemasukan', 'Kumulatif ' + C.curLabel, 'Kumulatif ' + C.prevLabel].forEach((h, i) => har.put(1, i + 1, h, i ? XS.hdr : XS.hdrL)); har.rowH[1] = 26;
+  for (let d = 1; d <= C.N; d++) {
+    const r = d + 1;
+    har.put(r, 1, addDays(C.cs, d - 1).getDate(), XS.int);
+    if (d <= C.dc) har.put(r, 2, C.dcur[d], XS.money).put(r, 3, X.dinc[d], XS.money); else har.put(r, 2, null, XS.txt).put(r, 3, null, XS.txt);
+    har.put(r, 4, C.cur[d - 1] == null ? null : C.cur[d - 1], XS.money);
+    har.put(r, 5, d <= C.pdim ? C.prev[d - 1] : null, XS.money);
+  }
+  const HN = C.N + 1;
+  ['Hari', 'Total pengeluaran', 'Jumlah catatan'].forEach((h, i) => har.put(1, 7 + i, h, i ? XS.hdr : XS.hdrL));
+  [1, 2, 3, 4, 5, 6, 0].map(i => DAYS[i]).forEach((n, i) => har.put(i + 2, 7, n, XS.txt).put(i + 2, 8, X.dow[i], XS.money).put(i + 2, 9, X.dowN[i], XS.int));
+  har.put(9, 7, 'Total', XS.totL).put(9, 8, X.dow.reduce((a, b) => a + b, 0), XS.totM, 'SUM(H2:H8)').put(9, 9, X.dowN.reduce((a, b) => a + b, 0), XS.totI, 'SUM(I2:I8)');
+  har.put(11, 7, 'Kolom Kumulatif kosong untuk tanggal yang belum terjadi. Tabel hari memakai seluruh catatan pengeluaran.', XS.note);
+
+  /* --- Transaksi --- */
+  trx.cols = [[1, 1, 14], [2, 2, 10], [3, 3, 13], [4, 4, 26], [5, 5, 30], [6, 6, 46], [7, 7, 18]];
+  ['Tanggal', 'Hari', 'Jenis', 'Kategori', 'Catatan', 'Barang', 'Jumlah'].forEach((h, i) => trx.put(1, i + 1, h, i === 6 ? XS.hdr : XS.hdrL)); trx.rowH[1] = 26;
+  X.list.forEach((t, i) => {
+    const r = i + 2, its = (t.items || []).map(x => (x.q > 1 ? x.q + 'x ' : '') + x.n + (x.p ? ' @' + dots(x.p) : '')).join('; ');
+    trx.put(r, 1, xlDate(t.date), XS.date).put(r, 2, DAYS[parseYmd(t.date).getDay()], XS.txt).put(r, 3, (() => { const p = potOf(t), d = debtOf(t); return p ? (p.k === 'setor' ? 'Setor simpanan' : p.k === 'tarik' ? 'Tarik simpanan' : 'Hasil simpanan') : d ? (d.p === 'hutang' ? (d.k === 'tarik' ? 'Pinjaman diterima' : 'Bayar hutang') : (d.k === 'setor' ? 'Beri pinjaman' : 'Pelunasan piutang')) : t.type === 'in' ? 'Pemasukan' : 'Pengeluaran'; })(), XS.txt).put(r, 4, catOf(t.cat).label, XS.txt).put(r, 5, t.note || '', XS.txt).put(r, 6, its, XS.txt).put(r, 7, (t.type === 'in' ? 1 : -1) * (Number(t.amount) || 0), XS.moneyNeg);
+  });
+  const TN = X.list.length + 1;
+  trx.o.filter = 'A1:G' + Math.max(TN, 2);
+  trx.put(TN + 2, 1, 'Jumlah bertanda minus berarti uang keluar. Setor/tarik/hasil simpanan bukan pengeluaran atau pemasukan (hasil tidak menyentuh kas). Gunakan filter di baris judul atau PivotTable untuk analisis lanjutan.', XS.note);
+
+  /* --- Ringkasan --- */
+  dash.cols = [[1, 3, 9.3], [4, 4, 2.2], [5, 7, 9.3], [8, 8, 2.2], [9, 11, 9.3], [12, 12, 2.2], [13, 15, 9.3]];
+  dash.merge(1, 1, 2, 15, XS.banner); dash.put(1, 1, 'Laporan Keuangan', XS.banner); dash.rowH[1] = 24; dash.rowH[2] = 24;
+  dash.merge(3, 1, 3, 15, XS.sub); dash.put(3, 1, 'SaKu  ·  ' + X.user + '  ·  Bulan laporan: ' + ML + '  ·  Dibuat ' + fmtDateLong(X.now), XS.sub); dash.rowH[3] = 22; dash.rowH[4] = 10;
+  const net = X.tin - X.tout, dText = C.pct == null ? 'Belum ada pembanding' : (C.pct >= 0 ? 'Naik ' : 'Turun ') + fmtPct(Math.abs(C.pct)) + ' vs ' + C.prevShort + (C.isCurrent ? ' (s.d. tgl ' + C.upto + ')' : '');
+  const cards = [[1, 'Pemasukan ' + X.short, X.tin, XS.kVal, X.monthItems.filter(t => t.type === 'in').length + ' catatan'], [5, 'Pengeluaran ' + X.short, X.tout, XS.kVal, dText], [9, 'Selisih bulan ini', net, XS.kValNeg, net >= 0 ? 'Surplus' + (X.tin > 0 ? ' ' + fmtPct(net / X.tin * 100) + ' dari pemasukan' : '') : 'Defisit, pengeluaran melebihi pemasukan'], [13, 'Saldo keseluruhan', X.fund.saldo, XS.kValNeg, 'Dari semua catatan']];
+  cards.forEach(cd => {
+    dash.merge(5, cd[0], 5, cd[0] + 2, XS.kLab); dash.put(5, cd[0], cd[1].toUpperCase(), XS.kLab);
+    dash.merge(6, cd[0], 6, cd[0] + 2, cd[3]); dash.put(6, cd[0], cd[2], cd[3]);
+    dash.merge(7, cd[0], 7, cd[0] + 2, XS.kCap); dash.put(7, cd[0], cd[4], XS.kCap);
+  });
+  dash.rowH[5] = 22; dash.rowH[6] = 38; dash.rowH[7] = 22; dash.rowH[8] = 12;
+
+  const rng = (sh, col, r1, r2) => sh + '!$' + col + '$' + r1 + ':$' + col + '$' + r2;
+  const mN = X.months.length + 1, labels = X.months.map(m => m.label);
+  const catCol = (colL, n) => rng('Kategori', colL, 2, n + 1);
+  const pieNames = pieRows.map(r => r[0]), pieVals = pieRows.map(r => r[1]);
+  const topAll = allList.slice(0, 10);
+  const dayL = []; for (let d = 1; d <= C.N; d++) dayL.push(String(addDays(C.cs, d - 1).getDate()));
+  const pieColors = pieRows.map((r, i) => (i === 8 || (restOut > 0 && i === pieRows.length - 1)) ? '98A69E' : LINE_PAL[i % 8]);
+  const defs = [
+    { type: 'bar', title: 'Pemasukan vs pengeluaran per bulan', catRef: rng('Bulanan', 'A', 2, mN), cats: labels, series: [{ name: 'Pemasukan', nameRef: 'Bulanan!$B$1', valRef: rng('Bulanan', 'B', 2, mN), vals: X.months.map(m => m.in), color: '2FA36B' }, { name: 'Pengeluaran', nameRef: 'Bulanan!$C$1', valRef: rng('Bulanan', 'C', 2, mN), vals: X.months.map(m => m.out), color: 'E2593C' }] },
+    { type: 'doughnut', title: 'Pengeluaran per kategori – ' + ML, catRef: catCol('A', pieRows.length), cats: pieNames, labels: 'pct', series: [{ name: 'Pengeluaran', nameRef: 'Kategori!$B$1', valRef: rng('Kategori', 'B', 2, pieRows.length + 1), vals: pieVals, ptColors: pieColors }] },
+    { type: 'line', title: 'Pengeluaran ' + C.curLabel + ' vs ' + C.prevLabel + ' (kumulatif)', catRef: rng('Harian', 'A', 2, HN), cats: dayL, tickSkip: 2, series: [{ name: 'Kumulatif ' + C.prevLabel, nameRef: 'Harian!$E$1', valRef: rng('Harian', 'E', 2, HN), vals: C.prev.concat(new Array(C.N - C.pdim).fill(null)), color: '64756C', dash: 1, w: 22225 }, { name: 'Kumulatif ' + C.curLabel, nameRef: 'Harian!$D$1', valRef: rng('Harian', 'D', 2, HN), vals: C.cur.concat(new Array(C.N - C.dc).fill(null)), color: 'E2593C', w: 34925 }] },
+    { type: 'bar', horizontal: true, title: 'Sumber pemasukan – ' + ML, catRef: catCol('E', inList.length), cats: inList.map(r => r[0]), legend: false, labels: 'val', series: [{ name: 'Pemasukan', nameRef: 'Kategori!$F$1', valRef: rng('Kategori', 'F', 2, inList.length + 1), vals: inList.map(r => r[1]), color: '2FA36B' }] },
+    { type: 'bar', title: 'Pengeluaran harian – ' + ML, catRef: rng('Harian', 'A', 2, C.dc + 1), cats: dayL.slice(0, C.dc), legend: false, gap: 40, tickSkip: 2, series: [{ name: 'Pengeluaran', nameRef: 'Harian!$B$1', valRef: rng('Harian', 'B', 2, C.dc + 1), vals: C.dcur.slice(1), color: 'E2593C' }] },
+    { type: 'bar', title: 'Pengeluaran per hari dalam seminggu', catRef: rng('Harian', 'G', 2, 8), cats: [1, 2, 3, 4, 5, 6, 0].map(i => DAYS[i]), legend: false, series: [{ name: 'Total pengeluaran', nameRef: 'Harian!$H$1', valRef: rng('Harian', 'H', 2, 8), vals: X.dow, color: '2A78D6' }] },
+    { type: 'line', title: 'Saldo akhir per bulan', catRef: rng('Bulanan', 'A', 2, mN), cats: labels, legend: false, series: [{ name: 'Saldo akhir', nameRef: 'Bulanan!$E$1', valRef: rng('Bulanan', 'E', 2, mN), vals: X.months.map(m => m.saldo), color: '2A78D6', marker: 1 }] },
+    { type: 'bar', horizontal: true, title: '10 kategori pengeluaran terbesar (seluruh data)', catRef: rng('Kategori', 'I', 2, topAll.length + 1), cats: topAll.map(r => r[0]), legend: false, labels: 'val', series: [{ name: 'Pengeluaran', nameRef: 'Kategori!$J$1', valRef: rng('Kategori', 'J', 2, topAll.length + 1), vals: topAll.map(r => r[1]), color: 'E2593C' }] }
+  ];
+  defs.forEach((d, i) => { const row = 8 + Math.floor(i / 2) * 19, left = i % 2 === 0; d.a = left ? [0, row, 7, row + 18] : [8, row, 15, row + 18]; dash.charts.push(d); });
+  dash.put(8 + 4 * 19 + 1, 1, 'Data di balik grafik ada di sheet Bulanan, Kategori, dan Harian. Angka diperbarui saat Anda mengunduh ulang dari SaKu.', XS.note);
+
+  /* --- rakit paket --- */
+  const files = []; let chartN = 0; const ct = [], wbRels = [], wbSheets = [];
+  sheets.forEach((s, i) => {
+    const n = i + 1;
+    files.push({ name: 'xl/worksheets/sheet' + n + '.xml', data: s.xml(i === 0) });
+    ct.push('<Override PartName="/xl/worksheets/sheet' + n + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>');
+    wbRels.push('<Relationship Id="rId' + n + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + n + '.xml"/>');
+    wbSheets.push('<sheet name="' + s.name + '" sheetId="' + n + '" r:id="rId' + n + '"/>');
+    if (s.charts.length) {
+      const dn = 1, rels = [];
+      files.push({ name: 'xl/worksheets/_rels/sheet' + n + '.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing' + dn + '.xml"/></Relationships>' });
+      files.push({ name: 'xl/drawings/drawing' + dn + '.xml', data: drawingXml(s.charts) });
+      ct.push('<Override PartName="/xl/drawings/drawing' + dn + '.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>');
+      s.charts.forEach((c, k) => {
+        chartN++;
+        files.push({ name: 'xl/charts/chart' + chartN + '.xml', data: chartXml(c) });
+        ct.push('<Override PartName="/xl/charts/chart' + chartN + '.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>');
+        rels.push('<Relationship Id="rId' + (k + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart' + chartN + '.xml"/>');
+      });
+      files.push({ name: 'xl/drawings/_rels/drawing' + dn + '.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + rels.join('') + '</Relationships>' });
+    }
+  });
+  wbRels.push('<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>');
+  const iso = X.now.toISOString().replace(/\.\d+Z$/, 'Z');
+  const pre = [
+    { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' + ct.join('') + '</Types>' },
+    { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>' },
+    { name: 'docProps/core.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Laporan Keuangan ' + xe(ML) + '</dc:title><dc:creator>' + xe(X.user || 'SaKu') + '</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">' + iso + '</dcterms:created></cp:coreProperties>' },
+    { name: 'docProps/app.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>SaKu</Application></Properties>' },
+    { name: 'xl/workbook.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets>' + wbSheets.join('') + '</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>' },
+    { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + wbRels.join('') + '</Relationships>' },
+    { name: 'xl/styles.xml', data: stylesXml() }
+  ];
+  return zipStore(pre.concat(files));
+}
+/* ================= Perbandingan bulan, unduhan, pengingat ================= */
+function cmpInsight(C) {
+  if (!C.has) return 'Belum ada pengeluaran di ' + C.curLabel + ' maupun ' + C.prevLabel + '.';
+  if (C.upto === 0) return C.curLabel + ' belum dimulai.';
+  let s = C.isCurrent
+    ? 'Sampai tanggal ' + C.upto + ': <b>' + fmtRp(C.curTo) + '</b> dibanding ' + fmtRp(C.prevTo) + ' pada ' + C.prevLabel
+    : 'Total ' + C.curLabel + ': <b>' + fmtRp(C.curTo) + '</b> dibanding ' + fmtRp(C.prevTo) + ' pada ' + C.prevLabel;
+  if (C.pct != null && Math.abs(C.pct) >= 0.5) s += ' · <span class="' + (C.pct > 0 ? 'neg' : 'pos') + '">' + (C.pct > 0 ? 'lebih boros ' : 'lebih hemat ') + fmtPct(Math.abs(C.pct)) + '</span>';
+  else if (C.prevTo === 0 && C.curTo > 0) s += ' · ' + C.prevLabel + ' belum ada pengeluaran';
+  return s;
+}
+function cmpCard(C) {
+  const head = '<div class="card-h"><h2 id="h-cmp">Pengeluaran ' + C.curLabel + ' vs ' + C.prevLabel + '</h2><span class="sub">kumulatif per tanggal</span></div>';
+  if (!C.has || C.upto === 0) return '<section class="card" aria-labelledby="h-cmp">' + head + '<div class="empty-s">' + cmpInsight(C) + '</div></section>';
+  const sub = C.proj ? '<p class="cmp-sub">Perkiraan akhir ' + (C.cyc ? 'periode' : 'bulan') + ' dengan laju sekarang: <b>' + fmtRp(C.proj) + '</b>' + (C.prevTotal > 0 ? ' (total ' + C.prevLabel + ' ' + fmtRp(C.prevTotal) + ')' : '') + '</p>' : '';
+  return '<section class="card" aria-labelledby="h-cmp">' + head + '<p class="lead">' + ic('trend', 20) + '<span>' + cmpInsight(C) + '</span></p>' +
+    '<div class="chart" id="cmp"><div class="plot"></div><div class="tip" id="tip2" hidden></div></div>' +
+    '<div class="legend"><span><i style="background:var(--out-bar)"></i>' + C.curLabel + '</span><span><i class="dash"></i>' + C.prevLabel + '</span></div>' + sub + '</section>';
+}
+function cmpSVG(C, W) {
+  const H = 214, pl = 46, pr = 12, pt = 14, pb = 26, pw = W - pl - pr, ph = H - pt - pb, N = C.N;
+  const curVals = C.cur.filter(v => v != null), top = niceMax(Math.max(1, C.prevTotal, ...curVals));
+  const x = d => pl + (N > 1 ? (d - 1) / (N - 1) * pw : pw / 2), y = v => pt + ph - v / top * ph, pt2 = (d, v) => x(d).toFixed(1) + ',' + y(v).toFixed(1);
+  let g = '';
+  [0, top / 2, top].forEach(v => {
+    const yy = y(v).toFixed(1);
+    g += '<line class="' + (v === 0 ? 'bl' : 'gl') + '" x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yy + '" y2="' + yy + '"/><text class="ax" x="' + (pl - 8) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + (v === 0 ? '0' : fmtCompact(v)) + '</text>';
+  });
+  for (let d = 1; d <= N; d++) if (d === 1 || d % 5 === 0) g += '<text class="ax" x="' + x(d).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + addDays(C.cs, d - 1).getDate() + '</text>';
+  g += '<path class="ln-prev" d="M' + C.prev.map((v, i) => pt2(i + 1, v)).join('L') + '"/>';
+  const pts = []; C.cur.forEach((v, i) => { if (v != null) pts.push(pt2(i + 1, v)); });
+  if (pts.length) {
+    g += '<path class="ln-cur" d="M' + pts.join('L') + '"/>';
+    const u = C.upto, pv = C.prev[Math.min(u, C.pdim) - 1];
+    if (pv != null && u <= C.pdim) g += '<circle class="dot-prev" cx="' + x(u).toFixed(1) + '" cy="' + y(pv).toFixed(1) + '" r="4"/>';
+    g += '<circle class="dot-cur" cx="' + x(u).toFixed(1) + '" cy="' + y(C.cur[u - 1]).toFixed(1) + '" r="5"/>';
+  }
+  const step = N > 1 ? pw / (N - 1) : pw;
+  for (let d = 1; d <= N; d++) { const x0 = Math.max(pl, x(d) - step / 2), x1 = Math.min(W - pr, x(d) + step / 2); g += '<rect class="hit2" data-d="' + d + '" x="' + x0.toFixed(1) + '" y="' + pt + '" width="' + (x1 - x0).toFixed(1) + '" height="' + (ph + pb - 6) + '"/>'; }
+  const alt = 'Grafik garis pengeluaran kumulatif. ' + C.curLabel + ' sampai tanggal ' + C.upto + ' ' + fmtRp(C.curTo) + ', ' + C.prevLabel + ' pada tanggal yang sama ' + fmtRp(C.prevTo) + '.';
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc(alt) + '">' + g + '</svg>';
+}
+function drawCmp() {
+  const box = $('#cmp'); if (!box || !S.cmp) return;
+  box.querySelector('.plot').innerHTML = cmpSVG(S.cmp, Math.max(300, Math.round(box.clientWidth || 560)));
+}
+function showTip2(h) {
+  const box = $('#cmp'), tip = $('#tip2'), C = S.cmp; if (!box || !tip || !C) return;
+  const d = Number(h.dataset.d), cv = d <= C.dc ? C.cur[d - 1] : null, pv = d <= C.pdim ? C.prev[d - 1] : null;
+  let t = '<b>Tanggal ' + addDays(C.cs, d - 1).getDate() + (C.cyc ? ' ' + MONTHS_S[addDays(C.cs, d - 1).getMonth()] : '') + '</b><span><em>' + C.curLabel + '</em><em>' + (cv == null ? '–' : fmtRp(cv)) + '</em></span><span><em>' + C.prevLabel + '</em><em>' + (pv == null ? '–' : fmtRp(pv)) + '</em></span>';
+  if (cv != null && pv != null) { const df = cv - pv; t += '<span><em>Selisih</em><em>' + (df > 0 ? '+' : df < 0 ? '-' : '') + fmtRp(Math.abs(df)) + '</em></span>'; }
+  tip.innerHTML = t; tip.hidden = false;
+  const br = box.getBoundingClientRect(), hr = h.getBoundingClientRect(), half = tip.offsetWidth / 2;
+  tip.style.left = Math.max(half, Math.min(br.width - half, hr.left - br.left + hr.width / 2)) + 'px'; tip.style.top = '96px';
+}
+
+/* ---------- Unduhan PDF & Excel ---------- */
+const slugF = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+async function saveFile(name, data) {
+  if (!S.downloads) { toast('Unduhan belum tersedia di tampilan ini.'); return; }
+  try { await S.downloads.save({ filename: name, data }); toast('File siap disimpan'); }
+  catch (e) { if (!e || e.code !== 'declined') toast(e && e.code === 'rate_limited' ? 'Ada permintaan simpan yang masih terbuka. Selesaikan dulu, lalu coba lagi.' : 'File tidak bisa disimpan di tampilan ini.'); }
+}
+async function exportPdf() {
+  if (S.busy.pdf) return; S.busy.pdf = true;
+  try {
+    const M = periodModel(S.tx, S.period, S.anchor, { user: me().name, budget: S.settings && S.settings.budget, settings: S.settings, now: new Date() });
+    await saveFile('laporan-keuangan-' + slugF(M.label) + '.pdf', buildReportPdf(M));
+  } catch (e) { toast('Laporan gagal dibuat.'); }
+  S.busy.pdf = false;
+}
+async function exportXlsx() {
+  if (S.busy.xlsx) return; S.busy.xlsx = true;
+  try {
+    const now = new Date(), A = S.anchor > now ? now : S.anchor, X = xlsxModel(S.tx, A, { user: me().name, now, settings: S.settings });
+    await saveFile('saku-' + slugF(me().name) + '-' + X.ymk + '.xlsx', buildXlsx(X));
+  } catch (e) { toast('File Excel gagal dibuat.'); }
+  S.busy.xlsx = false;
+}
+
+/* ---------- Pengingat dana menipis ---------- */
+const REMIND = {
+  waspada: {
+    e1: '😟', e2: '💸', title: 'Dana mulai menipis',
+    quotes: ['Mulai menipis bukan berarti gagal. Ini tanda untuk melangkah lebih bijak. Kamu pasti bisa!', 'Setiap rupiah yang kamu tahan hari ini adalah ketenangan di akhir bulan.', 'Pelan tapi pasti: yang perlu dulu, yang diinginkan nanti.', 'Kamu sudah hebat karena mau mencatat. Tinggal atur langkah berikutnya.', 'Dompet yang dijaga hari ini, hati yang tenang esok hari. Semangat!']
+  },
+  kritis: {
+    e1: '😰', e2: '⏳', title: 'Dana hampir habis',
+    quotes: ['Tarik napas dulu. Masih ada waktu mengatur ulang, pilih yang benar-benar penting.', 'Rem sedikit sekarang, lega banyak nanti. Kamu mampu melewatinya!', 'Keuangan sehat dibangun dari keputusan kecil. Tunda satu keinginan hari ini.', 'Menahan diri itu bukan pelit, itu cerdas. Kamu sedang menjaga masa depanmu.']
+  },
+  minus: {
+    e1: '🚨', e2: '🆘', title: 'Pengeluaran melebihi dana',
+    quotes: ['Yang penting sadar dan mau memperbaiki. Catatan yang jujur adalah langkah pertama yang berani.', 'Jangan menyerah. Atur ulang prioritas, cari tambahan pemasukan, dan bangkit pelan-pelan.', 'Setiap orang pernah di titik ini. Bedanya, kamu memilih bercermin dan berbenah.', 'Hari ini berat, besok bisa lebih ringan. Mulai dari satu langkah kecil.']
+  }
+};
+let remT = null, remHide = null; const remLast = {};
+function fundStatus(now) {
+  const bm = budgetModel(S.tx, now, S.settings, now);
+  if (bm.outM <= 0) return null;
+  const saldo = S.totals.saldo;
+  if (bm.basis === 'dana' && !(S.totals.in > 0)) return null;
+  let basis = bm.basis, cap = bm.cap, ratio = bm.ratio;
+  let level = ratio >= 1 ? 'minus' : ratio >= 0.85 ? 'kritis' : ratio >= 0.7 ? 'waspada' : null;
+  if (saldo < 0 && S.totals.in > 0) { level = 'minus'; if (ratio < 1) { basis = 'saldo'; cap = bm.avail; } }
+  if (!level) return null;
+  const left = cap - bm.outM, day = dayDiff(bm.start, startOfDay(now)) + 1, dim = bm.dim, rate = bm.rate > 0 ? bm.rate : bm.outM / Math.max(1, day);
+  return { level, basis, ratio, cap, out: bm.outM, left, saldo, daysLeft: left > 0 && rate > 0 ? Math.floor(left / rate) : null, etaDate: left > 0 && rate > 0 ? addDays(startOfDay(now), Math.ceil(left / rate)) : null, remaining: dim - day, per: CYCLE.day > 1 ? 'periode ini' : 'bulan ini', canAdd: bm.basis === 'anggaran' };
+}
+function remindText(st) {
+  let s;
+  if (st.demo) s = 'Ini contoh tampilan pengingat. Nanti muncul bila pengeluaran bulan ini sudah mendekati dana atau anggaran Anda.';
+  else if (st.basis === 'saldo') s = 'Saldo keseluruhan Anda kini <b>' + fmtRp(st.saldo) + '</b>. Pengeluaran bulan ini ' + fmtRp(st.out) + '.';
+  else {
+    s = 'Pengeluaran ' + (st.per || 'bulan ini') + ' <b>' + fmtRp(st.out) + '</b> sudah <b>' + fmtPct(st.ratio * 100) + '</b> dari ' + (st.basis === 'anggaran' ? 'anggaran ' : 'dana tersedia ') + fmtRp(st.cap) + '. ' + (st.left >= 0 ? 'Sisa ' + fmtRp(st.left) + '.' : 'Lewat ' + fmtRp(-st.left) + '.');
+    if (st.daysLeft != null) s += ' Menurut tren pengeluaran, cukup sekitar ' + st.daysLeft + ' hari' + (st.daysLeft >= st.remaining ? ' (sampai akhir ' + (CYCLE.day > 1 ? 'periode' : 'bulan') + ').' : ' (habis sekitar ' + (st.etaDate ? fmtDM(st.etaDate) : '') + '; ' + (st.per || 'bulan ini') + ' masih ' + st.remaining + ' hari lagi).');
+    if (st.canAdd && st.ratio >= 0.85) s += ' Anggaran kurang? Tambahkan dari Rekap.';
+  }
+  return s;
+}
+function hideReminder() { clearTimeout(remHide); const r = $('#remind'); if (r) r.remove(); }
+function cancelReminder() { clearTimeout(remT); hideReminder(); }
+function showReminder(st) {
+  hideReminder();
+  const R = REMIND[st.level]; let i = Math.floor(Math.random() * R.quotes.length);
+  if (i === remLast[st.level]) i = (i + 1) % R.quotes.length;
+  remLast[st.level] = i;
+  const el = document.createElement('div'); el.id = 'remind'; el.className = 'remind lv-' + st.level; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+  el.innerHTML = '<div class="rm-emo" aria-hidden="true"><span class="e1">' + R.e1 + '</span><span class="e2">' + R.e2 + '</span></div><div class="rm-body"><b>' + R.title + '</b><p class="rm-num">' + remindText(st) + '</p><p class="rm-quote">' + esc(R.quotes[i]) + '</p></div><button class="rm-x" data-act="rem-close" aria-label="Tutup pengingat">' + ic('x', 18) + '</button><i class="rm-bar"></i>';
+  document.body.appendChild(el);
+  remHide = setTimeout(hideReminder, 12000);
+}
+function sampleStatus() { return { level: 'waspada', demo: true, basis: 'dana', ratio: 0.78, cap: 0, out: 0, left: 0, saldo: 0, daysLeft: null, remaining: 0 }; }
+function scheduleReminder() {
+  clearTimeout(remT);
+  if (S.settings && S.settings.reminder === false) return;
+  const uid = S.me && S.me.id;
+  remT = setTimeout(() => {
+    if (S.phase !== 'app' || !S.me || S.me.id !== uid || S.form) return;
+    const st = fundStatus(new Date()); if (st) showReminder(st);
+  }, 2600);
+}
+async function saveReminderSetting(on) {
+  try { await S.db.doc('ledger/' + S.me.id).collection('meta').doc('settings').set(Object.assign({}, S.settings, { reminder: !!on })); toast(on ? 'Pengingat diaktifkan' : 'Pengingat dimatikan'); }
+  catch (e) { toast(dbErrMsg(e)); }
+}
+/* ================= Cadangan data per akun, pengingat akhir pekan, pantauan admin =================
+   Bagian murni (bkParse, bkPlan, bkFile, monModel) tidak menyentuh DOM supaya bisa diuji di Node. */
+const BK_APP = 'catat-uang', BK_KIND = 'akun', BK_VER = 1;
+const BK_ID_RE = /^[a-z0-9]{8,32}$/, BK_PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+const BK_PHOTO_MAX = 450000, BK_TX_MAX = 3000, BK_FILE_MAX = 80e6;
+const BK_LS = 'catatuang.bk.', BK_EPOCH = '1970-01-01T00:00:00.000Z';
+const bkCfg = b => { const n = Number(b && b.seconds); return { on: !(b && b.on === false), seconds: Number.isInteger(n) && n >= 5 && n <= 600 ? n : 30 }; };
+function bkId() {
+  const a = new Uint8Array(15), c = (typeof crypto !== 'undefined' && crypto.getRandomValues) ? crypto : null;
+  if (c) c.getRandomValues(a); else for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256);
+  return Array.from(a, b => (b % 36).toString(36)).join('');
+}
+
+/* ---------- Berkas cadangan ---------- */
+function bkExportTx(t) {
+  const o = { id: t.id, type: t.type, amount: t.amount, cat: t.cat, date: t.date, note: t.note || '', items: Array.isArray(t.items) ? t.items.map(i => ({ n: i.n, q: i.q, p: i.p })) : [], photo: t.photo || null, createdAt: t.createdAt || null, updatedAt: t.updatedAt || null };
+  if (t.demo === true) o.demo = true;
+  if (t.ref && t.ref.id) o.ref = t.ref.p ? { k: t.ref.k, id: t.ref.id, p: t.ref.p } : { k: t.ref.k, id: t.ref.id };
+  return o;
+}
+function bkExportPlan(plan) {
+  const o = {};
+  PLAN_COLS.forEach(c => { o[c] = ((plan && plan[c]) || []).map(x => { const y = Object.assign({}, x); delete y.pending; return y; }); });
+  return o;
+}
+function bkFile(user, list, photos, settings, now, plan) {
+  return { app: BK_APP, kind: BK_KIND, v: BK_VER, createdAt: now.toISOString(), user: { id: user.id, name: user.name }, settings: settings || {}, tx: list.map(bkExportTx), photos: photos || {}, plan: bkExportPlan(plan) };
+}
+function bkCleanTx(d, fb) {
+  if (!d || typeof d !== 'object') return null;
+  const amount = Math.round(Number(d.amount));
+  if (d.type !== 'in' && d.type !== 'out') return null;
+  if (!(amount >= 1 && amount <= 1e12)) return null;
+  if (!/^[a-z0-9_-]{1,30}$/.test(String(d.cat))) return null;
+  if (!isYmd(String(d.date)) || ymd(parseYmd(String(d.date))) !== String(d.date)) return null;
+  const items = (Array.isArray(d.items) ? d.items : []).slice(0, 40).map(i => ({ n: String((i && i.n) || '').slice(0, 60), q: Math.min(999, Math.max(1, Math.round(Number(i && i.q)) || 1)), p: Math.min(1e9, Math.max(0, Math.round(Number(i && i.p)) || 0)) }));
+  const ca = String(d.createdAt || '').slice(0, 40), ua = String(d.updatedAt || '').slice(0, 40);
+  const t = { type: d.type, amount, cat: String(d.cat), date: String(d.date), note: String(d.note || '').slice(0, 80), items, photo: BK_ID_RE.test(String(d.photo || '')) ? String(d.photo) : null, createdAt: ca || fb, updatedAt: ua || ca || fb };
+  if (d.demo === true) t.demo = true;
+  const rf = d.ref;
+  if (rf && typeof rf === 'object' && PLAN_COLS.indexOf(rf.k) >= 0 && BK_ID_RE.test(String(rf.id))) { t.ref = { k: rf.k, id: String(rf.id) }; if (/^\d{4}-(0[1-9]|1[0-2])$/.test(String(rf.p || ''))) t.ref.p = String(rf.p); }
+  return t;
+}
+function bkCleanSettings(d) {
+  const o = {}; if (!d || typeof d !== 'object' || Array.isArray(d)) return o;
+  if (d.budget != null) o.budget = Math.min(1e12, Math.max(0, Math.round(Number(d.budget)) || 0));
+  if (typeof d.reminder === 'boolean') o.reminder = d.reminder;
+  if (d.budgetDay != null) { const n = Math.round(Number(d.budgetDay)); if (n >= 2 && n <= 31) o.budgetDay = n; }
+  if (d.budgetAdds && typeof d.budgetAdds === 'object') {
+    const a = {};
+    Object.keys(d.budgetAdds).filter(k => /^\d{4}-(0[1-9]|1[0-2])$/.test(k)).sort().slice(-36).forEach(k => { const v = Math.min(1e12, Math.max(0, Math.round(Number(d.budgetAdds[k])) || 0)); if (v) a[k] = v; });
+    if (Object.keys(a).length) o.budgetAdds = a;
+  }
+  if (d.catBudgets && typeof d.catBudgets === 'object' && !Array.isArray(d.catBudgets)) {
+    const c = {};
+    Object.keys(d.catBudgets).filter(k => /^[a-z0-9_-]{1,30}$/.test(k)).slice(0, 60).forEach(k => { const v = Math.min(1e12, Math.max(0, Math.round(Number(d.catBudgets[k])) || 0)); if (v) c[k] = v; });
+    if (Object.keys(c).length) o.catBudgets = c;
+  }
+  return o;
+}
+/* Membaca & memeriksa isi berkas. Hasil: { err } atau { tx:[{id,d}], photos:{id:{data,createdAt}}, settings, sum } */
+function bkParse(text) {
+  let o; try { o = JSON.parse(text); } catch (e) { return { err: 'Berkas ini bukan cadangan SaKu yang valid.' }; }
+  if (!o || typeof o !== 'object' || Array.isArray(o) || o.app !== BK_APP) return { err: 'Berkas ini bukan cadangan SaKu.' };
+  if (o.kind === 'backup') return { err: 'Ini cadangan seluruh perangkat milik Admin (edisi statis). Pulihkan lewat akun Administrator di menu Pengaturan, bukan di sini.' };
+  if (o.kind !== BK_KIND || o.v !== BK_VER) return { err: 'Berkas ini bukan cadangan akun SaKu, atau versinya belum didukung.' };
+  if (!Array.isArray(o.tx)) return { err: 'Isi cadangan rusak: daftar transaksi tidak ditemukan.' };
+  if (o.tx.length > 20000) return { err: 'Cadangan memuat terlalu banyak transaksi.' };
+  const stamp = typeof o.createdAt === 'string' && !isNaN(Date.parse(o.createdAt)) ? o.createdAt : null, fb = stamp || BK_EPOCH;
+  const idx = new Map(), list = []; let bad = 0, dup = 0, fixed = 0;
+  for (const raw of o.tx) {
+    const d = bkCleanTx(raw, fb); if (!d) { bad++; continue; }
+    let id = raw && typeof raw.id === 'string' && BK_ID_RE.test(raw.id) ? raw.id : null;
+    if (!id) { id = bkId(); fixed++; }
+    if (idx.has(id)) { dup++; const k = idx.get(id); if (list[k].d.updatedAt < d.updatedAt) list[k] = { id, d }; continue; }
+    idx.set(id, list.length); list.push({ id, d });
+  }
+  const photos = {}; let photoBad = 0;
+  if (o.photos && typeof o.photos === 'object' && !Array.isArray(o.photos)) {
+    for (const k of Object.keys(o.photos)) {
+      const p = o.photos[k], data = p && typeof p === 'object' ? p.data : p;
+      if (BK_ID_RE.test(k) && typeof data === 'string' && data.length <= BK_PHOTO_MAX && BK_PHOTO_RE.test(data)) photos[k] = { data, createdAt: String((p && p.createdAt) || fb).slice(0, 40) };
+      else photoBad++;
+    }
+  }
+  const planIn = {}; let planN = 0, planBad = 0, hasPlan = false;
+  PLAN_COLS.forEach(c => { planIn[c] = []; });
+  if (o.plan && typeof o.plan === 'object' && !Array.isArray(o.plan)) {
+    hasPlan = true;
+    PLAN_COLS.forEach(c => {
+      const seen = new Set();
+      (Array.isArray(o.plan[c]) ? o.plan[c] : []).slice(0, PLAN_MAX[c]).forEach(raw => {
+        const id = raw && typeof raw.id === 'string' && BK_ID_RE.test(raw.id) ? raw.id : null, r = id ? planClean(c, raw, fb) : { err: 'id' };
+        if (r.err || seen.has(id)) { planBad++; return; }
+        seen.add(id); planIn[c].push({ id, d: r.ok }); planN++;
+      });
+    });
+  }
+  let from = '', to = '', withPhoto = 0;
+  for (const { d } of list) { if (!from || d.date < from) from = d.date; if (!to || d.date > to) to = d.date; if (d.photo && photos[d.photo]) withPhoto++; }
+  const user = o.user && typeof o.user === 'object' ? { id: String(o.user.id || '').slice(0, 40), name: String(o.user.name || '').slice(0, 80) } : { id: '', name: '' };
+  return { tx: list, photos, settings: bkCleanSettings(o.settings), plan: planIn, hasPlan, sum: { n: list.length, from, to, photos: withPhoto, bad, dup, fixed, photoBad, plan: planN, planBad, createdAt: stamp, user } };
+}
+/* Rencana pemulihan: apa yang ditulis dan dihapus. mode 'merge' = gabungkan, 'replace' = ganti semua. */
+function bkPlan(p, cur, curSet, mode, curPlan) {
+  const replace = mode === 'replace', curMap = new Map(cur.map(t => [t.id, t]));
+  const plan = { txSet: [], txDel: [], photoSet: [], photoDel: [], planSet: [], planDel: [], settings: undefined, stat: { add: 0, upd: 0, same: 0, del: 0, noPhoto: 0, pAdd: 0, pUpd: 0, pSame: 0, pDel: 0 }, total: 0, err: '' };
+  const keep = new Set(), put = new Set();
+  for (const { id, d } of p.tx) {
+    keep.add(id);
+    const c = curMap.get(id), cu = c ? String(c.updatedAt || '') : '';
+    if (c && (replace ? cu === d.updatedAt : cu >= d.updatedAt)) { plan.stat.same++; continue; }
+    let photo = d.photo;
+    if (photo && p.photos[photo]) { if (!put.has(photo)) { put.add(photo); plan.photoSet.push({ id: photo, data: { data: p.photos[photo].data, createdAt: p.photos[photo].createdAt } }); } }
+    else if (photo && !(c && c.photo === photo)) { photo = null; plan.stat.noPhoto++; }
+    if (c && c.photo && c.photo !== photo) plan.photoDel.push(c.photo);
+    plan.txSet.push({ id, data: Object.assign({}, d, { photo }) });
+    if (c) plan.stat.upd++; else plan.stat.add++;
+  }
+  if (replace) for (const c of cur) if (!keep.has(c.id)) { plan.txDel.push(c.id); if (c.photo) plan.photoDel.push(c.photo); plan.stat.del++; }
+  PLAN_COLS.forEach(c => {
+    const curM = new Map((((curPlan || {})[c]) || []).map(x => [x.id, x])), keepP = new Set();
+    ((p.plan && p.plan[c]) || []).forEach(({ id, d }) => {
+      keepP.add(id);
+      const x = curM.get(id), cu = x ? String(x.updatedAt || '') : '';
+      if (x && (replace ? cu === d.updatedAt : cu >= d.updatedAt)) { plan.stat.pSame++; return; }
+      plan.planSet.push({ c, id, data: d }); if (x) plan.stat.pUpd++; else plan.stat.pAdd++;
+    });
+    if (replace && p.hasPlan) curM.forEach((x, id) => { if (!keepP.has(id)) { plan.planDel.push({ c, id }); plan.stat.pDel++; } });
+  });
+  const used = new Set(plan.txSet.map(x => x.data.photo).filter(Boolean));
+  plan.photoDel = Array.from(new Set(plan.photoDel)).filter(id => !put.has(id) && !used.has(id));
+  const hasNew = Object.keys(p.settings).length > 0, hasCur = Object.keys(curSet || {}).length > 0;
+  if (replace) { if (hasNew) plan.settings = p.settings; else if (hasCur) plan.settings = null; }
+  else if (hasNew && !hasCur) plan.settings = p.settings;
+  plan.total = replace ? keep.size : new Set(Array.from(curMap.keys()).concat(Array.from(keep))).size;
+  if (plan.total > BK_TX_MAX) plan.err = 'Hasil akhirnya ' + plan.total + ' transaksi, melebihi batas ' + BK_TX_MAX + ' per akun. Hapus sebagian transaksi lama dulu, atau pakai "Ganti Semua Data".';
+  return plan;
+}
+
+/* ---------- Pantauan admin: hanya hitungan & waktu, tidak pernah isi transaksi ---------- */
+function monModel(accounts, now) {
+  const t = now.getTime(), week = 7 * 86400000, list = Object.values(accounts || {});
+  const m = { total: 0, active: 0, off: 0, pending: 0, users: 0, notes: 0, never: 0, stale: 0, fresh: 0, avail: false };
+  for (const a of list) {
+    if (a.status === 'pending') { m.pending++; continue; }
+    m.total++;
+    if (a.txCount != null || a.lastLoginAt || a.lastBackupAt || a.lastTxAt) m.avail = true;
+    if (a.status === 'rejected' || a.active === false) { m.off++; continue; }
+    m.active++;
+    if (a.role === 'admin') continue;
+    m.users++; m.notes += Number(a.txCount) || 0;
+    const b = a.lastBackupAt ? Date.parse(a.lastBackupAt) : NaN;
+    if (isNaN(b)) m.never++; else if (t - b > week) m.stale++; else m.fresh++;
+  }
+  return m;
+}
+const monWhen = iso => {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d.getTime())) return '';
+  return d.getDate() + ' ' + MONTHS_S[d.getMonth()] + ' ' + d.getFullYear() + ', ' + pad(d.getHours()) + '.' + pad(d.getMinutes());
+};
+
+/* ---------- Cadangan: unduh & pulihkan ---------- */
+const bkNote = (kind, text) => { S.bkNote = kind ? { kind, text } : null; if (S.phase === 'app') paintBk(); };
+function setBackupCfg(b) {
+  if (!b || typeof b !== 'object') return;
+  const c = bkCfg(b); if (c.on === S.backup.on && c.seconds === S.backup.seconds) return;
+  S.backup = c; if (S.phase === 'app' && S.view === 'admin') VIEWS.admin.update();
+}
+function bkLastAt() {
+  const m = me(); if (!m) return 0;
+  let t = m.lastBackupAt ? Date.parse(m.lastBackupAt) : 0; if (isNaN(t)) t = 0;
+  try { const l = Number(localStorage.getItem(BK_LS + 'last.' + m.id)) || 0; if (l > t) t = l; } catch (e) { /* abaikan */ }
+  return t;
+}
+async function bkMarkDone() {
+  const m = me(); if (!m) return;
+  try { localStorage.setItem(BK_LS + 'last.' + m.id, String(Date.now())); } catch (e) { /* abaikan */ }
+  try { await markBackupRemote(); } catch (e) { /* pencatatan ke server boleh gagal; cadangan tetap sah */ }
+  bkHidePopup(); if (S.phase === 'app' && S.view === 'akun') VIEWS.akun.update();
+}
+async function bkDownload(withPhotos) {
+  if (S.busy.bk) return false;
+  if (!S.downloads) { toast('Unduhan tidak tersedia di tampilan ini.'); return false; }
+  const m = me(); if (!m) return false;
+  S.busy.bk = true; bkNote('busy', 'Menyiapkan cadangan…');
+  let ok = false;
+  try {
+    const list = S.tx.slice(), photos = {}; let missing = 0;
+    if (withPhotos) {
+      const ids = Array.from(new Set(list.map(t => t.photo).filter(Boolean))), base = S.db.doc('ledger/' + m.id);
+      let i = 0, done = 0;
+      const worker = async () => {
+        while (i < ids.length) {
+          const id = ids[i++];
+          try { const s = await base.collection('photos').doc(id).get(), d = s && s.exists ? s.data() : null; if (d && typeof d.data === 'string') photos[id] = { data: d.data, createdAt: d.createdAt || null }; else missing++; }
+          catch (e) { missing++; }
+          done++; if (done % 5 === 0 || done === ids.length) bkNote('busy', 'Mengambil foto ' + done + ' dari ' + ids.length + '…');
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+    }
+    const file = bkFile(m, list, photos, S.settings, new Date(), S.plan);
+    await S.downloads.save({ filename: 'saku-cadangan-' + m.id + '-' + ymd(new Date()) + '.json', data: new Blob([JSON.stringify(file)], { type: 'application/json' }) });
+    await bkMarkDone(); ok = true;
+    const np = Object.keys(photos).length;
+    bkNote('ok', 'Cadangan diunduh: ' + list.length + ' transaksi' + (PLAN_COLS.reduce((a, c) => a + ((S.plan && S.plan[c]) || []).length, 0) ? ', ' + PLAN_COLS.reduce((a, c) => a + ((S.plan && S.plan[c]) || []).length, 0) + ' data cicilan, hutang & target' : '') + (withPhotos ? ' dan ' + np + ' foto' : ' tanpa foto') + '. Simpan berkasnya di tempat aman.' + (missing ? ' ' + missing + ' foto tidak bisa diambil.' : ''));
+    toast('Cadangan diunduh');
+  } catch (e) {
+    if (e && e.code === 'declined') { bkNote(null); toast('Cadangan belum disimpan'); }
+    else bkNote('err', 'Gagal membuat cadangan. ' + (e && e.userMessage ? e.userMessage : 'Coba lagi.'));
+  }
+  S.busy.bk = false; paintBk();
+  return ok;
+}
+async function bkLoadFile(f) {
+  S.bkPrev = null; disarm();
+  if (!f) { paintBk(); return; }
+  if (f.size > BK_FILE_MAX) { bkNote('err', 'Berkas terlalu besar (maksimal 80 MB).'); return; }
+  let text; try { text = await f.text(); } catch (e) { bkNote('err', 'Berkas tidak bisa dibaca.'); return; }
+  const p = bkParse(text);
+  if (p.err) { bkNote('err', p.err); return; }
+  S.bkPrev = { name: f.name || 'cadangan.json', p }; bkNote(null); paintBk();
+}
+const chunksOf = (a, n) => { const r = []; for (let i = 0; i < a.length; i += n) r.push(a.slice(i, i + n)); return r; };
+async function bkApply(plan, step) {
+  const base = S.db.doc('ledger/' + S.me.id), CH = typeof queueOp === 'function' ? 80 : 6;
+  const total = plan.photoSet.length + plan.txSet.length + plan.txDel.length + plan.photoDel.length + plan.planSet.length + plan.planDel.length + (plan.settings !== undefined ? 1 : 0);
+  let done = 0; const tick = n => { done += n; step(done, total); };
+  for (const ch of chunksOf(plan.photoSet, 3)) { await Promise.all(ch.map(x => base.collection('photos').doc(x.id).set(x.data))); tick(ch.length); }
+  for (const ch of chunksOf(plan.txSet, CH)) { await Promise.all(ch.map(x => base.collection('tx').doc(x.id).set(x.data))); tick(ch.length); }
+  for (const ch of chunksOf(plan.planSet, CH)) { await Promise.all(ch.map(x => base.collection(x.c).doc(x.id).set(x.data))); tick(ch.length); }
+  if (plan.settings !== undefined) { const ref = base.collection('meta').doc('settings'); if (plan.settings === null) await ref.delete(); else await ref.set(plan.settings); tick(1); }
+  for (const ch of chunksOf(plan.txDel, CH)) { await Promise.all(ch.map(id => base.collection('tx').doc(id).delete())); tick(ch.length); }
+  for (const ch of chunksOf(plan.planDel, CH)) { await Promise.all(ch.map(x => base.collection(x.c).doc(x.id).delete())); tick(ch.length); }
+  for (const ch of chunksOf(plan.photoDel, CH)) { await Promise.all(ch.map(id => base.collection('photos').doc(id).delete().catch(() => { /* foto yatim boleh tertinggal */ }))); tick(ch.length); }
+}
+async function bkRestore(mode) {
+  const pv = S.bkPrev; if (!pv || S.busy.bk) return;
+  const plan = bkPlan(pv.p, S.tx, S.settings, mode, S.plan);
+  if (plan.err) { bkNote('err', plan.err); return; }
+  S.busy.bk = true; bkNote('busy', 'Memulihkan data…');
+  try {
+    await bkApply(plan, (d, t) => bkNote('busy', 'Memulihkan data… ' + d + ' dari ' + t));
+    S.bkPrev = null;
+    const s = plan.stat, parts = [s.add + ' ditambahkan', s.upd + ' diperbarui', s.same + ' sudah sama'];
+    if (s.del) parts.push(s.del + ' dihapus');
+    const pn = s.pAdd + s.pUpd; if (pn) parts.push(pn + ' data cicilan, hutang & target dipulihkan');
+    bkNote('ok', 'Pemulihan selesai: ' + parts.join(', ') + '.' + (s.noPhoto ? ' ' + s.noPhoto + ' transaksi tanpa foto karena fotonya tidak ada di berkas.' : ''));
+    toast('Data berhasil dipulihkan');
+  } catch (e) { bkNote('err', (e && e.userMessage ? e.userMessage : dbErrMsg(e)) + ' Sebagian data mungkin sudah masuk. Ulangi dengan "Gabungkan" untuk melengkapi.'); }
+  S.busy.bk = false; paintBk();
+}
+function bkSubBody(legacy) {
+  const dl = `<label class="check"><input type="checkbox" id="bk-photos" checked> Sertakan foto struk (berkas lebih besar)</label>
+    <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" data-act="bk-dl" id="bk-dl-btn">${ic('download', 18)} Unduh Cadangan</button></div><div id="bk-box"></div>`;
+  if (legacy) return `<p class="desc">Akun administrator tidak lagi dipakai untuk mencatat, tetapi transaksi lama di akun ini masih tersimpan. Unduh cadangannya, lalu pulihkan di akun pengguna biasa lewat Pengaturan › Cadangan Data.</p><p class="bk-last" id="bk-last"></p>${dl}`;
+  return `<p class="desc">Simpan seluruh catatan akun ini ke satu berkas di perangkat Anda. Berkas itu bisa diunggah kembali kapan saja, misalnya saat data hilang, berganti perangkat, atau ingin kembali ke kondisi sebelumnya.</p>
+    <p class="bk-last" id="bk-last"></p>
+    <label class="check"><input type="checkbox" id="bk-photos" checked> Sertakan foto struk (berkas lebih besar)</label>
+    <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" data-act="bk-dl" id="bk-dl-btn">${ic('download', 18)} Unduh Cadangan</button></div>
+    <div class="bk-sep"></div>
+    <h3 class="bk-h">Pulihkan dari Cadangan</h3>
+    <p class="desc">Pilih berkas cadangan (.json) yang pernah Anda unduh dari SaKu.</p>
+    <input type="file" id="bk-file" accept="application/json,.json" hidden>
+    <div class="btn-row"><button class="btn btn-ghost" data-act="bk-pick">${ic('up', 18)} Pilih Berkas Cadangan</button></div>
+    <div id="bk-box"></div>`;
+}
+function bkLastHTML() { const t = bkLastAt(); return t ? 'Cadangan terakhir: <b>' + esc(monWhen(new Date(t).toISOString())) + '</b>' : 'Akun ini <b>belum pernah</b> dicadangkan.'; }
+function bkHint() { const t = bkLastAt(); return t ? 'Cadangan terakhir ' + monWhen(new Date(t).toISOString()) : 'Belum pernah dicadangkan'; }
+function bkPreviewHTML(pv) {
+  const s = pv.p.sum, who = s.user.id ? (s.user.name ? s.user.name + ' (' + s.user.id + ')' : s.user.id) : '-', range = s.n && s.from ? fmtShortRange(s.from, s.to) : '-';
+  const warn = [];
+  if (s.bad) warn.push(s.bad + ' transaksi rusak dilewati.');
+  if (s.dup) warn.push(s.dup + ' transaksi ganda digabung.');
+  if (s.photoBad) warn.push(s.photoBad + ' foto rusak dilewati.');
+  if (s.planBad) warn.push(s.planBad + ' data cicilan/hutang/target rusak dilewati.');
+  const rep = S.armed && S.armed.key === 'bk-replace', busy = !!S.busy.bk;
+  return `<div class="bk-prev"><div class="bk-prev-h">${ic('file', 18)}<b>${esc(pv.name)}</b></div>
+    <dl class="bk-dl"><div><dt>Dibuat</dt><dd>${esc(s.createdAt ? monWhen(s.createdAt) : '-')}</dd></div><div><dt>Dari akun</dt><dd>${esc(who)}</dd></div><div><dt>Transaksi</dt><dd>${s.n}</dd></div><div><dt>Rentang tanggal</dt><dd>${esc(range)}</dd></div><div><dt>Foto</dt><dd>${s.photos}</dd></div><div><dt>Cicilan, hutang & target</dt><dd>${s.plan || 0}</dd></div></dl>
+    ${warn.length ? '<p class="bk-warn">' + esc(warn.join(' ')) + '</p>' : ''}
+    <div class="btn-row"><button class="btn btn-primary" data-act="bk-merge"${busy ? ' disabled' : ''}>Gabungkan</button><button class="btn btn-danger ${rep ? 'armed' : ''}" data-act="bk-replace"${busy ? ' disabled' : ''}>${rep ? 'Yakin? Isi akun diganti cadangan' : 'Ganti Semua Data'}</button><button class="btn btn-ghost" data-act="bk-cancel"${busy ? ' disabled' : ''}>Batal</button></div>
+    <p class="bk-help"><b>Gabungkan</b> menambah transaksi yang belum ada dan memperbarui yang lebih lama, tanpa menghapus apa pun. <b>Ganti Semua Data</b> mengembalikan akun persis seperti isi cadangan; transaksi yang tidak ada di cadangan ikut dihapus.</p></div>`;
+}
+function fmtShortRange(a, b) { const f = s => { const d = parseYmd(s); return d.getDate() + ' ' + MONTHS_S[d.getMonth()] + ' ' + d.getFullYear(); }; return a === b ? f(a) : f(a) + ' – ' + f(b); }
+function paintBk() {
+  const box = $('#bk-box'); if (!box) return;
+  const n = S.bkNote, pv = S.bkPrev;
+  let h = '';
+  if (n) h += `<p class="bk-note ${n.kind}" role="${n.kind === 'err' ? 'alert' : 'status'}">${esc(n.text)}</p>`;
+  if (pv) h += bkPreviewHTML(pv);
+  if (box.dataset.h !== h) { box.innerHTML = h; box.dataset.h = h; }
+  const l = $('#bk-last'); if (l) l.innerHTML = bkLastHTML();
+  const hint = $('#sub-hint-bk'); if (hint) hint.textContent = bkHint();
+  const b = $('#bk-dl-btn'); if (b) b.disabled = !!S.busy.bk;
+}
+
+/* ---------- Pengingat akhir pekan ---------- */
+let bkPopT = null;
+function bkWeekendStart(now) {
+  const d = startOfDay(now), w = d.getDay();
+  if (w === 6) return d;
+  if (w === 0) return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+  return null;
+}
+const bkShownKey = () => BK_LS + 'rem.' + (S.me ? S.me.id : '');
+function bkDue(now) {
+  if (S.phase !== 'app' || !S.me || isAdmin() || !S.backup.on) return false;
+  const ws = bkWeekendStart(now); if (!ws) return false;
+  if (bkLastAt() >= ws.getTime()) return false;
+  try { if (localStorage.getItem(bkShownKey()) === ymd(now)) return false; } catch (e) { /* tanpa penyimpanan: tampil sekali per sesi */ if (S.bkShownDay === ymd(now)) return false; }
+  return true;
+}
+function bkHidePopup() { clearTimeout(bkPopT); const p = $('#bkpop'); if (p) p.remove(); }
+function bkShowPopup() {
+  bkHidePopup();
+  const sec = bkCfg(S.backup).seconds, now = new Date();
+  try { localStorage.setItem(bkShownKey(), ymd(now)); } catch (e) { S.bkShownDay = ymd(now); }
+  const el = document.createElement('div'); el.id = 'bkpop'; el.className = 'remind lv-bk'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+  el.innerHTML = `<div class="rm-emo" aria-hidden="true"><span class="e1">💾</span><span class="e2">🗓️</span></div><div class="rm-body"><b>Jangan Lupa Cadangkan Data Anda</b><p class="rm-num">Akhir pekan ini belum ada cadangan. Unduh berkas cadangan agar catatan keuangan Anda tetap aman.</p><div class="rm-acts"><button type="button" class="btn btn-primary btn-sm" data-act="bk-pop-go">${ic('download', 16)} Cadangkan Sekarang</button><button type="button" class="btn btn-ghost btn-sm" data-act="bk-pop-x">Nanti</button></div></div><button type="button" class="rm-x" data-act="bk-pop-x" aria-label="Tutup pengingat">${ic('x', 18)}</button><i class="rm-bar" style="animation-duration:${sec}s"></i>`;
+  document.body.appendChild(el);
+  bkPopT = setTimeout(bkHidePopup, sec * 1000);
+}
+function bkTick() { if (S.form || $('#bkpop')) return; if (bkDue(new Date())) bkShowPopup(); }
+
+/* ---------- Admin: pengaturan pengingat ---------- */
+function bkAdminCardHTML() {
+  return `<section class="card" id="bkc-card"><h2 class="t">Pengingat Cadangan</h2><p class="desc">Setiap akhir pekan (Sabtu dan Minggu), pengguna yang belum mencadangkan data minggu itu melihat pengingat “Jangan Lupa Cadangkan Data Anda”. Pengingat hilang sendiri setelah beberapa detik dan muncul lagi tiap minggu.</p>
+    <form id="bkc-form" class="sess-form" novalidate><label class="check" style="flex-basis:100%"><input type="checkbox" id="bkc-on" checked> Tampilkan pengingat akhir pekan</label>
+    <div class="field"><label for="bkc-sec">Hilang otomatis setelah (detik)</label><input class="input" id="bkc-sec" inputmode="numeric" maxlength="3" autocomplete="off" placeholder="30"></div><button class="btn btn-primary" type="submit">Simpan</button></form>
+    <p class="form-err" id="bkc-err" role="alert" hidden></p></section>`;
+}
+function bkAdminPaint() {
+  const on = $('#bkc-on'), sec = $('#bkc-sec'), c = bkCfg(S.backup);
+  if (on && document.activeElement !== on) on.checked = c.on;
+  if (sec && document.activeElement !== sec) sec.value = String(c.seconds);
+}
+async function bkAdminSave() {
+  const err = $('#bkc-err'), on = $('#bkc-on').checked, raw = String($('#bkc-sec').value || '').replace(/\D/g, ''), n = raw === '' ? 30 : Number(raw);
+  err.hidden = true;
+  if (!(n >= 5 && n <= 600)) { err.textContent = 'Isi lama tampil antara 5 dan 600 detik.'; err.hidden = false; return; }
+  try { await saveBackupCfgRemote(on, n); setBackupCfg({ on, seconds: n }); toast('Pengingat cadangan disimpan'); bkAdminPaint(); }
+  catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+function saveBackupCfgRemote(on, n) { /* edisi dasar (claude.ai): simpan ke config/app tanpa menimpa isian lain */
+  const ref = S.db.doc('config/app');
+  return ref.get().then(s => ref.set(Object.assign({}, s && s.exists ? s.data() : {}, { backupOn: !!on, backupSeconds: n, updatedAt: new Date().toISOString(), updatedBy: S.me.id })));
+}
+function markBackupRemote() { return S.db.doc('accounts/' + S.me.id).update({ lastBackupAt: new Date().toISOString() }); }
+
+/* ---------- Admin: kartu pantauan ---------- */
+function monSummaryHTML() {
+  const m = monModel(S.accounts, new Date());
+  const tile = (k, v, cls) => `<div class="mon-t ${cls || ''}"><span class="k">${k}</span><b>${v}</b></div>`;
+  let h = `<div class="mon-grid">${tile('Akun aktif', m.active)}${tile('Menunggu', m.pending, m.pending ? 'warn' : '')}${tile('Nonaktif / Ditolak', m.off)}`;
+  if (m.avail) h += `${tile('Total catatan pengguna', dots(m.notes))}${tile('Cadangan 7 hari terakhir', m.fresh + ' dari ' + m.users, m.users && m.fresh === m.users ? 'good' : '')}${tile('Belum pernah dicadangkan', m.never, m.never ? 'warn' : '')}`;
+  h += '</div>';
+  return h;
+}
+function monLineHTML(a) {
+  if (!monModel(S.accounts, new Date()).avail) return '';
+  const li = monWhen(a.lastLoginAt), cell = (k, v, cls) => `<div class="${cls || ''}"><dt>${k}</dt><dd>${v}</dd></div>`;
+  if (a.role === 'admin') return `<dl class="mon-d">${cell('Terakhir masuk', esc(li || 'Belum pernah'))}</dl>`;
+  const bt = a.lastBackupAt ? Date.parse(a.lastBackupAt) : NaN, old = isNaN(bt) || Date.now() - bt > 7 * 86400000;
+  return `<dl class="mon-d">${cell('Catatan', dots(Number(a.txCount) || 0) + ' transaksi')}${cell('Terakhir mencatat', esc(monWhen(a.lastTxAt) || '-'))}${cell('Terakhir masuk', esc(li || 'Belum pernah'))}${cell('Cadangan terakhir', esc(isNaN(bt) ? 'Belum pernah' : monWhen(a.lastBackupAt)), old ? 'warn' : 'good')}</dl>`;
+}
+
+/* ---------- Brankas: cadangan tertutup seluruh akun (hanya administrator) ----------
+   Administrator mengunduh SATU berkas berisi catatan semua akun, tetapi seluruh isinya tersegel (terenkripsi) sehingga tidak
+   bisa dibuka atau dibaca dari aplikasi maupun dari berkasnya. Yang terbuka hanya hitungan (nama akun, jumlah transaksi, waktu).
+   Pemulihan dilakukan oleh sistem: server (Netlify/Supabase/Statis) atau, di edisi Firebase, berkas kunci pemulihan. */
+const VT_LS = 'saku.vault.last.v1', VT_MAX = 250 * 1024 * 1024;
+function vtErr(msg) { const e = new Error(msg); e.userMessage = msg; return e; }
+function vtState() { return S.vt || (S.vt = { st: null, loading: false, err: '', busy: '', prog: '', note: null, file: null, fname: '', sel: {}, mode: 'merge', key: null, keyName: '', fresh: null }); }
+function vtLocalLast() { try { const o = JSON.parse(localStorage.getItem(VT_LS) || 'null'); return o && o.at ? o : null; } catch (e) { return null; } }
+const vtEligible = () => Object.values(S.accounts || {}).filter(a => a.status !== 'pending' && a.status !== 'rejected');
+/* Murni (bisa diuji): memeriksa berkas cadangan tertutup tanpa membuka isinya */
+function vaultParse(text) {
+  let o; try { o = JSON.parse(text); } catch (e) { return { err: 'Berkas ini bukan cadangan SaKu yang utuh.' }; }
+  if (!o || typeof o !== 'object' || o.app !== 'saku' || o.kind !== 'sealed-backup') return { err: 'Ini bukan berkas cadangan tertutup SaKu. Cadangan pribadi (.json) dipulihkan lewat Pengaturan di akun masing-masing.' };
+  if (o.v !== 1) return { err: 'Versi berkas cadangan ini belum didukung.' };
+  const list = Array.isArray(o.accounts) ? o.accounts : [];
+  if (!list.length || list.length > 500) return { err: 'Berkas cadangan tidak memuat akun.' };
+  const accounts = [], seen = {};
+  for (const a of list) {
+    if (!a || typeof a !== 'object' || typeof a.id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(a.id) || seen[a.id] || !a.book || typeof a.book !== 'object') return { err: 'Isi berkas cadangan rusak.' };
+    seen[a.id] = 1;
+    accounts.push({ id: a.id, name: String(a.name || a.id).slice(0, 70), role: a.role === 'admin' || a.role === 'helper' ? a.role : 'user', n: Math.max(0, Math.round(Number(a.n)) || 0), at: String(a.at || '').slice(0, 40), book: a.book, ph: a.ph && typeof a.ph === 'object' && !Array.isArray(a.ph) ? a.ph : {} });
+  }
+  return { file: { at: String(o.at || '').slice(0, 40), by: String(o.by || '').slice(0, 40), mode: o.mode === 'escrow' ? 'escrow' : 'server', kid: String(o.kid || '').slice(0, 20), accounts } };
+}
+function bkVaultCardHTML() {
+  if (!S.vaultOn) return '';
+  return `<section class="card" id="vt-card" aria-labelledby="vt-title"><h2 class="t" id="vt-title">Cadangan Seluruh Akun</h2>
+    <p class="desc">Unduh satu berkas berisi seluruh transaksi, foto struk, anggaran, dan rencana milik setiap akun. Isinya <b>terkunci</b>: administrator hanya melihat nama akun, jumlah catatan, dan waktunya, tidak bisa membuka atau membaca transaksinya. Hanya sistem yang bisa memulihkannya.</p>
+    <div id="vt-body"></div></section>`;
+}
+async function vaultLoad(force) {
+  if (!S.vaultOn || typeof api !== 'function') return;
+  const v = vtState(); if (v.loading || (v.st && !force)) return;
+  v.loading = true; vaultPaint();
+  try { v.st = await api('vault.status'); v.err = ''; } catch (e) { v.err = (e && e.userMessage) || 'Status cadangan tidak bisa dibaca.'; }
+  v.loading = false; vaultPaint();
+}
+function vtFileInfo(v) {
+  const f = v.file; if (!f) return '';
+  const esc2 = v.st && v.st.mode === 'escrow', same = !f.mode || !v.st || f.mode === v.st.mode;
+  if (!same) return `<p class="bk-note err" role="alert">Berkas ini dibuat oleh edisi lain, jadi tidak bisa dipulihkan di sini.</p>`;
+  const rows = f.accounts.map(a => {
+    const have = !!S.accounts[a.id], np = Object.keys(a.ph).length;
+    return `<label class="check vt-row"><input type="checkbox" data-vt-id="${esc(a.id)}"${v.sel[a.id] && have ? ' checked' : ''}${have ? '' : ' disabled'}><span class="who"><b>${esc(a.name)}</b><small>${esc(a.id)} · ${dots(a.n)} transaksi${np ? ' · ' + np + ' foto' : ''}${a.at ? ' · ' + esc(monWhen(a.at)) : ''}</small>${have ? '' : '<small class="warn">Akun ini belum ada. Buat akunnya dulu dengan nama yang sama.</small>'}</span></label>`;
+  }).join('');
+  const picked = f.accounts.filter(a => v.sel[a.id] && S.accounts[a.id]).length, rep = (esc2 ? 'replace' : v.mode) === 'replace', armed = S.armed && S.armed.key === 'vt-replace';
+  const keyBlock = esc2 ? `<div class="vt-key"><input type="file" id="vt-key" accept=".json,application/json" hidden><button type="button" class="btn btn-ghost btn-sm" data-act="vt-key-pick">${ic('lock', 16)} ${v.key ? 'Ganti berkas kunci' : 'Pilih berkas kunci pemulihan'}</button><small>${v.key ? (v.key.kid === f.kid ? '✓ Kunci ' + esc(v.keyName) + ' cocok dengan cadangan ini' : '✕ Kunci ini bukan pasangan cadangan ini') : 'Wajib: berkas kunci yang diunduh saat fitur ini pertama diaktifkan'}</small></div>` : '';
+  const modes = esc2 ? '<p class="bk-help">Di edisi ini pemulihan <b>mengganti seluruh catatan</b> akun yang dipilih dengan isi cadangan.</p>' : `<div class="vt-modes" role="radiogroup" aria-label="Cara memulihkan">
+      <label><input type="radio" name="vt-mode" value="merge"${v.mode === 'merge' ? ' checked' : ''}><span><b>Gabungkan</b> (aman). Menambah yang hilang, tidak menghapus apa pun.</span></label>
+      <label><input type="radio" name="vt-mode" value="replace"${v.mode === 'replace' ? ' checked' : ''}><span><b>Ganti</b>. Akun dikembalikan persis seperti cadangan; catatan yang lebih baru ikut terhapus.</span></label></div>`;
+  return `<div class="bk-prev"><div class="bk-prev-h">${ic('file', 18)}<b>${esc(v.fname || 'cadangan.skbak')}</b></div>
+    <dl class="bk-dl"><div><dt>Dibuat</dt><dd>${esc(f.at ? monWhen(f.at) : '-')}</dd></div><div><dt>Oleh</dt><dd>${esc(f.by || '-')}</dd></div><div><dt>Akun</dt><dd>${f.accounts.length}</dd></div><div><dt>Transaksi</dt><dd>${dots(f.accounts.reduce((s, a) => s + a.n, 0))}</dd></div></dl>
+    <div class="vt-list">${rows}</div>${modes}${keyBlock}
+    <div class="btn-row"><button class="btn ${rep ? 'btn-danger' : 'btn-primary'} ${armed ? 'armed' : ''}" data-act="vt-restore"${v.busy || !picked ? ' disabled' : ''}>${armed ? 'Yakin? Catatan ' + picked + ' akun diganti' : 'Pulihkan ' + picked + ' akun terpilih'}</button><button class="btn btn-ghost" data-act="vt-clear"${v.busy ? ' disabled' : ''}>Batal</button></div></div>`;
+}
+function vaultPaint() {
+  const el = $('#vt-body'); if (!el) return;
+  const v = vtState(), st = v.st;
+  let h = '';
+  if (!st) h = v.loading ? '<p class="desc">Memeriksa status cadangan…</p>' : `<p class="bk-note err" role="alert">${esc(v.err || 'Status cadangan tidak bisa dibaca.')}</p><div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" data-act="vt-retry">Coba lagi</button></div>`;
+  else if (st.mode === 'escrow' && !st.ready) {
+    h = v.fresh
+      ? `<div class="bk-note ok" role="status"><b>Kunci pemulihan sudah dibuat</b> (kode ${esc(v.fresh.kid)}). Simpan berkasnya di tempat yang aman, misalnya pengelola kata sandi atau flashdisk. Berkas itu <b>satu-satunya cara membuka cadangan</b>: tanpanya cadangan tidak bisa dipulihkan, dan siapa pun yang memegangnya bisa membukanya.</div>
+         <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" data-act="vt-enable"${v.busy ? ' disabled' : ''}>Berkas sudah tersimpan, aktifkan</button><button class="btn btn-ghost" data-act="vt-keydl"${v.busy ? ' disabled' : ''}>${ic('download', 18)} Unduh lagi</button></div>`
+      : `<p class="desc">Edisi ini tidak punya server penjaga rahasia, jadi cadangan dikunci dengan <b>kunci pemulihan</b>: aplikasi tiap pengguna menyalin catatannya dalam bentuk terkunci, administrator hanya bisa mengunduh salinan itu, dan hanya pemegang berkas kunci yang bisa membukanya untuk memulihkan.</p>
+         <div class="btn-row"><button class="btn btn-primary" data-act="vt-keygen"${v.busy ? ' disabled' : ''}>${ic('lock', 18)} Buat kunci pemulihan</button></div>`;
+  } else {
+    const last = st.last || vtLocalLast(), elig = vtEligible().length;
+    const esc2 = st.mode === 'escrow', fresh = esc2 ? (st.accounts || []).filter(a => a.kid === st.kid).length : 0;
+    h = `<p class="bk-last">${last ? 'Terakhir diunduh: <b>' + esc(monWhen(last.at)) + '</b>' + (last.by ? ' oleh ' + esc(last.by) : '') + (last.accounts ? ' · ' + last.accounts + ' akun, ' + dots(last.tx || 0) + ' transaksi' : '') : 'Belum pernah diunduh dari sistem ini.'}</p>`;
+    if (esc2) h += `<p class="bk-help">Salinan terkunci tersedia untuk <b>${fresh} dari ${elig}</b> akun. Aplikasi tiap pengguna membuatnya otomatis beberapa detik setelah catatannya berubah; akun yang belum membuka aplikasi sejak fitur ini aktif belum punya salinan.</p>`;
+    else h += `<p class="bk-help">${st.keyFrom === 'env' ? 'Kunci penyegel berasal dari variabel <code>VAULT_SECRET</code> di server, jadi cadangan tetap bisa dipulihkan bila server dipindah.' : 'Kunci penyegel dibuat dan disimpan di server. Agar cadangan tetap bisa dipulihkan bila server dipindah atau datanya hilang, isi variabel <code>VAULT_SECRET</code> (teks acak, minimal 16 karakter) di pengaturan server.'}</p>`;
+    h += `<div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" data-act="vt-run"${v.busy ? ' disabled' : ''}>${ic('download', 18)} Cadangkan Semua Akun</button></div>`;
+    h += `<div class="bk-sep"></div><h3 class="bk-h">Pulihkan dari Cadangan Tertutup</h3><p class="desc">Pilih berkas cadangan (.skbak) yang diunduh dari sini. Isinya tidak ditampilkan; sistem langsung memasukkannya ke akun pemiliknya.</p>
+      <input type="file" id="vt-file" accept=".skbak,application/json,.json" hidden><div class="btn-row"><button class="btn btn-ghost" data-act="vt-pick"${v.busy ? ' disabled' : ''}>${ic('up', 18)} Pilih Berkas Cadangan</button></div>${vtFileInfo(v)}`;
+  }
+  if (v.busy && v.prog) h += `<p class="bk-note busy" role="status" style="margin-top:12px">${esc(v.prog)}</p>`;
+  else if (v.note) h += `<p class="bk-note ${v.note.kind}" role="${v.note.kind === 'err' ? 'alert' : 'status'}" style="margin-top:12px">${esc(v.note.text)}</p>`;
+  if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; }
+}
+async function vaultBackup() {
+  const v = vtState(); if (v.busy || !S.vaultOn) return;
+  if (!S.downloads) { toast('Unduhan tidak tersedia di tampilan ini.'); return; }
+  v.busy = 'run'; v.note = null; v.prog = 'Menyiapkan…'; vaultPaint();
+  const t0 = new Date();
+  try {
+    const st = await api('vault.status'); v.st = st;
+    if (st.mode === 'escrow' && !st.ready) throw vtErr('Buat kunci pemulihan dulu.');
+    const list = vtEligible().sort((a, b) => String(a.name).localeCompare(String(b.name))), out = [], empty = [];
+    let nTx = 0, nPh = 0;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i]; v.prog = 'Mengunci catatan ' + (i + 1) + ' dari ' + list.length + ' akun…'; vaultPaint();
+      const r = await api('vault.seal', { id: a.id });
+      if (r.empty || !r.sealed) { empty.push(a.name || a.id); continue; }
+      const ph = {}, ids = (r.photos || []).slice(); let k = 0;
+      const worker = async () => { while (k < ids.length) { const pid = ids[k++]; const pr = await api('vault.photo', { id: a.id, pid }); if (pr && pr.sealed) ph[pid] = pr.sealed; } };
+      await Promise.all([worker(), worker(), worker()]);
+      out.push({ id: r.id, name: r.name || a.name, role: r.role || a.role, n: r.n || 0, at: r.at || '', book: r.sealed, ph });
+      nTx += r.n || 0; nPh += Object.keys(ph).length;
+    }
+    if (!out.length) throw vtErr('Belum ada catatan yang bisa dicadangkan' + (st.mode === 'escrow' ? ' (salinan dibuat saat pengguna membuka aplikasi).' : '.'));
+    const file = { app: 'saku', kind: 'sealed-backup', v: 1, at: t0.toISOString(), by: S.me.id, mode: st.mode, kid: st.kid || '', accounts: out };
+    v.prog = 'Menyimpan berkas…'; vaultPaint();
+    await S.downloads.save({ filename: 'saku-cadangan-semua-akun-' + ymd(t0) + '.skbak', data: new Blob([JSON.stringify(file)], { type: 'application/octet-stream' }) });
+    const rec = { at: t0.toISOString(), by: S.me.id, accounts: out.length, tx: nTx, photos: nPh };
+    try { localStorage.setItem(VT_LS, JSON.stringify(rec)); } catch (e) { /* abaikan */ }
+    api('vault.log', rec).then(r => { if (r && r.last && v.st) { v.st.last = r.last; vaultPaint(); } }).catch(() => { /* pencatatan boleh gagal */ });
+    v.note = { kind: 'ok', text: 'Cadangan terkunci diunduh: ' + out.length + ' akun, ' + dots(nTx) + ' transaksi, ' + nPh + ' foto.' + (empty.length ? ' Belum ada ' + (st.mode === 'escrow' ? 'salinan' : 'catatan') + ' untuk: ' + empty.join(', ') + '.' : '') };
+    toast('Cadangan seluruh akun diunduh');
+  } catch (e) {
+    if (e && e.code === 'declined') { v.note = null; toast('Cadangan belum disimpan'); }
+    else v.note = { kind: 'err', text: 'Gagal mencadangkan. ' + (e && e.userMessage ? e.userMessage : 'Coba lagi.') };
+  }
+  v.busy = ''; v.prog = ''; vaultPaint();
+}
+async function vaultLoadFile(f) {
+  const v = vtState(); v.note = null; disarm();
+  if (f.size > VT_MAX) { v.note = { kind: 'err', text: 'Berkas terlalu besar.' }; vaultPaint(); return; }
+  let text; try { text = await f.text(); } catch (e) { v.note = { kind: 'err', text: 'Berkas tidak bisa dibaca.' }; vaultPaint(); return; }
+  const p = vaultParse(text);
+  if (p.err) { v.note = { kind: 'err', text: p.err }; v.file = null; vaultPaint(); return; }
+  v.file = p.file; v.fname = f.name || 'cadangan.skbak'; v.sel = {}; p.file.accounts.forEach(a => { v.sel[a.id] = !!S.accounts[a.id]; });
+  vaultPaint();
+}
+async function vaultLoadKey(f) {
+  const v = vtState(); v.note = null;
+  let o = null; try { o = JSON.parse(await f.text()); } catch (e) { o = null; }
+  if (!o || o.app !== 'saku' || o.kind !== 'recovery-key' || typeof o.kid !== 'string' || !o.priv) { v.key = null; v.note = { kind: 'err', text: 'Ini bukan berkas kunci pemulihan SaKu.' }; vaultPaint(); return; }
+  v.key = o; v.keyName = o.kid; vaultPaint();
+}
+async function vaultRestore() {
+  const v = vtState(); if (v.busy || !v.file || !v.st) return;
+  const esc2 = v.st.mode === 'escrow', pick = v.file.accounts.filter(a => v.sel[a.id] && S.accounts[a.id]);
+  if (!pick.length) { toast('Pilih akun yang akan dipulihkan.'); return; }
+  if (esc2 && (!v.key || v.key.kid !== v.file.kid)) { v.note = { kind: 'err', text: 'Pilih berkas kunci pemulihan yang cocok dengan cadangan ini.' }; vaultPaint(); return; }
+  const mode = esc2 ? 'replace' : v.mode, key = esc2 ? v.key : undefined;
+  if (mode === 'replace' && !arm('vt-replace')) { vaultPaint(); return; }
+  disarm(); v.busy = 'restore'; v.note = null;
+  let okN = 0, nTx = 0; const fails = [];
+  for (let i = 0; i < pick.length; i++) {
+    const a = pick[i]; v.prog = 'Memulihkan ' + (i + 1) + ' dari ' + pick.length + ': ' + a.name + '…'; vaultPaint();
+    try {
+      const ids = Object.keys(a.ph); let k = 0;
+      const worker = async () => { while (k < ids.length) { const pid = ids[k++]; await api('vault.restore', { id: a.id, phase: 'photo', pid, sealed: a.ph[pid], key }); } };
+      await Promise.all([worker(), worker(), worker()]);
+      const r = await api('vault.restore', { id: a.id, phase: 'book', mode, sealed: a.book, key });
+      okN++; nTx += r.n || 0;
+    } catch (e) {
+      fails.push(a.name + ': ' + (e && e.userMessage ? e.userMessage : 'gagal'));
+      if (e && e.code === 'vaultkey') break;
+    }
+  }
+  v.busy = ''; v.prog = '';
+  if (okN) { v.file = null; v.key = null; }
+  v.note = { kind: fails.length ? 'err' : 'ok', text: (okN ? 'Dipulihkan: ' + okN + ' akun, ' + dots(nTx) + ' transaksi.' : 'Tidak ada akun yang dipulihkan.') + (fails.length ? ' Gagal: ' + fails.join(' · ') : '') };
+  if (okN) toast('Data ' + okN + ' akun dipulihkan');
+  vaultPaint(); if (typeof pollNow === 'function') pollNow();
+}
+async function vaultSaveKey(kg) {
+  await S.downloads.save({ filename: 'kunci-pemulihan-saku-' + kg.kid + '.json', data: new Blob([JSON.stringify(kg.keyFile, null, 2)], { type: 'application/json' }) });
+}
+async function vaultKeygen() {
+  const v = vtState(); if (v.busy) return;
+  if (!S.downloads) { toast('Unduhan tidak tersedia di tampilan ini.'); return; }
+  v.busy = 'key'; v.note = null; vaultPaint();
+  try { const kg = await api('vault.keygen'); await vaultSaveKey(kg); v.fresh = kg; }
+  catch (e) { if (e && e.code === 'declined') toast('Berkas kunci belum disimpan, jadi fitur belum diaktifkan'); else v.note = { kind: 'err', text: (e && e.userMessage) || 'Kunci tidak bisa dibuat.' }; }
+  v.busy = ''; vaultPaint();
+}
+async function vaultEnable() {
+  const v = vtState(); if (v.busy || !v.fresh) return;
+  v.busy = 'enable'; v.note = null; vaultPaint();
+  try { await api('vault.enable', { pub: v.fresh.pub, kid: v.fresh.kid }); v.fresh = null; v.st = null; v.busy = ''; await vaultLoad(true); toast('Cadangan tertutup aktif'); v.note = { kind: 'ok', text: 'Aktif. Aplikasi tiap pengguna akan membuat salinan terkunci saat mereka membuka aplikasi dan setiap kali catatan berubah.' }; }
+  catch (e) { v.note = { kind: 'err', text: (e && e.userMessage) || 'Gagal mengaktifkan.' }; }
+  v.busy = ''; vaultPaint();
+}
+/* ================= Rencana keuangan: cicilan, hutang, target, jajan ramean =================
+   Bagian murni (tanpa DOM) supaya bisa diuji di Node.
+   Data rencana disimpan di buku catatan (S.plan). Pembayaran TIDAK disimpan di data rencana: setiap pembayaran adalah
+   transaksi biasa yang membawa tautan ref {k, id, p}. Status lunas/belum selalu dihitung dari transaksi,
+   jadi menghapus atau mengubah transaksi otomatis ikut mengubah status. */
+/*PLANCLEAN:BEGIN*/
+const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish'];
+const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120 };
+const PLAN_BYTES = 250000;
+const CICILAN_KIND_IDS = ['kpr', 'mobil', 'hp', 'multi'];
+const TARGET_KIND_IDS = ['darurat', 'tabungan', 'investasi', 'haji', 'nikah', 'rumah', 'kendaraan', 'liburan', 'pendidikan', 'lain'];
+/* Merapikan satu data rencana (cicilan, hutang, target, ramean, perjalanan, wishlist). Hasil { ok: data } atau { err: pesan }. */
+function planClean(c, d, stamp) {
+  const fail = m => ({ err: m });
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return fail('Data tidak valid.');
+  const str = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
+  const int = (v, lo, hi) => { const n = Math.round(Number(v)); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo; };
+  const isDay = s => { if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const t = new Date(s + 'T00:00:00Z'); return !isNaN(t.getTime()) && t.toISOString().slice(0, 10) === s; };
+  const isMon = s => /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
+  const monN = s => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1;
+  const base = { createdAt: str(d.createdAt || stamp, 40), updatedAt: str(d.updatedAt || stamp, 40) };
+  if (c === 'cicilan') {
+    const name = str(d.name, 60), kind = CICILAN_KIND_IDS.indexOf(d.kind) >= 0 ? d.kind : '', mode = d.mode === 'float' || d.mode === 'flat' ? d.mode : '';
+    if (!name) return fail('Isi nama cicilan.');
+    if (!kind) return fail('Pilih jenis cicilan.');
+    if (!mode) return fail('Pilih konsep cicilan.');
+    const amount = int(d.amount, 0, 1e12); if (amount < 1) return fail('Isi nominal cicilan.');
+    const start = str(d.start, 7), end = str(d.end, 7);
+    if (!isMon(start) || !isMon(end)) return fail('Isi bulan mulai dan bulan selesai.');
+    const n = monN(end) - monN(start) + 1; if (n < 1 || n > 600) return fail('Periode cicilan tidak valid (1 sampai 600 bulan).');
+    return { ok: Object.assign({ name, kind, mode, lender: str(d.lender, 60), amount, start, end, day: int(d.day, 1, 31), done0: int(d.done0, 0, n), note: str(d.note, 120), remind: d.remind !== false }, base) };
+  }
+  if (c === 'hutang') {
+    const dir = d.dir === 'piutang' || d.dir === 'hutang' ? d.dir : '', who = str(d.who, 60);
+    if (!dir) return fail('Pilih jenis hutang.');
+    if (!who) return fail('Isi nama orangnya.');
+    const amount = int(d.amount, 0, 1e12); if (amount < 1) return fail('Isi nominal hutang.');
+    const date = str(d.date, 10), first = str(d.first, 10);
+    if (!isDay(date)) return fail('Tanggal pinjam tidak valid.');
+    if (!isDay(first)) return fail('Tanggal jatuh tempo tidak valid.');
+    const freq = d.freq === 'monthend' || d.freq === 'day' ? d.freq : 'once';
+    const o = { dir, who, amount, date, first, freq, day: freq === 'day' ? int(d.day, 1, 31) : 31, inst: freq === 'once' ? 0 : int(d.inst, 0, amount), note: str(d.note, 120), remind: d.remind !== false };
+    if (d.closed === true) o.closed = true;
+    if (d.group != null && String(d.group)) o.group = str(d.group, 40);
+    return { ok: Object.assign(o, base) };
+  }
+  if (c === 'target') {
+    const name = str(d.name, 60), kind = TARGET_KIND_IDS.indexOf(d.kind) >= 0 ? d.kind : 'lain';
+    if (!name) return fail('Isi nama target.');
+    const months = int(d.months, 0, 60), goal = int(d.goal, 0, 1e13);
+    if (goal < 1 && !months) return fail('Isi nominal target.');
+    const deadline = str(d.deadline, 10), start = str(d.start, 10);
+    if (deadline && !isDay(deadline)) return fail('Tanggal target tidak valid.');
+    if (start && !isDay(start)) return fail('Tanggal mulai tidak valid.');
+    const o = { name, kind, goal, months, deadline, start, monthly: int(d.monthly, 0, 1e12), pocket: d.pocket === 'investasi' ? 'investasi' : 'tabungan', base: int(d.base, 0, 1e13), note: str(d.note, 120) };
+    if (d.closed === true) o.closed = true;
+    return { ok: Object.assign(o, base) };
+  }
+  if (c === 'ramean') {
+    const name = str(d.name, 60); if (!name) return fail('Isi nama acara.');
+    const x = d.data == null ? {} : d.data;
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return fail('Data acara tidak valid.');
+    const people = (Array.isArray(x.people) ? x.people : []).slice(0, 30).map((p, i) => str(p, 30) || (i === 0 ? 'Saya' : 'Teman ' + i));
+    if (!people.length) people.push('Saya');
+    const np = people.length, pi = v => { const n = Math.round(Number(v)); return isFinite(n) ? Math.min(np - 1, Math.max(0, n)) : 0; };
+    const items = (Array.isArray(x.items) ? x.items : []).slice(0, 60).map(it => {
+      const o = it && typeof it === 'object' ? it : {}, w = [];
+      (Array.isArray(o.w) ? o.w : []).slice(0, 30).forEach(v => { const n = Math.round(Number(v)); if (isFinite(n) && n >= 0 && n < np && w.indexOf(n) < 0) w.push(n); });
+      return { n: str(o.n, 40), a: int(o.a, 0, 1e10), w: w.sort((p, q) => p - q) };
+    });
+    const data = { people, mode: x.mode === 'item' ? 'item' : 'equal', payer: pi(x.payer), total: int(x.total, 0, 1e11), items, tax: int(x.tax, 0, 100), ship: int(x.ship, 0, 1e10), disc: int(x.disc, 0, 1e10), cat: String(x.cat == null ? '' : x.cat).replace(/[^a-z_]/g, '').slice(0, 20) };
+    if (x.rec && typeof x.rec === 'object' && x.rec.done === true) {
+      const h = {}, src = x.rec.h && typeof x.rec.h === 'object' && !Array.isArray(x.rec.h) ? x.rec.h : {};
+      Object.keys(src).slice(0, 30).forEach(k => { const n = Number(k); if (Number.isInteger(n) && n >= 0 && n < np && /^[a-z0-9]{8,32}$/.test(String(src[k]))) h[n] = String(src[k]); });
+      data.rec = { done: true, at: str(x.rec.at, 40), mine: int(x.rec.mine, 0, 1e11), h };
+    }
+    const dt = str(d.date, 10);
+    return { ok: Object.assign({ name, date: isDay(dt) ? dt : '', budget: int(d.budget, 0, 1e12), note: str(d.note, 120), data }, base) };
+  }
+  if (c === 'trip') {
+    const name = str(d.name, 60); if (!name) return fail('Isi nama perjalanan.');
+    const mode = ['darat', 'laut', 'udara', 'kombinasi'].indexOf(d.mode) >= 0 ? d.mode : 'darat';
+    const date = str(d.date, 10); if (date && !isDay(date)) return fail('Tanggal berangkat tidak valid.');
+    const x = d.data == null ? {} : d.data;
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return fail('Data perjalanan tidak valid.');
+    const num = (v, lo, hi, dp) => { const n = Number(v), k = Math.pow(10, dp || 0); return isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n * k) / k)) : lo; };
+    const segs = [];
+    for (const o0 of (Array.isArray(x.segs) ? x.segs : []).slice(0, 8)) {
+      const o = o0 && typeof o0 === 'object' ? o0 : {}, m = ['darat', 'laut', 'udara'].indexOf(o.m) >= 0 ? o.m : 'darat';
+      const sg = { m, name: str(o.name, 60), km: int(o.km, 0, 20000), h: num(o.h, 0, 300, 1), toll: int(o.toll, 0, 1e8), fare: int(o.fare, 0, 1e9), veh: int(o.veh, 0, 1e9) };
+      if (m === 'darat' && sg.km < 1) return fail('Isi jarak untuk ruas darat.');
+      if (m !== 'darat' && !(sg.h > 0)) return fail('Isi lama perjalanan untuk ruas laut atau udara.');
+      segs.push(sg);
+    }
+    if (!segs.length) return fail('Tambahkan minimal satu ruas perjalanan.');
+    const dep = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(x.dep)) ? String(x.dep) : '06:00';
+    const off = (Array.isArray(x.off) ? x.off : []).slice(0, 80).map(k => String(k)).filter(k => /^[0-9a-z-]{1,24}$/.test(k));
+    const data = { from: str(x.from, 40), to: str(x.to, 40), veh: ['motor', 'mobil', 'suv', 'diesel'].indexOf(x.veh) >= 0 ? x.veh : 'mobil', kmpl: num(x.kmpl, 3, 80, 1), price: int(x.price, 1000, 100000), persons: int(x.persons, 1, 30), rest: int(x.rest, 50, 500), dep, transfer: int(x.transfer, 0, 1e8), off, segs };
+    return { ok: Object.assign({ name, mode, date, budget: int(d.budget, 0, 1e12), note: str(d.note, 120), data }, base) };
+  }
+  if (c === 'wish') {
+    const name = str(d.name, 60); if (!name) return fail('Isi nama wishlist.');
+    const kind = d.kind === 'kegiatan' ? 'kegiatan' : 'barang', cost = int(d.cost, 0, 1e13);
+    if (cost < 1) return fail('Isi estimasi biaya.');
+    const date = str(d.date, 10); if (date && !isDay(date)) return fail('Tanggal rencana tidak valid.');
+    const o = { name, kind, cost, saved: int(d.saved, 0, 1e13), date, freq: ['harian', 'mingguan', 'bulanan'].indexOf(d.freq) >= 0 ? d.freq : 'bulanan', note: str(d.note, 120) };
+    if (d.done === true) o.done = true;
+    return { ok: Object.assign(o, base) };
+  }
+  return fail('Jenis data tidak dikenal.');
+}
+/*PLANCLEAN:END*/
+const CK = {
+  kpr: { id: 'kpr', label: 'Cicilan KPR', short: 'KPR', cat: 'cicilan_kpr', icon: 'home', slot: 7 },
+  mobil: { id: 'mobil', label: 'Cicilan Mobil', short: 'Mobil', cat: 'cicilan_mobil', icon: 'car', slot: 2 },
+  hp: { id: 'hp', label: 'Cicilan HP', short: 'HP', cat: 'cicilan_hp', icon: 'phone', slot: 5 },
+  multi: { id: 'multi', label: 'Cicilan Multiguna', short: 'Multiguna', cat: 'cicilan_multi', icon: 'briefcase', slot: 4 }
+};
+const CKS = [CK.kpr, CK.mobil, CK.hp, CK.multi];
+const CMODE = { flat: 'Flat', float: 'Floating' };
+/* arah hutang: dir 'hutang' = saya berhutang; 'piutang' = saya memberi hutang. dis = uang awal berpindah, pay = pembayaran/pelunasan */
+const HUT = {
+  hutang: { id: 'hutang', label: 'Hutang', who: 'Berhutang ke', icon: 'down', disCat: 'hutang_terima', payCat: 'hutang_bayar', payType: 'out', verb: 'Bayar', done: 'Sudah Bayar' },
+  piutang: { id: 'piutang', label: 'Memberi Hutang', who: 'Dihutang oleh', icon: 'up', disCat: 'piutang_beri', payCat: 'piutang_terima', payType: 'in', verb: 'Terima', done: 'Sudah Dibayar' }
+};
+const PLAN_REF_KEYS = ['cicilan', 'hutang', 'target', 'ramean'];
+
+/* ---------- tanggal per bulan ---------- */
+const ymOf = s => String(s).slice(0, 7);
+const ymN = ym => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1;
+function ymAdd(ym, n) { const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); }
+/* tanggal jatuh tempo di bulan ym; hari 31 (atau lebih besar dari panjang bulan) = akhir bulan */
+function dueOn(ym, day) { const y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7)) - 1, last = new Date(y, m + 1, 0).getDate(); return y + '-' + pad(m + 1) + '-' + pad(Math.min(Math.max(1, day | 0), last)); }
+function ymLabel(ym, short) { return (short ? MONTHS_S : MONTHS)[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4); }
+const ymNow = () => ymd(new Date()).slice(0, 7);
+function lateText(due, tk) {
+  const d = dayDiff(parseYmd(due), parseYmd(tk));
+  return d === 0 ? 'hari ini' : d > 0 ? 'telat ' + d + ' hari' : (-d === 1 ? 'besok' : (-d) + ' hari lagi');
+}
+
+/* ---------- indeks pembayaran dari transaksi ---------- */
+function refIndex(list) {
+  const m = {};
+  for (const t of list) { const r = t && t.ref; if (!r || !r.id) continue; const k = r.k + ':' + r.id; (m[k] || (m[k] = [])).push(t); }
+  return m;
+}
+function sumByPeriod(txs) {
+  const by = {};
+  txs.forEach(t => {
+    const p = (t.ref && t.ref.p) || ymOf(t.date), o = by[p] || (by[p] = { amount: 0, date: t.date, ids: [] });
+    o.amount += Number(t.amount) || 0; if (t.date > o.date) o.date = t.date; o.ids.push(t.id);
+  });
+  return by;
+}
+
+/* ---------- Cicilan ---------- */
+/* Jadwal satu cicilan: satu baris per bulan dari start sampai end.
+   st: 'lalu' (dibayar sebelum memakai SaKu), 'bayar' (ada transaksi pembayaran), 'telat', 'hariini', 'belum' */
+function cicilanModel(c, refs, tk) {
+  const kind = CK[c.kind] || CK.multi, n = ymN(c.end) - ymN(c.start) + 1, done0 = Math.min(Number(c.done0) || 0, n);
+  const txs = refs['cicilan:' + c.id] || [], by = sumByPeriod(txs), rows = [];
+  let paidN = 0, laluN = 0, paidRp = 0;
+  for (let i = 0; i < n; i++) {
+    const p = ymAdd(c.start, i), due = dueOn(p, c.day), pay = by[p];
+    let st;
+    if (pay) st = 'bayar'; else if (i < done0) st = 'lalu'; else st = due < tk ? 'telat' : due === tk ? 'hariini' : 'belum';
+    if (st === 'bayar') { paidN++; paidRp += pay.amount; } else if (st === 'lalu') { paidN++; laluN++; }
+    rows.push({ i: i + 1, p, due, st, amount: pay ? pay.amount : c.amount, date: pay ? pay.date : '', ids: pay ? pay.ids : [] });
+  }
+  const leftN = n - paidN, next = rows.find(r => r.st !== 'bayar' && r.st !== 'lalu') || null;
+  const dueRows = rows.filter(r => r.st === 'telat' || r.st === 'hariini');
+  return {
+    c, kind, n, paidN, laluN, leftN, paidRp, left: leftN * c.amount, total: n * c.amount, pct: n > 0 ? paidN / n * 100 : 0,
+    rows, next, dueRows, finished: leftN <= 0, est: c.mode === 'float', last: rows.length ? rows[rows.length - 1].due : ''
+  };
+}
+
+/* ---------- Hutang & Memberi Hutang ---------- */
+/* Pembayaran = transaksi bertautan dengan kategori pembayaran (hutang_bayar / piutang_terima). Uang awal (hutang_terima / piutang_beri) bukan pembayaran.
+   Pembayaran dialokasikan berurutan ke tagihan yang paling awal: bayar sebagian tidak menutup tagihan, bayar lebih menutup tagihan berikutnya. */
+function hutangModel(h, refs, tk) {
+  const D = HUT[h.dir] || HUT.hutang, all = refs['hutang:' + h.id] || [], txs = all.filter(t => t.cat === D.payCat).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const paid = txs.reduce((s, t) => s + (Number(t.amount) || 0), 0), left = Math.max(0, h.amount - paid), closed = h.closed === true, lunas = left <= 0 || closed;
+  const inst = h.freq === 'once' ? 0 : Math.min(Number(h.inst) || 0, h.amount), cnt = inst > 0 ? Math.min(600, Math.ceil(h.amount / inst)) : 1;
+  const p0 = ymOf(h.first), rows = [];
+  let ti = 0, rem = txs.length ? Number(txs[0].amount) || 0 : 0;
+  for (let k = 0; k < cnt; k++) {
+    const p = ymAdd(p0, k), due = k === 0 ? h.first : dueOn(p, h.freq === 'monthend' ? 31 : h.day);
+    const need = inst > 0 ? (k === cnt - 1 ? h.amount - inst * (cnt - 1) : inst) : h.amount;
+    let got = 0, date = ''; const ids = [];
+    while (got < need && ti < txs.length) {
+      if (rem <= 0) { ti++; rem = ti < txs.length ? Number(txs[ti].amount) || 0 : 0; continue; }
+      const take = Math.min(need - got, rem); got += take; rem -= take; date = txs[ti].date; if (ids.indexOf(txs[ti].id) < 0) ids.push(txs[ti].id);
+      if (rem <= 0) { ti++; rem = ti < txs.length ? Number(txs[ti].amount) || 0 : 0; }
+    }
+    const full = got >= need, st = full ? 'bayar' : due < tk ? 'telat' : due === tk ? 'hariini' : 'belum';
+    rows.push({ i: k + 1, p, due, st, amount: full ? need : need - got, need, got, part: !full && got > 0, date, ids });
+  }
+  const next = lunas ? null : (rows.filter(r => r.st !== 'bayar')[0] || null);
+  /* jumlah tagihan berikutnya: sisa tagihan itu, dibatasi sisa hutang */
+  const nextAmt = next ? Math.max(1, Math.min(left, next.amount)) : 0;
+  const dis = all.filter(t => t.cat === D.disCat);
+  return { h, D, paid, left, lunas, closed, inst, cnt, rows, next, nextAmt, dis, disAmt: dis.reduce((s, t) => s + (Number(t.amount) || 0), 0), dueRows: lunas ? [] : rows.filter(r => r.st === 'telat' || r.st === 'hariini'), pct: h.amount > 0 ? Math.min(100, paid / h.amount * 100) : 0, txs, last: rows.length ? rows[rows.length - 1].due : h.first };
+}
+/* Satu tagihan hutang (satu periode) dalam bentuk daftar jatuh tempo; dipakai juga oleh lembar "Sudah Bayar" dan tombol Lunasi */
+function hutangItem(M, r) {
+  const h = M.h, D = M.D, who = (h.dir === 'hutang' ? 'Hutang ke ' : 'Piutang dari ') + h.who;
+  return { key: 'hutang:' + h.id + ':' + r.p, k: 'hutang', id: h.id, p: r.p, due: r.due, st: r.st, amount: M.nextAmt || Math.max(1, M.left), est: false, dir: h.dir, title: who, sub: D.label + (M.cnt > 1 ? ' · cicilan ke-' + r.i + ' dari ' + M.cnt : '') + ' · sisa ' + fmtRp(M.left), icon: D.icon, slot: h.dir === 'hutang' ? 8 : 3, cat: D.payCat, type: D.payType, seq: M.cnt > 1 ? r.i + '/' + M.cnt : '', max: M.left };
+}
+
+/* ---------- Target keuangan ---------- */
+const TK = {
+  darurat: { id: 'darurat', label: 'Dana Darurat', icon: 'shield', slot: 3 },
+  tabungan: { id: 'tabungan', label: 'Tabungan', icon: 'wallet', slot: 5 },
+  investasi: { id: 'investasi', label: 'Investasi', icon: 'trend', slot: 7 },
+  haji: { id: 'haji', label: 'Haji & Umrah', icon: 'landmark', slot: 6 },
+  nikah: { id: 'nikah', label: 'Pernikahan', icon: 'heart', slot: 1 },
+  rumah: { id: 'rumah', label: 'Rumah', icon: 'home', slot: 2 },
+  kendaraan: { id: 'kendaraan', label: 'Kendaraan', icon: 'car', slot: 4 },
+  liburan: { id: 'liburan', label: 'Liburan', icon: 'plane', slot: 0 },
+  pendidikan: { id: 'pendidikan', label: 'Pendidikan', icon: 'cap', slot: 8 },
+  lain: { id: 'lain', label: 'Lainnya', icon: 'target', slot: 5 }
+};
+const TKS = TARGET_KIND_IDS.map(k => TK[k]);
+/* Kemajuan target = uang awal + setoran − penarikan + hasil, hanya dari transaksi bertautan ke target itu (ref.k = 'target').
+   Target dana darurat bisa berupa "N bulan pengeluaran": nominalnya mengikuti rata-rata pengeluaran bulanan (avgOut). */
+function targetModel(g, refs, tk, avgOut) {
+  const K = TK[g.kind] || TK.lain, txs = (refs['target:' + g.id] || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const ym = tk.slice(0, 7); let setor = 0, tarik = 0, hasil = 0, month = 0; const used = [];
+  txs.forEach(t => {
+    const p = potOf(t); if (!p) return; const a = Number(t.amount) || 0; used.push(t);
+    if (p.k === 'setor') setor += a; else if (p.k === 'tarik') tarik += a; else hasil += a;
+    if (String(t.date).slice(0, 7) === ym) month += p.k === 'tarik' ? -a : a;
+  });
+  const base = Math.max(0, Number(g.base) || 0), saved = Math.max(0, base + setor + hasil - tarik);
+  const byMonths = !(g.goal > 0) && g.months > 0, goal = g.goal > 0 ? g.goal : (byMonths ? Math.round(g.months * (avgOut || 0)) : 0);
+  const goalKnown = goal > 0, left = goalKnown ? Math.max(0, goal - saved) : 0, reached = goalKnown && saved >= goal, closed = g.closed === true, done = reached || closed;
+  const pct = goalKnown ? Math.min(100, saved / goal * 100) : 0;
+  let monthsLeft = 0, overdue = false;
+  if (g.deadline) { const days = dayDiff(parseYmd(tk), parseYmd(g.deadline)); if (days > 0) monthsLeft = Math.max(1, Math.ceil(days / 30.4375)); else overdue = !done; }
+  const needMonthly = !done && goalKnown && left > 0 && monthsLeft > 0 ? Math.ceil(left / monthsLeft) : 0, planMonthly = g.monthly > 0 ? g.monthly : needMonthly;
+  let etaYm = '', etaOk = null;
+  if (!done && goalKnown && left > 0 && g.monthly > 0) { const n = Math.ceil(left / g.monthly); etaYm = ymAdd(ym, month >= g.monthly ? n : n - 1); if (g.deadline) etaOk = etaYm <= ymOf(g.deadline); }
+  let status = 'jalan', expected = 0;
+  if (reached) status = 'tercapai'; else if (closed) status = 'ditutup'; else if (overdue) status = 'lewat';
+  else if (goalKnown && g.deadline) {
+    const s0 = g.start || String(g.createdAt || '').slice(0, 10) || tk, tot = dayDiff(parseYmd(s0), parseYmd(g.deadline)), el = dayDiff(parseYmd(s0), parseYmd(tk));
+    if (tot > 0 && el > 0) { expected = Math.round(base + (goal - base) * Math.min(1, el / tot)); status = saved + goal * 0.02 < expected ? 'tertinggal' : 'sesuai'; }
+  }
+  const pocket = (typeof POCKETS !== 'undefined' && POCKETS.filter(p => p.id === g.pocket)[0]) || null;
+  return { g, K, pocket, goal, goalKnown, byMonths, saved, base, setor, tarik, hasil, left, pct, reached, closed, done, monthsLeft, overdue, needMonthly, planMonthly, etaYm, etaOk, status, expected, month, txs: used, equiv: avgOut > 0 ? saved / avgOut : null };
+}
+
+/* ---------- Jajan Ramean (patungan makan / jajan bareng) ---------- */
+/* Membagi bilangan bulat total menurut bobot; jumlahnya selalu pas (sisa rupiah dibagi ke pecahan terbesar). */
+function splitInt(total, w) {
+  const n = w.length; total = Math.max(0, Math.round(total)); if (!n) return [];
+  const pos = w.map(x => Math.max(0, Number(x) || 0)), sw = pos.reduce((s, x) => s + x, 0), ww = sw > 0 ? pos : pos.map(() => 1), tw = sw > 0 ? sw : n;
+  const raw = ww.map(x => total * x / tw), fl = raw.map(Math.floor), rem = total - fl.reduce((s, x) => s + x, 0);
+  const ord = raw.map((x, i) => [x - fl[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (let k = 0; k < rem; k++) fl[ord[k % n][1]]++;
+  return fl;
+}
+/* Hitung bagian tiap peserta. Mode 'equal': total dibagi rata. Mode 'item': tiap item dibagi di antara peserta yang ikut (kosong = semua);
+   pajak/servis (%), ongkir, dan diskon dibagi sebanding dengan nilai item masing-masing. */
+function rameanModel(r) {
+  const D = (r && r.data) || {}, people = D.people && D.people.length ? D.people : ['Saya'], n = people.length, payer = Math.min(Math.max(0, D.payer | 0), n - 1);
+  const ones = people.map(() => 1); let sub = 0, own = ones;
+  if (D.mode === 'item') {
+    own = people.map(() => 0);
+    (D.items || []).forEach(it => {
+      const a = Number(it.a) || 0; if (a <= 0) return; sub += a;
+      const w = it.w && it.w.length ? it.w : people.map((_, i) => i), part = splitInt(a, people.map((_, i) => (w.indexOf(i) >= 0 ? 1 : 0)));
+      part.forEach((v, i) => { own[i] += v; });
+    });
+  } else sub = Number(D.total) || 0;
+  const taxAmt = Math.round(sub * (D.tax || 0) / 100), ship = D.ship || 0, disc = Math.min(D.disc || 0, sub + taxAmt + ship), total = sub + taxAmt + ship - disc;
+  const shares = splitInt(total, own), budget = Number(r && r.budget) || 0;
+  return { people, n, payer, mode: D.mode === 'item' ? 'item' : 'equal', sub, taxAmt, ship, disc, total, shares, mine: shares[0] || 0, owed: total - (shares[payer] || 0), budget, over: budget > 0 ? total - budget : 0, pct: budget > 0 ? total / budget * 100 : 0, avg: n ? total / n : 0, ready: total > 0 && n >= 1, rec: D.rec && D.rec.done ? D.rec : null };
+}
+
+/* Satu tagihan cicilan (satu bulan) dalam bentuk yang sama dengan daftar jatuh tempo; dipakai juga oleh lembar "Sudah Bayar" */
+function cicilanItem(M, r) {
+  const c = M.c;
+  return { key: 'cicilan:' + c.id + ':' + r.p, k: 'cicilan', id: c.id, p: r.p, due: r.due, st: r.st, amount: c.amount, est: c.mode === 'float', title: c.name, sub: M.kind.label + ' · ke-' + r.i + ' dari ' + M.n, icon: M.kind.icon, slot: M.kind.slot, cat: M.kind.cat, type: 'out', seq: r.i + '/' + M.n };
+}
+
+/* ---------- Daftar tagihan jatuh tempo (untuk pop-up dan menu Jatuh Tempo) ---------- */
+/* Menggabungkan cicilan dan hutang. due 'telat'/'hariini' = harus dikonfirmasi; 'segera' = jatuh tempo dalam 7 hari ke depan. */
+function dueModel(plan, txs, now) {
+  const tk = ymd(now), refs = refIndex(txs), out = { today: [], late: [], soon: [], all: [] };
+  const soonTo = ymd(addDays(startOfDay(now), 7));
+  const push = (item) => { out.all.push(item); if (item.st === 'hariini') out.today.push(item); else if (item.st === 'telat') out.late.push(item); else if (item.st === 'belum' && item.due <= soonTo) out.soon.push(item); };
+  (plan.cicilan || []).forEach(c => {
+    const M = cicilanModel(c, refs, tk); if (M.finished || c.remind === false) return;
+    let shown = 0;
+    M.rows.forEach(r => {
+      if (r.st === 'telat' || r.st === 'hariini') { if (shown++ < 4) push(cicilanItem(M, r)); }
+    });
+    if (M.next && M.next.st === 'belum') push(cicilanItem(M, M.next));
+  });
+  (plan.hutang || []).forEach(h => {
+    const M = hutangModel(h, refs, tk); if (M.lunas || h.remind === false || !M.next) return;
+    push(hutangItem(M, M.next));
+  });
+  const by = (a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.title.localeCompare(b.title));
+  out.today.sort(by); out.late.sort(by); out.soon.sort(by); out.all.sort(by);
+  out.must = out.late.concat(out.today);
+  return out;
+}
+/* ================= Menu, submenu, alamat halaman (URL), dan judul tab =================
+   Lima menu utama (tab). Beberapa menu punya submenu (halaman daun). Setiap halaman daun punya alamat sendiri,
+   mis. /rekap, /tagihan/cicilan, /rencana/target. Judul tab tetap "SaKu".
+   Mode alamat: 'path' (situs biasa, butuh aturan pengalihan ke index.html), 'hash' (aplikasi Android/iOS), 'none' (edisi claude.ai). */
+const NAV_GROUPS = [
+  { id: 'rekap', label: 'Rekap', tab: 'Rekap', icon: 'chart', def: 'rekap' },
+  { id: 'transaksi', label: 'Transaksi', tab: 'Transaksi', icon: 'list', def: 'transaksi' },
+  { id: 'tagihan', label: 'Tagihan', tab: 'Tagihan', icon: 'receipt', def: 'jatuh' },
+  { id: 'rencana', label: 'Rencana', tab: 'Rencana', icon: 'flag', def: 'anggaran' },
+  { id: 'rekening', label: 'Pengaturan Rekening', tab: 'Rekening', icon: 'wallet', def: 'rekening' },
+  { id: 'kurs', label: 'Kurs', tab: 'Kurs', icon: 'swap', def: 'konversi' },
+  { id: 'teman', label: 'Teman', tab: 'Teman', icon: 'users', def: 'teman' },
+  { id: 'akun', label: 'Pengaturan', tab: 'Akun', icon: 'settings', def: 'akun' }
+];
+const LEAF = {
+  rekap: { g: 'rekap', path: '/rekap', title: 'Rekap', sub: 'Ringkasan' },
+  insight: { g: 'rekap', path: '/rekap/insight', title: 'Insight', sub: 'Insight' },
+  transaksi: { g: 'transaksi', path: '/transaksi', title: 'Transaksi' },
+  jatuh: { g: 'tagihan', path: '/tagihan', title: 'Jatuh Tempo', sub: 'Jatuh Tempo' },
+  cicilan: { g: 'tagihan', path: '/tagihan/cicilan', title: 'Cicilan', sub: 'Cicilan' },
+  hutang: { g: 'tagihan', path: '/tagihan/hutang', title: 'Hutang', sub: 'Hutang' },
+  anggaran: { g: 'rencana', path: '/rencana', title: 'Anggaran', sub: 'Anggaran' },
+  target: { g: 'rencana', path: '/rencana/target', title: 'Target', sub: 'Target' },
+  simpanan: { g: 'rencana', path: '/rencana/simpanan', title: 'Simpanan', sub: 'Simpanan' },
+  ramean: { g: 'rencana', path: '/rencana/ramean', title: 'Jajan Ramean', sub: 'Jajan Ramean' },
+  perjalanan: { g: 'rencana', path: '/rencana/perjalanan', title: 'Perjalanan', sub: 'Perjalanan' },
+  wishlist: { g: 'rencana', path: '/rencana/wishlist', title: 'Wishlist', sub: 'Wishlist' },
+  rekening: { g: 'rekening', path: '/rekening', title: 'Pengaturan Rekening', sub: 'Rekening' },
+  konversi: { g: 'kurs', path: '/kurs', title: 'Konversi Mata Uang', sub: 'Konversi' },
+  pasar: { g: 'kurs', path: '/kurs/pasar', title: 'Kurs & Indeks', sub: 'Kurs & Indeks' },
+  teman: { g: 'teman', path: '/teman', title: 'Teman' },
+  akun: { g: 'akun', path: '/akun', title: 'Pengaturan' },
+  kategoriku: { g: 'akun', path: '/akun/kategori', title: 'Kategori Saya' },
+  admin: { g: 'admin', path: '/admin', title: 'Administrator' },
+  kategori: { g: 'rekap', path: '/rekap', title: 'Isi Kategori' }
+};
+const ROUTE = { mode: 'none', entry: null };
+const GROUP_OF = id => NAV_GROUPS.filter(g => g.id === id)[0] || null;
+/* grup menu untuk sebuah halaman (halaman Isi Kategori ikut grup asalnya) */
+function leafGroup(view) {
+  const v = view === 'kategori' ? ((S.catView && S.catView.back) || 'rekap') : view;
+  return (LEAF[v] && LEAF[v].g) || v;
+}
+/* Submenu satu grup: daftar halaman daun, berurutan menurut LEAF */
+function leavesOf(g) { return Object.keys(LEAF).filter(k => LEAF[k].g === g && LEAF[k].sub); }
+function subnavHTML(view) {
+  const g = leafGroup(view), ls = leavesOf(g); if (ls.length < 2) return '';
+  return '<div class="subnav" role="tablist" aria-label="Submenu ' + esc((GROUP_OF(g) || {}).label || '') + '">' + ls.map(k => `<button type="button" role="tab" data-act="nav" data-v="${k}" aria-selected="${k === view || (view === 'kategori' && k === ((S.catView && S.catView.back) || 'rekap'))}"${k === view ? ' aria-current="page"' : ''}>${esc(LEAF[k].sub)}${k === 'jatuh' ? '<span class="nbadge sm" data-due-badge hidden></span>' : ''}</button>`).join('') + '</div>';
+}
+/* Judul tab selalu "SaKu"; nama halaman tidak ditampilkan di judul (alamat tetap per halaman, mis. /tagihan/cicilan) */
+function titleFor() { return 'SaKu'; }
+function routeCurrent() {
+  if (ROUTE.mode === 'hash') return (location.hash || '').replace(/^#/, '') || '/';
+  if (ROUTE.mode === 'path') return location.pathname || '/';
+  return '/';
+}
+/* alamat -> halaman daun (null bila tidak dikenal) */
+function viewFromPath(p) {
+  p = String(p || '/').split('?')[0].split('#')[0].replace(/\/+$/, '') || '/';
+  if (p === '/' || p === '/index.html') return null;
+  const k = Object.keys(LEAF).filter(x => x !== 'kategori' && LEAF[x].path === p)[0];
+  return k || null;
+}
+function routePush(view, replace) {
+  document.title = titleFor(view);
+  if (ROUTE.mode === 'none') return;
+  const path = (LEAF[view] || LEAF.rekap).path;
+  if (routeCurrent() === path) return;
+  try {
+    if (ROUTE.mode === 'hash') { if (replace) history.replaceState(null, '', '#' + path); else history.pushState(null, '', '#' + path); }
+    else if (replace) history.replaceState(null, '', path); else history.pushState(null, '', path);
+  } catch (e) { /* alamat tidak bisa diubah di tampilan ini; judul tetap berganti */ }
+}
+function routeReset() {
+  document.title = 'SaKu';
+  if (ROUTE.mode === 'none') return;
+  try { if (ROUTE.mode === 'hash') history.replaceState(null, '', location.pathname + location.search); else history.replaceState(null, '', '/'); } catch (e) { /* abaikan */ }
+}
+/* halaman yang boleh dibuka akun ini */
+function routeAllowed(view) {
+  if (!view || !LEAF[view] || view === 'kategori') return false;
+  if (isAdmin()) return view === 'admin' || view === 'akun';
+  return view !== 'admin' || isHelper();
+}
+function routeFirstView() {
+  const want = ROUTE.entry; ROUTE.entry = null;
+  if (want && routeAllowed(want)) return want;
+  return isAdmin() ? 'admin' : 'rekap';
+}
+window.addEventListener('popstate', () => {
+  if (ROUTE.mode === 'none' || S.phase !== 'app') return;
+  const v = viewFromPath(routeCurrent());
+  if (v && routeAllowed(v) && v !== S.view) { S.view = v; renderView(true); window.scrollTo(0, 0); }
+});
+
+/* ================= Terjemahan tampilan: Indonesia → Inggris =================
+   Kode sumber tetap berbahasa Indonesia. Saat bahasa English aktif, teks yang tampil di layar (simpul teks dan atribut placeholder, aria-label, title, alt)
+   diterjemahkan lewat kamus I18N_EN (i18n-en.js) oleh pengamat DOM. Tiga tingkat pencarian:
+   1) kecocokan persis, 2) pola dengan bagian dinamis ({1}, {2}, ... diisi angka, nama, dst.), 3) potongan frasa terpanjang (untuk kalimat yang disambung program).
+   Teks buatan pengguna (catatan, nama barang, nama rencana) tidak diterjemahkan bila tidak cocok persis dengan kamus; elemen ber-translate="no" dilewati. */
+const I18N = { dict: null, memo: new Map(), mo: null, nodes: new WeakMap(), attrs: new WeakMap(), user: null, sig: '' };
+const I18N_ATTRS = ['placeholder', 'aria-label', 'title', 'alt'];
+const I18N_SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, NOSCRIPT: 1, TITLE: 1 };
+const I18N_ONE = { 'assistant admins': 'assistant admin', transactions: 'transaction', days: 'day', months: 'month', items: 'item', installments: 'installment', records: 'record', people: 'person', goals: 'goal', accounts: 'account', bills: 'bill', entries: 'entry', weeks: 'week', years: 'year', payments: 'payment', debts: 'debt', notes: 'note', categories: 'category', purchases: 'purchase', events: 'event', friends: 'friend', deposits: 'deposit', withdrawals: 'withdrawal' };
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function i18nDict() {
+  if (I18N.dict) return I18N.dict;
+  const exact = new Map(), lower = new Map(), pats = [], first = new Map();
+  Object.keys(I18N_EN).forEach(k => {
+    const v = I18N_EN[k]; if (typeof v !== 'string' || !v) return;
+    if (/\{\d+\}/.test(k)) {
+      const lits = k.split(/\{\d+\}/);
+      pats.push({ re: new RegExp('^' + lits.map(reEsc).join('(.+?)') + '$', 's'), v, lit: lits.join('').length, long: lits.reduce((a, b) => (b.length > a.length ? b : a), '') });
+    } else {
+      exact.set(k, v); if (!lower.has(k.toLowerCase())) lower.set(k.toLowerCase(), v);
+      const m = /^[\p{L}\p{N}][\p{L}\p{N}'’-]*/u.exec(k);
+      if (m) { const w = m[0].toLowerCase(); (first.get(w) || first.set(w, []).get(w)).push({ k, kl: k.toLowerCase(), v }); }
+    }
+  });
+  pats.sort((a, b) => b.lit - a.lit);
+  first.forEach(l => l.sort((a, b) => b.k.length - a.k.length));
+  return (I18N.dict = { exact, lower, pats, first });
+}
+const I18N_ONE_RE = new RegExp('(^|[^\\d.,])1 ((?:[A-Za-z-]+ ){0,2}?)(' + Object.keys(I18N_ONE).join('|') + ')\\b', 'g');
+function i18nFixOne(s) { return s.replace(I18N_ONE_RE, (m, a, mid, w) => a + '1 ' + mid + I18N_ONE[w]); }
+function i18nMatchCase(src, out) {
+  if (!src || !out) return out;
+  const a = src.charAt(0), o = out.charAt(0);
+  if (a !== a.toLowerCase() && o === o.toLowerCase() && o !== o.toUpperCase()) return o.toUpperCase() + out.slice(1);
+  if (a === a.toLowerCase() && a !== a.toUpperCase() && o !== o.toLowerCase() && !/^[A-Z]{2}|^I\b/.test(out)) return o.toLowerCase() + out.slice(1);
+  return out;
+}
+/* Teks buatan pengguna yang sedang tampil (catatan, nama): dibangun ulang tiap rendering agar catatan baru langsung terlindungi.
+   Teks yang SAMA PERSIS dengan catatan pengguna hanya diterjemahkan bila ada di kamus persis; potongan frasa dan pola tidak menyentuhnya. */
+function i18nUserBegin() {
+  const set = new Set(), arr = [], K = { note: 1, n: 1, name: 1, who: 1, title: 1, person: 1, first: 1, last: 1, nama: 1, label: 1, desc: 1 };
+  const walk = (o, d) => { if (!o || d > 4) return; if (Array.isArray(o)) { o.slice(0, 20000).forEach(x => walk(x, d + 1)); return; } if (typeof o !== 'object') return; Object.keys(o).forEach(k => { const v = o[k]; if (typeof v === 'string') { if (K[k] && v.length >= 3 && v.length <= 120) { const t = v.replace(/\s+/g, ' ').trim(); if (!set.has(t)) { set.add(t); arr.push(t); } } } else walk(v, d + 1); }); };
+  try { walk(S.tx, 0); walk(S.plan, 0); walk(S.accounts, 0); } catch (e) { /* abaikan */ }
+  const sig = arr.length + ':' + arr.reduce((a, t) => a + t.length, 0);
+  if (I18N.sig !== sig) { I18N.sig = sig; I18N.memo.clear(); }
+  I18N.user = { set, arr };
+}
+function i18nUserList() { if (!I18N.user) i18nUserBegin(); return I18N.user; }
+function i18nPhrases(core, D, ranges) {
+  const rs = ranges || [], inR = (x, y) => rs.some(r => x < r[1] && y > r[0]);
+  const re = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu, low = core.toLowerCase(); let m, out = '', pos = 0, hit = 0;
+  while ((m = re.exec(core))) {
+    const w = m[0].toLowerCase(), cands = D.first.get(w); if (!cands || m.index < pos) continue;
+    for (const c of cands) {
+      const end = m.index + c.k.length;
+      if (low.substr(m.index, c.k.length) !== c.kl) continue;
+      if (rs.length && inR(m.index, end)) continue;
+      if (end < core.length && /[\p{L}\p{N}]/u.test(core.charAt(end)) && /[\p{L}\p{N}]/u.test(c.k.charAt(c.k.length - 1))) continue;
+      out += core.slice(pos, m.index) + i18nMatchCase(core.substr(m.index, 1), c.v); pos = end; re.lastIndex = end; hit++; break;
+    }
+  }
+  return hit ? out + core.slice(pos) : null;
+}
+/* Bagian teks yang berasal dari pengguna (catatan, nama): rentang [awal, akhir) yang tidak boleh diterjemahkan per frasa */
+function i18nUserRanges(core) {
+  const ul = i18nUserList().arr, rs = [], isL = ch => !!ch && /[\p{L}\p{N}]/u.test(ch);
+  for (let i = 0; i < ul.length; i++) {
+    const u = ul[i]; if (u.length < 4) continue;
+    for (let at = core.indexOf(u); at >= 0; at = core.indexOf(u, at + 1)) { const e = at + u.length; if (!isL(core.charAt(at - 1)) && !isL(core.charAt(e))) rs.push([at, e]); }
+  }
+  return rs;
+}
+/* strict: hanya kecocokan persis/pola (tanpa potongan frasa). partial: boleh sebagian (dipakai untuk isi {n} dan serpihan kalimat) */
+function i18nCore(core, depth, strict, partial) {
+  const D = i18nDict();
+  let v = D.exact.get(core); if (v != null) return v;
+  v = D.lower.get(core.toLowerCase()); if (v != null) return i18nMatchCase(core, v);
+  let isUser = false;
+  if (depth === 0 && !strict) {
+    const U = i18nUserList(); isUser = U.set.has(core);
+    if (!isUser && /(…|\.{3})$/.test(core)) { const st = core.replace(/\s*(…|\.{3})$/, ''); isUser = st.length >= 8 && U.arr.some(u => u.indexOf(st) === 0); }     // catatan yang dipotong dengan "…"
+  }     // teks persis sama dengan catatan pengguna: hanya pola panjang yang boleh
+  if (core.length > 1) for (const p of D.pats) {
+    if (isUser && p.lit < 8) continue;
+    if (core.length < p.lit || (p.long && core.indexOf(p.long) < 0)) continue;
+    const m = p.re.exec(core); if (!m) continue;
+    return p.v.replace(/\{(\d+)\}/g, (x, n) => {
+      const c = m[+n]; if (c == null) return ''; if (depth >= 2) return c;
+      const w = /^(\s*)([\s\S]*?)(\s*)$/.exec(c); if (!w[2]) return c;
+      const t = i18nCore(w[2].replace(/\s+/g, ' '), depth + 1, strict, true); return t == null ? c : w[1] + t + w[3];
+    });
+  }
+  if (isUser) return null;
+  /* Beberapa kalimat/segmen dalam satu teks (disambung program): kalimat yang cocok persis/pola diterjemahkan sendiri-sendiri,
+     sisanya (berurutan) digabung lalu diterjemahkan per frasa */
+  if (depth < 3) {
+    const segs = core.replace(/([.!?])\s+(?=\S)/g, '$1\u0001').replace(/\s(?=·\s)/g, '\u0001').split('\u0001');
+    if (segs.length > 1) {
+      const tr = segs.map(sg => i18nCore(sg, depth + 1, true, true)), hit = tr.filter(x => x != null).length;
+      if (hit && (!strict || partial || hit === segs.length)) {
+        const out = []; let run = [];
+        const flush = () => { if (run.length) { const txt = run.join(' '), t = strict ? null : i18nPhrases(txt, D, i18nUserRanges(txt)); out.push(t == null ? txt : t); run = []; } };
+        tr.forEach((t, i) => { if (t == null) run.push(segs[i]); else { flush(); out.push(t); } });
+        flush(); return out.join(' ');
+      }
+    }
+  }
+  if (strict) return null;
+  return i18nPhrases(core, D, i18nUserRanges(core));
+}
+/* Menerjemahkan satu teks. strict=true: hanya kecocokan persis dan pola (dipakai ekspor PDF/Excel/CSV agar catatan pengguna tidak tersentuh) */
+function i18nT(src, strict) {
+  if (!src || typeof src !== 'string') return src;
+  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(src); if (!m[2]) return src;
+  const core = m[2].replace(/\s+/g, ' '), key = (strict ? 's|' : 'f|') + core;
+  let r = I18N.memo.get(key);
+  if (r === undefined) {
+    r = i18nCore(core, 0, !!strict); if (r != null) r = i18nFixOne(r);
+    if (strict || r == null) { if (I18N.memo.size > 6000) I18N.memo.clear(); I18N.memo.set(key, r == null ? null : r); }
+    if (r != null && r !== core) { I18N.memo.set('s|' + r, r); I18N.memo.set('f|' + r, r); }
+  }
+  return r == null ? src : m[1] + r + m[3];
+}
+/* Dipakai kode non-DOM (PDF, Excel, CSV): menerjemahkan bila bahasa English aktif. Catatan dan nama pengguna tetap terlindungi (lihat i18nUserRanges) */
+const i18n = (s, strict) => {
+  if (LANG !== 'en') return s;
+  const now = Date.now(); if (now - (I18N.stamp || 0) > 800) { I18N.stamp = now; i18nUserBegin(); }     // daftar teks pengguna diperbarui sebelum ekspor
+  return i18nT(s, strict === true);
+};
+function i18nSkip(n) {
+  for (let e = n.nodeType === 3 ? n.parentNode : n; e && e.nodeType === 1; e = e.parentNode) { if (I18N_SKIP[e.tagName] || (e.getAttribute && e.getAttribute('translate') === 'no')) return true; }
+  return false;
+}
+function i18nNode(n) {
+  if (!n.data || i18nSkip(n)) return;
+  const e = I18N.nodes.get(n); if (e && n.data === e.out) return;
+  const src = n.data, out = i18nT(src);
+  if (out !== src) { I18N.nodes.set(n, { src, out }); n.data = out; } else if (e) I18N.nodes.delete(n);
+}
+function i18nAttrs(el) {
+  if (!el.getAttribute || i18nSkip(el)) return;
+  for (const a of I18N_ATTRS) {
+    const v = el.getAttribute(a); if (v == null || !v) continue;
+    const rec = I18N.attrs.get(el) || {}, e = rec[a]; if (e && v === e.out) continue;
+    const out = i18nT(v);
+    if (out !== v) { rec[a] = { src: v, out }; I18N.attrs.set(el, rec); el.setAttribute(a, out); } else if (e) { delete rec[a]; }
+  }
+}
+function i18nTree(root) {
+  if (!root) return;
+  if (root.nodeType === 3) { i18nNode(root); return; }
+  if (root.nodeType !== 1 && root.nodeType !== 11) return;
+  if (root.nodeType === 1) { if (I18N_SKIP[root.tagName]) return; i18nAttrs(root); }
+  const tw = document.createTreeWalker(root, 4 | 1);   // simpul teks dan elemen
+  let n; while ((n = tw.nextNode())) { if (n.nodeType === 3) i18nNode(n); else if (!I18N_SKIP[n.tagName]) i18nAttrs(n); }
+}
+function i18nRestore() {
+  const tw = document.createTreeWalker(document.body, 4 | 1); let n;
+  while ((n = tw.nextNode())) {
+    if (n.nodeType === 3) { const e = I18N.nodes.get(n); if (e && n.data === e.out) n.data = e.src; I18N.nodes.delete(n); }
+    else { const rec = I18N.attrs.get(n); if (rec) { Object.keys(rec).forEach(a => { if (n.getAttribute(a) === rec[a].out) n.setAttribute(a, rec[a].src); }); I18N.attrs.delete(n); } }
+  }
+}
+function i18nStart() {
+  if (I18N.mo || typeof MutationObserver !== 'function' || !document.body) return;
+  I18N.mo = new MutationObserver(recs => {
+    i18nUserBegin();
+    for (const r of recs) {
+      if (r.type === 'childList') r.addedNodes.forEach(n => i18nTree(n));
+      else if (r.type === 'characterData') i18nNode(r.target);
+      else if (r.type === 'attributes') i18nAttrs(r.target);
+    }
+  });
+  I18N.mo.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: I18N_ATTRS });
+}
+function i18nStop() { if (I18N.mo) { I18N.mo.disconnect(); I18N.mo = null; } }
+/* Dipanggil saat bahasa berubah dan saat aplikasi dibuka */
+function i18nSync() {
+  if (typeof document === 'undefined' || !document.body || typeof document.createTreeWalker !== 'function') return;     // lingkungan uji tanpa DOM sungguhan
+  if (LANG !== 'en' && !I18N.mo) return;     // belum pernah diterjemahkan: tak ada yang perlu dipulihkan
+  I18N.memo.clear(); i18nUserBegin();
+  if (LANG === 'en') { i18nStop(); i18nDict(); i18nTree(document.body); i18nStart(); }
+  else { i18nStop(); i18nRestore(); }
+}
+/* Kamus terjemahan Indonesia → Inggris (dihasilkan oleh i18n/build-dict.js; jangan disunting langsung) */
+const I18N_EN = {
+  ", {1} catatan hutang dibuat.": ", {1} debt entries created.",
+  ", {1} data cicilan, hutang & target": ", {1} installment, debt & goal data",
+  ", {1} terlambat": ", {1} overdue",
+  ", dan pengguna bisa menggantinya di Pengaturan. Kata sandi awal juga dipakai saat admin mereset akun.": ", and users can change it in Settings. The initial password is also used when an admin resets an account.",
+  ", dibayar": ", paid",
+  ", ganti seluruh isinya dengan aturan keamanan di bawah, lalu": ", replace all of its contents with the security rules below, then",
+  ", jadi targetnya sekitar": ", so the goal is about",
+  ", jadi targetnya sekitar {1}.": ", so the goal is about {1}.",
+  ", lainnya": ", other",
+  ", lalu deploy fungsi": ", then deploy the function",
+  ", lalu tambahkan aplikasi": ", then add an app",
+  ", perkiraan total": ", estimated total",
+  ", proyeksi total": ", projected total",
+  ", rata-rata": ", average",
+  ", saldo bebas": ", free balance",
+  ", sisa": ", remaining",
+  ", total keluar": ", total out",
+  ": administrator hanya melihat nama akun, jumlah catatan, dan waktunya, tidak bisa membuka atau membaca transaksinya. Hanya sistem yang bisa memulihkannya.": ": administrators can only see account names, entry counts, and timestamps. They can't open or read the transactions. Only the system can restore it.",
+  ": aplikasi tiap pengguna menyalin catatannya dalam bentuk terkunci, administrator hanya bisa mengunduh salinan itu, dan hanya pemegang berkas kunci yang bisa membukanya untuk memulihkan.": ": each user's app copies its entries in locked form, administrators can only download that copy, and only the holder of the key file can unlock it to restore.",
+  ": tanpanya cadangan tidak bisa dipulihkan, dan siapa pun yang memegangnya bisa membukanya.": ": without it the backup can't be restored, and anyone who holds it can open it.",
+  "· {1} akun,": "· {1} accounts,",
+  "· {1} akun, {2}": "· {1} accounts, {2}",
+  "· {1} akun, {2} transaksi": "· {1} accounts, {2} transactions",
+  "· {1} barang": "· {1} items",
+  "· {1} belum ada pengeluaran": "· {1} no expenses yet",
+  "· {1} foto": "· {1} photos",
+  "· {1} nonaktif": "· {1} inactive",
+  "· Bulan laporan:": "· Report month:",
+  "· cicilan ke-": "· installment #",
+  "· cicilan ke-{1} dari": "· installment #{1} of",
+  "· cicilan ke-{1} dari {2}": "· installment #{1} of {2}",
+  "· dibayar": "· paid",
+  "· Dibuat": "· Created",
+  "· dicicil": "· in installments",
+  "· gagal memperbarui, memakai salinan terakhir": "· update failed, using last saved copy",
+  "· Jajan Ramean:": "· Group Treats:",
+  "· jatuh tempo": "· due",
+  "· periode": "· period",
+  "· periode mulai tanggal": "· period starting on",
+  "· sisa": "· remaining",
+  "· sumber": "· source",
+  "” pada tanggal pinjam. Hanya menggeser saldo, bukan": "” on the borrow date. Only shifts the balance, not",
+  "” tercapai. Selamat!": "” reached. Congratulations!",
+  "({1} tahun": "({1} years",
+  "({1} tahun{2}": "({1} years{2}",
+  "({1} tahun{2})": "({1} years{2})",
+  "(aman). Menambah yang hilang, tidak menghapus apa pun.": "(safe). Adds missing items, doesn't delete anything.",
+  "(Anda)": "(You)",
+  "(atau isi di Dashboard → Edge Functions → Secrets), lalu muat ulang halaman ini.": "(or set it in Dashboard → Edge Functions → Secrets), then reload this page.",
+  "(belum ada pemasukan)": "(no income yet)",
+  "(belum ada pengeluaran)": "(no expenses yet)",
+  "(habis sekitar": "(runs out around",
+  "(habis sekitar {1};": "(runs out around {1};",
+  "(habis sekitar {1}; {2}": "(runs out around {1}; {2}",
+  "(habis sekitar {1}; {2} masih": "(runs out around {1}; {2} still",
+  "(habis sekitar {1}; {2} masih {3}": "(runs out around {1}; {2} still {3}",
+  "(habis sekitar {1}; {2} masih {3} hari lagi).": "(runs out around {1}; {2} still {3} days left).",
+  "(kode {1}). Simpan berkasnya di tempat yang aman, misalnya pengelola kata sandi atau flashdisk. Berkas itu": "(code {1}). Store the file somewhere safe, such as a password manager or USB drive. That file",
+  "(langkah lengkap ada di": "(full steps are in",
+  "(lebih boros": "(spent more",
+  "(lebih boros {1})": "(spent more {1})",
+  "(lebih hemat": "(spent less",
+  "(lebih hemat {1})": "(spent less {1})",
+  "(opsional, disimpan di perangkat ini)": "(optional, stored on this device)",
+  "(paket gratis dijeda bila seminggu tidak dipakai; tekan Restore di dashboard).": "(the free plan pauses after a week of inactivity; press Restore in the dashboard).",
+  "(s.d. tgl": "(through date",
+  "(s.d. tgl {1})": "(through {1})",
+  "(salinan dibuat saat pengguna membuka aplikasi).": "(a copy is made when the user opens the app).",
+  "(salinan lama, sumber sedang tidak dapat dijangkau)": "(old copy, source is currently unreachable)",
+  "(sampai akhir": "(through the end of",
+  "(sampai akhir {1}).": "(through the end of {1}).",
+  "(setelah tenggat)": "(after deadline)",
+  "(teks acak, minimal 16 karakter) di pengaturan server.": "(random text, at least 16 characters) in the server settings.",
+  "(termasuk tambahan": "(including extra",
+  "(termasuk tambahan {1})": "(including extra {1})",
+  "(tidak dicatat sebagai transaksi).": "(not recorded as a transaction).",
+  "(tren {1} per hari)": "(trend {1} per day)",
+  "(Untuk Login)": "(For Login)",
+  ") di kolom di bawah, lalu tekan": ") in the field below, then press",
+  ") dicatat tanpa daftar barang.": ") recorded without an item list.",
+  "). Kurs terbaru belum bisa diambil; hubungkan ke internet lalu tekan Perbarui.": "). Latest rates couldn't be fetched; connect to the internet, then press Update.",
+  "). Salin blok": "). Copy the block",
+  "). Simpan berkasnya di tempat yang aman, misalnya pengelola kata sandi atau flashdisk. Berkas itu": "). Store the file somewhere safe, such as a password manager or USB drive. That file",
+  "). Ubah di sana bila perlu.": "). Edit it there if needed.",
+  "{1} · {2} transaksi{3}{4}": "{1} · {2} transactions{3}{4}",
+  "{1} · ke-{2} dari": "{1} · #{2} of",
+  "{1} · ke-{2} dari {3}": "{1} · #{2} of {3}",
+  "{1} Acara Baru": "{1} New Event",
+  "{1} admin pembantu": "{1} assistant admins",
+  "{1} akan datang": "{1} upcoming",
+  "{1} akun · {2} administrator": "{1} accounts · {2} administrators",
+  "{1} akun · {2} administrator{3}": "{1} accounts · {2} administrators{3}",
+  "{1} Baca barang dari foto": "{1} Read Items from Photo",
+  "{1} belum lunas": "{1} not yet paid off",
+  "{1} Buat Acara": "{1} Create Event",
+  "{1} Buat akun": "{1} Create Account",
+  "{1} Buat kunci pemulihan": "{1} Create Recovery Key",
+  "{1} bulan": "{1} months",
+  "{1} Bulan Terakhir": "Last {1} Months",
+  "{1} Cadangkan Sekarang": "{1} Back Up Now",
+  "{1} Cadangkan Semua Akun": "{1} Back Up All Accounts",
+  "{1} Cadangkan semua data": "{1} Back Up All Data",
+  "{1} Catat ke SaKu": "{1} Record in SaKu",
+  "{1} Catat Sekarang": "{1} Record Now",
+  "{1} Catat transaksi": "{1} Record Transaction",
+  "{1} catatan": "{1} entries",
+  "{1} catatan menunggu diunggah.": "{1} entries waiting to be uploaded.",
+  "{1} catatan offline tetap tersimpan dan akan diunggah setelah Anda masuk.": "{1} offline entries are kept and will upload after you log in.",
+  "{1} Coba tampilkan": "{1} Try Showing",
+  "{1} Dana Darurat": "{1} Emergency Fund",
+  "{1} dari {2}": "{1} of {2}",
+  "{1} dari {2} bulan": "{1} of {2} months",
+  "{1} dari {2} sudah dibayar": "{1} of {2} paid",
+  "{1} dari batas": "{1} of limit",
+  "{1} dari batas pengeluaran sudah dibagi ke kategori": "{1} of the spending limit is assigned to categories",
+  "{1} dari pemasukan": "{1} of income",
+  "{1} dari total {2} {3}": "{1} of {2} total {3}",
+  "{1} di laut": "{1} at sea",
+  "{1} di udara": "{1} in the air",
+  "{1} Excel + grafik": "{1} Excel + Charts",
+  "{1} foto tidak bisa diambil.": "{1} photos couldn't be fetched.",
+  "{1} Galeri": "{1} Gallery",
+  "{1} Ganti sandi saya": "{1} Change My Password",
+  "{1} Hapus": "{1} Delete",
+  "{1} hari lagi": "{1} days to go",
+  "{1} hari sebelum {2} berakhir": "{1} days before {2} ends",
+  "{1} ini sejauh ini {2} per hari, {3} {4} rata-rata.": "{1} this period so far is {2} per day, {3} {4} average.",
+  "{1} Investasi": "{1} Investments",
+  "{1} Jadwal": "{1} Schedule",
+  "{1} jenis": "{1} types",
+  "{1} Kamera": "{1} Camera",
+  "{1} kategori": "{1} categories",
+  "{1} kategori · {2}": "{1} categories · {2}",
+  "{1} Keluar": "{1} Log Out",
+  "{1} Kembali ke {2}": "{1} Back to {2}",
+  "{1} kini admin pembantu": "{1} is now an assistant admin",
+  "{1} km, {2} berkendara": "{1} km, {2} driving",
+  "{1} Laporan PDF": "{1} PDF Report",
+  "{1} Memberi Hutang": "{1} Lend Money",
+  "{1} orang": "{1} people",
+  "{1} Pemasukan": "{1} Income",
+  "{1} Pengeluaran": "{1} Expenses",
+  "{1} Perbarui": "{1} Update",
+  "{1} Perbarui kurs": "{1} Update Rates",
+  "{1} permintaan pertemanan baru": "{1} new friend requests",
+  "{1} Pilih Berkas Cadangan": "{1} Choose Backup File",
+  "{1} rekening · saldo awal {2}": "{1} accounts · opening balance {2}",
+  "{1} Rincian": "{1} Details",
+  "{1} Saldo kas": "{1} Cash Balance",
+  "{1} Salin aturan keamanan": "{1} Copy Security Rules",
+  "{1} Salin Rincian": "{1} Copy Details",
+  "{1} Saya Berhutang": "{1} I Owe",
+  "{1} Selisih": "{1} Net",
+  "{1} Setor": "{1} Deposit",
+  "{1} Setujui": "{1} Approve",
+  "{1} Sudah Bayar": "{1} Mark as Paid",
+  "{1} Tabungan": "{1} Savings",
+  "{1} tagihan": "{1} bills",
+  "{1} Tambah": "{1} Add",
+  "{1} Tambah anggaran": "{1} Add Budget",
+  "{1} Tambah barang": "{1} Add Item",
+  "{1} Tambah Cicilan": "{1} Add Installment",
+  "{1} Tambah item": "{1} Add Item",
+  "{1} terpakai": "{1} used",
+  "{1} transaksi": "{1} transactions",
+  "{1} transaksi ({2}) dicatat tanpa daftar barang.": "{1} transactions ({2}) recorded without an item list.",
+  "{1} Transaksi (CSV)": "{1} Transactions (CSV)",
+  "{1} transaksi tanpa foto karena fotonya tidak ada di berkas.": "{1} transactions without photos because the photos aren't in the file.",
+  "{1} Ubah": "{1} Edit",
+  "{1} Unduh Cadangan": "{1} Download Backup",
+  "{1} Unduh lagi": "{1} Download again",
+  "{1}: terkumpul {2} dari {3}.": "{1}: {2} saved of {3}.",
+  "{1}{2} peserta · dibayar {3}": "{1}{2} participants · paid {3}",
+  "{1}% dari total": "{1}% of total",
+  "{1}× dicatat · terakhir {2}": "{1}× recorded · latest {2}",
+  "{1}Tekan tombol di tiap tagihan bila sudah dibayar, lalu otomatis tercatat di transaksi.": "{1}Tap the button on each bill once it's paid, and it's recorded in Transactions automatically.",
+  "{1}Tidak termasuk setoran ke tabungan dan investasi.": "{1}Excludes deposits to savings and investments.",
+  "% dari seluruh target": "% of all goals",
+  "→ Create database (lokasi bebas).": "→ Create database (any location).",
+  "+ {1} tagihan lainnya ada di menu Jatuh Tempo.": "+ {1} more bills are in Due Dates.",
+  "+ tambahan": "+ extra",
+  "× dicatat · terakhir": "× recorded · latest",
+  "✓ Kunci": "✓ Key",
+  "✓ Kunci {1} cocok dengan cadangan ini": "✓ Key {1} matches this backup",
+  "✕ Kunci ini bukan pasangan cadangan ini": "✕ This key doesn't match this backup",
+  "1 catatan offline berhasil diunggah": "1 offline entry uploaded successfully",
+  "1 menit": "1 minute",
+  "1 Tagihan Jatuh Tempo": "1 Bill Due",
+  "1. Salin kode Anda": "1. Copy your code",
+  "10 kategori pengeluaran terbesar (seluruh data)": "Top 10 expense categories (all data)",
+  "2. Masukkan kode teman": "2. Enter a friend's code",
+  "3. Terima permintaan": "3. Accept the request",
+  "4–20 huruf kecil atau angka, diawali huruf.": "4–20 lowercase letters or numbers, starting with a letter.",
+  "4–20 huruf kecil atau angka, tanpa spasi. Contoh:": "4–20 lowercase letters or numbers, no spaces. Example:",
+  "4. Pilih yang dibagikan": "4. Choose what to share",
+  "7 hari ke depan": "next 7 days",
+  "7 Hari ke Depan": "Next 7 Days",
+  "7 hari terakhir": "last 7 days",
+  "7 Hari Terakhir": "Last 7 Days",
+  "ac": "AC",
+  "acara": "events",
+  "Acara & Kondangan": "Events & Wedding Gifts",
+  "Acara Baru": "New Event",
+  "Acara bulan ini": "This month's events",
+  "Acara dihapus": "Event deleted",
+  "Acara diperbarui": "Event updated",
+  "Acara disimpan": "Event saved",
+  "Acara ini sudah dicatat ke Transaksi dan Hutang, jadi peserta dan tagihan dikunci. Untuk mengubahnya, hapus acara dan buat ulang (hapus juga catatan terkait bila perlu).": "This event has already been recorded in Transactions and Debts, so participants and bills are locked. To change it, delete the event and create it again (also delete related entries if needed).",
+  "Ada": "Yes",
+  "Ada {1} pendaftaran menunggu persetujuan": "There are {1} sign-ups waiting for approval",
+  "Ada 1 pendaftaran menunggu persetujuan": "There is 1 sign-up waiting for approval",
+  "Ada permintaan simpan yang masih terbuka. Selesaikan dulu, lalu coba lagi.": "A save request is still pending. Please finish it first, then try again.",
+  "Admin hanya melihat jumlah catatan dan waktu aktivitas. Isi transaksi, nominal, dan foto milik pengguna tidak dapat dibuka dari sini.": "Admins can only see the number of entries and activity times. Users' transaction details, amounts, and photos can't be opened from here.",
+  "Admin Pembantu": "Assistant Admin",
+  "Admin pembantu hanya boleh mengelola akun pengguna biasa.": "Assistant admins can only manage regular user accounts.",
+  "Admin pembantu tetap memakai semua menu biasa (pemasukan, pengeluaran, dan lainnya) dan mendapat tambahan menu Admin untuk menyetujui pendaftar, membuat akun, serta mengaktifkan atau menonaktifkan pengguna.": "Assistant admins keep all the regular menus (income, expenses, and more) and get an extra Admin menu to approve sign-ups, create accounts, and enable or disable users.",
+  "agar": "so that",
+  "agar semuanya tepat waktu": "so everything is on time",
+  "Agar tepat waktu, perlu sekitar": "To be on time, you need about",
+  "Agar tepat waktu, perlu sekitar {1} per bulan.": "To be on time, you need about {1} per month.",
+  "air": "water",
+  "akhir bulan": "end of month",
+  "Akhir pekan ini belum ada cadangan. Unduh berkas cadangan agar catatan keuangan Anda tetap aman.": "No backup this weekend yet. Download a backup file to keep your financial records safe.",
+  "Akses ditolak oleh aturan keamanan Firestore. Pasang aturan dari panduan, lalu coba lagi.": "Access denied by Firestore security rules. Install the rules from the guide, then try again.",
+  "Akses ke halaman ini dicabut. Muat ulang halaman.": "Access to this page has been revoked. Reload the page.",
+  "Aksesoris Mobil": "Car Accessories",
+  "Aksesoris Motor": "Motorcycle Accessories",
+  "Aktif": "Active",
+  "Aktif. Aplikasi tiap pengguna akan membuat salinan terkunci saat mereka membuka aplikasi dan setiap kali catatan berubah.": "Active. Each user's app will create a locked copy when they open the app and every time their entries change.",
+  "Aktifkan": "Enable",
+  "Aktifkan pengingat": "Turn on reminders",
+  "akun": "account",
+  "Akun": "Account",
+  "akun ·": "account ·",
+  "Akun {1} dibuat. Kata sandi awal:": "Account {1} created. Initial password:",
+  "Akun {1} dibuat. Kata sandi awal: {2}": "Account {1} created. Initial password: {2}",
+  "Akun {1} dihapus": "Account {1} deleted",
+  "Akun {1} disetujui. Masuk dengan kata sandi yang dibuat saat mendaftar.": "Account {1} approved. Log in with the password you created when signing up.",
+  "Akun admin dibuat. Masuk dengan nama admin.": "Admin account created. Log in with the admin username.",
+  "Akun administrator mengelola aplikasi dan tidak dipakai mencatat transaksi; catatan lama miliknya tetap tersimpan dan kembali bila perannya dicabut.": "An administrator account manages the app and is not used to record transactions; its old records stay saved and return if the role is revoked.",
+  "Akun administrator tidak dipakai untuk mencatat transaksi.": "Administrator accounts can't be used to record transactions.",
+  "Akun administrator tidak lagi dipakai untuk mencatat, tetapi transaksi lama di akun ini masih tersimpan. Unduh cadangannya, lalu pulihkan di akun pengguna biasa lewat Pengaturan › Cadangan Data.": "The administrator account is no longer used to record entries, but old transactions in this account are still saved. Download its backup, then restore it in a regular user account via Settings › Data Backup.",
+  "Akun aktif": "Active accounts",
+  "Akun Anda belum punya email. Tambahkan email untuk verifikasi.": "Your account has no email yet. Add one to verify it.",
+  "Akun Anda dinonaktifkan atau dihapus oleh administrator.": "Your account has been disabled or deleted by an administrator.",
+  "Akun Anda masih memakai kata sandi awal. Sebaiknya diganti agar catatan keuangan Anda lebih aman.": "Your account is still using the initial password. Change it to keep your financial records safer.",
+  "Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.": "Your Claude account is view-only. Ask the page owner to grant you Contributor access.",
+  "akun diganti": "accounts replaced",
+  "akun dipulihkan": "accounts restored",
+  "Akun ini": "This account",
+  "Akun ini belum ada di server. Buat akunnya dulu dengan nama yang sama, lalu pulihkan.": "This account doesn't exist on the server yet. Create it first with the same name, then restore.",
+  "Akun ini belum ada. Buat akunnya dulu dengan nama yang sama, lalu pulihkan.": "This account doesn't exist yet. Create it first with the same name, then restore.",
+  "Akun ini belum ada. Buat akunnya dulu dengan nama yang sama.": "This account doesn't exist yet. Create the account first with the same name.",
+  "Akun ini belum aktif.": "This account isn't active yet.",
+  "Akun ini belum punya email. Isi email dulu.": "This account has no email yet. Add one first.",
+  "Akun ini dinonaktifkan. Hubungi administrator.": "This account has been disabled. Contact an administrator.",
+  "Akun ini tidak menunggu konfirmasi email.": "This account is not waiting for email confirmation.",
+  "Akun ini tidak menunggu persetujuan.": "This account isn't awaiting approval.",
+  "Akun sudah ada. Masuk memakai akun yang ada.": "Account already exists. Log in with the existing account.",
+  "akun terpilih": "selected accounts",
+  "Akun tidak ditemukan.": "Account not found.",
+  "akun yang dipilih dengan isi cadangan.": "selected accounts with the backup's contents.",
+  "akun,": "account,",
+  "akun. Aplikasi tiap pengguna membuatnya otomatis beberapa detik setelah catatannya berubah; akun yang belum membuka aplikasi sejak fitur ini aktif belum punya salinan.": "account. Each user's app creates it automatically a few seconds after their entries change; accounts that haven't opened the app since this feature was enabled don't have a copy yet.",
+  "akun…": "accounts…",
+  "Alamat proyek Supabase": "Supabase project URL",
+  "Alamat proyek:": "Project URL:",
+  "Alamat server belum diisi.": "Server address is not set yet.",
+  "anak": "kids",
+  "Anak & Keluarga": "Kids & Family",
+  "Anda": "You",
+  "Anda bisa menyetujui pendaftar, membuat akun pengguna, serta mengaktifkan atau menonaktifkan pengguna.": "You can approve sign-ups, create user accounts, and enable or disable users.",
+  "Anda kini admin pembantu": "You are now an assistant admin",
+  "Anda kini administrator": "You are now an administrator",
+  "Anda masih memakai kata sandi awal": "You're still using the initial password",
+  "Anda masih memakai kata sandi awal. Ganti sekarang agar akun lebih aman.": "You're still using the initial password. Change it now to keep your account safer.",
+  "Anda perlu mengembalikan": "You need to pay back",
+  "Anda perlu mengembalikan {1} kepada": "You need to pay back {1} to",
+  "Anda perlu mengembalikan {1} kepada {2}": "You need to pay back {1} to {2}",
+  "Anda perlu mengembalikan {1} kepada {2}.": "You need to pay back {1} to {2}.",
+  "Anda tetap bisa mencatat, nanti diunggah otomatis.": "You can still record entries; they'll upload automatically.",
+  "Anda tidak bisa menghapus akun sendiri.": "You can't delete your own account.",
+  "anggaran": "budget",
+  "Anggaran": "Budget",
+  "Anggaran {1} ditambah": "Budget {1} increased",
+  "Anggaran {1} ditambah {2}": "Budget {1} increased by {2}",
+  "Anggaran {1}, sisa": "Budget {1}, remaining",
+  "Anggaran {1}, sisa {2}": "Budget {1}, remaining {2}",
+  "Anggaran acara": "Event budget",
+  "Anggaran belum diatur, jadi saldo pemasukan menjadi dasar: saldo awal periode + pemasukan + penarikan − setoran simpanan.": "No budget is set yet, so your income balance is the base: opening period balance + income + withdrawals − savings deposits.",
+  "Anggaran bersama": "Shared budget",
+  "Anggaran bulanan": "Monthly budget",
+  "Anggaran dihapus": "Budget deleted",
+  "Anggaran disimpan": "Budget saved",
+  "Anggaran kurang? Tambahkan dari Rekap.": "Budget running low? Add from Overview.",
+  "Anggaran menjadi": "Budget changed to",
+  "Anggaran per": "Budget per",
+  "Anggaran per {1}": "Budget per {1}",
+  "Anggaran saat ini": "Current budget",
+  "Anggaran saat ini {1}, saldo bebas": "Current budget {1}, free balance",
+  "Anggaran saat ini {1}, saldo bebas {2}": "Current budget {1}, free balance {2}",
+  "Anggaran saat ini {1}, saldo bebas {2}.": "Current budget {1}, free balance {2}.",
+  "Anggaran terpakai": "Budget used",
+  "Anggaran terpakai, hampir habis": "Budget used, almost used up",
+  "Anggaran terpakai, mendekati batas": "Budget used, nearing the limit",
+  "Animasi cara kerja": "How-it-works animation",
+  "antara": "between",
+  "Antrean pendaftaran sedang penuh. Coba lagi nanti atau hubungi admin.": "The sign-up queue is full. Try again later or contact an admin.",
+  "Apa yang diinginkan": "What do you want",
+  "apiKey tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.": "apiKey not found or malformed. Copy the entire firebaseConfig block from the Firebase Console.",
+  "Aplikasi belum disiapkan oleh administrator.": "The app hasn't been set up by the administrator yet.",
+  "Apotek": "Pharmacy",
+  "Arisan": "Arisan (Rotating Savings)",
+  "Arti SaKu": "What SaKu Means",
+  "Arus kas": "Cash flow",
+  "Arus Kas Harian": "Daily Cash Flow",
+  "Arus Kas per Hari": "Cash Flow per Day",
+  "Asisten Rumah Tangga & Jasa": "Household Help & Services",
+  "asuransi": "insurance",
+  "Asuransi": "Insurance",
+  "Asuransi Kendaraan": "Vehicle Insurance",
+  "Asuransi Perjalanan": "Travel Insurance",
+  "atau": "or",
+  "Atur anggaran": "Set budget",
+  "Atur Anggaran Bulanan": "Set Monthly Budget",
+  "Atur anggaran, target, simpanan, dan jajan ramean.": "Set budgets, goals, savings, and group treats.",
+  "Aturan disalin. Tempel di tab Rules, lalu Publish.": "Rules copied. Paste them in the Rules tab, then Publish.",
+  "Aturan keamanan belum dipasang": "Security rules not installed yet",
+  "Aturan keamanan Firestore di proyek Anda belum diperbarui untuk fitur ini. Di Firebase Console buka Firestore Database → Rules, tempel isi berkas firebase/firestore.rules dari paket terbaru, lalu klik Publish.": "The Firestore security rules in your project haven't been updated for this feature yet. In the Firebase Console, open Firestore Database → Rules, paste the contents of firebase/firestore.rules from the latest package, then click Publish.",
+  "Authentication belum aktif": "Authentication not enabled",
+  "awal bulan": "start of month",
+  "Awal bulan": "Start of month",
+  "Ayam 1/2 kg": "Chicken 1/2 kg",
+  "Ayam geprek": "Geprek chicken",
+  "Baca barang dari foto": "Read items from photo",
+  "Baca foto otomatis belum diaktifkan di server ini.": "Automatic photo reading isn't enabled on this server.",
+  "Baca foto otomatis belum tersedia di akun ini. Isi barang secara manual.": "Automatic photo reading isn't available for this account yet. Enter items manually.",
+  "Baca foto otomatis tidak tersedia di edisi Firebase.": "Automatic photo reading isn't available in the Firebase edition.",
+  "bagi": "for",
+  "Bagian Anda": "Your share",
+  "Bagian Anda bulan ini": "Your share this month",
+  "Bagian masing-masing:": "Each person's share:",
+  "Bagian tiap peserta": "Each participant's share",
+  "Bagikan": "Share",
+  "Bagikan ke": "Share with",
+  "Bagikan ke teman": "Share with a friend",
+  "Bagikan ke Teman": "Share with Friends",
+  "Bagikan sesuatu": "Share something",
+  "Bagikan wishlist, rencana nikah, patungan, perjalanan, atau anggaran. Teman hanya melihat yang Anda pilih, dan Anda bisa berhenti membagikan kapan saja.": "Share a wishlist, wedding plan, split bill, trip, or budget. Friends only see what you choose, and you can stop sharing any time.",
+  "Bahasa & Mata Uang": "Language & Currency",
+  "Bahasa diubah ke Bahasa Indonesia": "Language changed to Bahasa Indonesia",
+  "Bahasa tampilan": "Display language",
+  "baju": "clothes",
+  "Bakso": "Meatballs",
+  "Bank": "Bank",
+  "Bank Asing & Campuran": "Foreign & Joint Banks",
+  "Bank BUMN": "State-Owned Banks",
+  "Bank Digital": "Digital Banks",
+  "Bank Pembangunan Daerah": "Regional Development Banks",
+  "Bank Swasta Nasional": "National Private Banks",
+  "Bank Syariah": "Islamic Banks",
+  "Bank tidak ditemukan. Coba nama lain.": "No bank found. Try another name.",
+  "Bantu mengelola akun pengguna, tanpa membuka catatan keuangan": "Help manage user accounts without opening financial entries",
+  "barang": "items",
+  "Barang": "Item",
+  "Barang atau kegiatan impian yang dikumpulkan bersama.": "Dream items or activities saved for together.",
+  "Barang dan kegiatan yang Anda inginkan": "Things and activities you want",
+  "Barang ini sudah terbeli.": "This item has been bought.",
+  "barang terbaca. Periksa lagi nama dan harganya sebelum menyimpan.": "items read. Check the names and prices again before saving.",
+  "Barang yang Dibeli": "Items Purchased",
+  "Baru": "New",
+  "Baru {1} hari tercatat, angka makin akurat seiring waktu.": "Only {1} days recorded so far, the numbers get more accurate over time.",
+  "Batal": "Cancel",
+  "Batalkan": "Cancel",
+  "Batas": "Limit",
+  "Batas {1} data tercapai. Hapus data lama dulu.": "{1} data limit reached. Delete old data first.",
+  "Batas {1} transaksi tercapai. Hapus transaksi lama dulu.": "{1} transaction limit reached. Delete old transactions first.",
+  "Batas {1} transaksi tercapai. Pakai \"Ganti\" atau hapus transaksi lama dulu.": "{1} transaction limit reached. Use \"Replace\" or delete old transactions first.",
+  "batas & estimasi habis": "limit & estimated run-out",
+  "Batas pengeluaran": "Spending Limit",
+  "Batas pengeluaran dan sisa dana": "Spending Limit and Remaining Funds",
+  "Batas pengeluaran per periode. Bila diisi, inilah yang dipantau tiap periode, dan sisa anggaran dikurangkan dari saldo pemasukan. Isi 0 atau kosongkan untuk memakai saldo pemasukan sebagai dasar. Kalau anggaran kurang, tambahkan dari kartu di atas.": "Spending limit per period. If set, this is what gets tracked each period, and the remaining budget is subtracted from your income balance. Enter 0 or leave it empty to use your income balance as the base. If your budget is too low, add more from the card above.",
+  "Batas pengiriman email tercapai (3 kali per jam), jadi admin akan memeriksa data Anda.": "The email sending limit (3 per hour) was reached, so an admin will review your details.",
+  "Batas pengiriman email tercapai (maksimal 3 kali per jam). Coba lagi dalam sekitar {1} menit.": "Email sending limit reached (maximum 3 per hour). Try again in about {1} minutes.",
+  "Batas tidak boleh lebih kecil dari total budget kategori ({1}). Kurangi budget kategori dulu.": "The limit cannot be lower than the total category budgets ({1}). Reduce the category budgets first.",
+  "Batas waktu (menit)": "Timeout (minutes)",
+  "Batas Waktu Login": "Login Timeout",
+  "Batas waktu login diubah menjadi": "Login timeout changed to",
+  "Batas waktu login diubah menjadi {1} menit": "Login timeout changed to {1} minutes",
+  "Bawaan 7 hari setelah acara. Anda akan diingatkan di menu Jatuh Tempo; ubah kapan saja di menu Hutang.": "Default is 7 days after the event. You'll be reminded in Due Dates; change it anytime in Debts.",
+  "Bawaan pembayaran": "Default for payments",
+  "Bawang merah & putih": "Shallots & garlic",
+  "Bayam & kangkung": "Spinach & water spinach",
+  "bayar": "pay",
+  "Bayar": "Pay",
+  "Bayar hutang": "Debt repayment",
+  "Bayar Hutang": "Pay Debt",
+  "bayar ke": "pay to",
+  "Bayar tagihan": "Pay bill",
+  "BBM dihitung terpisah": "Fuel counted separately",
+  "beasiswa": "scholarship",
+  "Beasiswa & Uang Saku": "Scholarship & Allowance",
+  "Beberapa detik setelah Anda menyimpan transaksi, muncul notifikasi beremoji dengan kata penyemangat bila pengeluaran bulan ini sudah mendekati 70% dari dana atau anggaran Anda.": "A few seconds after you save a transaction, an emoji notification with an encouraging word appears if this month's expenses are close to 70% of your funds or budget.",
+  "Begini cara kerjanya": "How it works",
+  "belanja": "shopping",
+  "Belanja & Kebutuhan Harian": "Shopping & Daily Needs",
+  "Belanja Dapur": "Kitchen Shopping",
+  "Belanja mingguan": "Weekly shopping",
+  "Belanja online": "Online shopping",
+  "Belanja Online": "Online Shopping",
+  "belum": "not yet",
+  "Belum": "Not yet",
+  "Belum ada": "None yet",
+  "Belum ada {1} kategori ini pada {2}.": "No {1} for this category on {2} yet.",
+  "Belum ada {1} untuk:": "No {1} for:",
+  "Belum ada {1} untuk: {2}": "No {1} for: {2}",
+  "Belum ada {1} untuk: {2}.": "No {1} for: {2}.",
+  "Belum ada {1} yang dicatat.": "No {1} recorded yet.",
+  "Belum ada acara": "No events yet",
+  "Belum Ada Akun": "No Accounts Yet",
+  "Belum ada akun di perangkat ini. Pilih username dan kata sandi administrator. Data disimpan di browser ini saja.": "No account on this device yet. Choose an administrator username and password. Data is stored in this browser only.",
+  "Belum ada akun, dan rahasia": "No account yet, and the secret",
+  "Belum ada akun, dan variabel": "No account yet, and the variable",
+  "Belum ada akun.": "No accounts yet.",
+  "Belum ada akun. Masukkan kode setup (rahasia": "No account yet. Enter the setup code (the secret",
+  "Belum ada akun. Masukkan kode setup dari pengaturan Netlify, lalu pilih username dan kata sandi administrator.": "No account yet. Enter the setup code from your Netlify settings, then choose an administrator username and password.",
+  "Belum ada barang. Tambahkan satu per satu, atau ambil foto struk lalu baca otomatis.": "No items yet. Add them one by one, or take a photo of the receipt and read it automatically.",
+  "Belum ada budget kategori. Pilih kategori yang ingin dijaga (misalnya Makanan atau Transportasi) dan bagi sebagian dari batas {1}. Kategori tanpa budget tetap dihitung di batas pengeluaran.": "No category budgets yet. Pick the categories you want to watch (for example Food or Transport) and assign part of the {1} limit. Categories without a budget still count toward the spending limit.",
+  "Belum ada catatan": "No entries yet",
+  "Belum ada catatan {1}. Mulai dengan menekan Setor.": "No {1} entries yet. Start by tapping Deposit.",
+  "Belum ada catatan hutang": "No debt entries yet",
+  "Belum ada catatan pengeluaran, jadi nominalnya baru bisa dihitung setelah Anda mencatat pengeluaran.": "No expenses recorded yet, so the amount can only be calculated after you record some expenses.",
+  "Belum ada catatan yang bisa dicadangkan": "No entries available to back up",
+  "Belum ada cicilan": "No installments yet",
+  "Belum ada daftar barang di kategori ini. Isi bagian Barang yang Dibeli saat mencatat transaksi.": "No item list in this category yet. Fill in the Items Purchased section when recording a transaction.",
+  "Belum ada email. Tambahkan email untuk verifikasi akun.": "No email yet. Add one to verify your account.",
+  "Belum ada gerakan bulan ini": "No activity this month yet",
+  "Belum ada hutang yang tercatat.": "No debts recorded yet.",
+  "Belum ada item. Tekan Tambah item.": "No items yet. Tap Add item.",
+  "Belum ada kategori buatan sendiri.": "No custom categories yet.",
+  "Belum ada kategori buatan sendiri. Isi formulir di atas lalu pilih ikonnya.": "No custom categories yet. Fill in the form above, then choose its icon.",
+  "belum ada nominal": "no amount yet",
+  "Belum ada pemasukan di periode ini.": "No income in this period yet.",
+  "Belum ada pembanding": "No comparison yet",
+  "belum ada pengeluaran": "no expenses yet",
+  "Belum ada pengeluaran": "No expenses yet",
+  "Belum Ada Pengeluaran": "No Expenses Yet",
+  "Belum ada pengeluaran {1} ini. Isi batas anggaran di bawah untuk mulai memantau.": "No expenses this {1} yet. Set a spending limit below to start tracking.",
+  "Belum ada pengeluaran di": "No expenses in",
+  "Belum ada pengeluaran di {1} maupun": "No expenses in {1} or",
+  "Belum ada pengeluaran di {1} maupun {2}": "No expenses in {1} or {2}",
+  "Belum ada pengeluaran di {1} maupun {2}.": "No expenses in {1} or {2}.",
+  "Belum ada pengeluaran di periode ini.": "No expenses in this period yet.",
+  "Belum ada pengeluaran pada periode ini.": "No expenses in this period.",
+  "Belum ada rekening.": "No accounts yet.",
+  "Belum ada rekening. Tambahkan bank, e-wallet, atau tunai di bawah. Tanpa rekening, semua catatan dihitung sebagai satu dompet seperti biasa.": "No accounts yet. Add a bank, e-wallet, or cash below. Without accounts, all entries count as one wallet as usual.",
+  "belum ada rencana bulanan": "no monthly plan yet",
+  "Belum ada rencana perjalanan": "No trip plans yet",
+  "Belum ada setoran. Tekan Setor untuk mulai menabung ke target ini.": "No deposits yet. Tap Deposit to start saving toward this goal.",
+  "belum ada tagihan": "no bills yet",
+  "Belum ada tagihan": "No bills yet",
+  "Belum ada target": "No goals yet",
+  "Belum ada teman. Kirim kode Anda, atau masukkan kode teman di atas.": "No friends yet. Send your code, or enter a friend's code above.",
+  "Belum ada transaksi di periode ini.": "No transactions in this period yet.",
+  "Belum ada transaksi pada periode ini.": "No transactions in this period.",
+  "Belum ada tujuan — tambahkan di Pengaturan Rekening": "No destination yet. Add one in Account Settings",
+  "Belum ada uang yang Anda pinjamkan.": "You haven't lent any money yet.",
+  "Belum ada wishlist, target, patungan, perjalanan, atau anggaran yang bisa dibagikan.": "There is no wishlist, goal, split bill, trip, or budget to share yet.",
+  "Belum ada yang Anda bagikan. Teman hanya melihat yang Anda pilih.": "You have not shared anything yet. Friends only see what you choose.",
+  "Belum ada yang dibagikan teman Anda.": "Nothing has been shared by your friends yet.",
+  "belum cukup data": "not enough data yet",
+  "Belum diatur": "Not set",
+  "Belum dibagi": "Not yet assigned",
+  "Belum dicatat": "Not recorded yet",
+  "belum diisi di Netlify. Isi di Site configuration → Environment variables, deploy ulang, lalu muat ulang halaman ini.": "is not set in Netlify. Set it under Site configuration → Environment variables, redeploy, then reload this page.",
+  "belum diisi di Supabase. Jalankan": "is not set in Supabase. Run",
+  "Belum dikembalikan teman": "Not yet paid back by friend",
+  "belum dimulai.": "not started yet.",
+  "belum diverifikasi. Kirim email verifikasi dan klik tautannya agar akun Anda aman.": "is not verified yet. Send the verification email and click its link to keep your account secure.",
+  "belum lunas": "not paid off yet",
+  "Belum menerima email? Di layar Masuk pilih Kirim ulang email konfirmasi.": "No email yet? On the Sign in screen choose Resend confirmation email.",
+  "belum pernah": "never",
+  "Belum pernah": "Never",
+  "Belum pernah dicadangkan": "Never backed up",
+  "Belum pernah diunduh dari sistem ini.": "Never downloaded from this system.",
+  "belum terpakai": "not used yet",
+  "bendera": "flag",
+  "bensin": "fuel",
+  "Bensin & Parkir": "Fuel & Parking",
+  "berakhir": "ended",
+  "Berangkat": "Departure",
+  "Berangkat dari": "Departing from",
+  "Berangkat dari {1}": "Departing from {1}",
+  "Berapa bulan pengeluaran": "How many months of expenses",
+  "Berapa yang dibayar tiap bulan. Bayar lebih besar atau melunasi lebih awal tetap bisa.": "How much you pay each month. Paying more or settling early is still possible.",
+  "Beras 5 kg": "Rice 5 kg",
+  "Berbagi anggaran, rencana, dan wishlist": "Sharing budget, plans, and wishlist",
+  "Berbagi rencana dengan orang terdekat": "Share plans with people close to you",
+  "berdasarkan anggaran": "based on budget",
+  "berdasarkan saldo pemasukan": "based on income balance",
+  "Berhenti dibagikan": "Sharing stopped",
+  "Berhutang ke": "Owe to",
+  "Beri pinjaman": "Loans given",
+  "Beri Pinjaman": "Lend Money",
+  "Berkas belum tersimpan": "File not saved yet",
+  "Berkas cadangan rusak, sudah diubah, atau bukan milik akun ini.": "Backup file is corrupted, has been modified, or doesn't belong to this account.",
+  "Berkas cadangan tidak dikenali.": "Backup file not recognized.",
+  "Berkas cadangan tidak memuat akun.": "The backup file doesn't contain any accounts.",
+  "Berkas ini bukan cadangan akun SaKu, atau versinya belum didukung.": "This file is not a SaKu account backup, or its version isn't supported yet.",
+  "Berkas ini bukan cadangan SaKu yang utuh.": "This file is not a complete SaKu backup.",
+  "Berkas ini bukan cadangan SaKu yang valid.": "This file is not a valid SaKu backup.",
+  "Berkas ini bukan cadangan SaKu.": "This file is not a SaKu backup.",
+  "Berkas ini bukan gambar yang bisa dibuka.": "This file is not an image that can be opened.",
+  "Berkas ini dibuat oleh edisi lain, jadi tidak bisa dipulihkan di sini.": "This file was created by another edition, so it can't be restored here.",
+  "Berkas kunci belum disimpan, jadi fitur belum diaktifkan": "The key file hasn't been saved, so the feature isn't enabled yet",
+  "Berkas kunci ini bukan pasangan cadangan tersebut. Pakai berkas kunci pemulihan yang dibuat saat fitur ini pertama diaktifkan.": "This key file doesn't match that backup. Use the recovery key file created when this feature was first enabled.",
+  "Berkas kunci pemulihan rusak.": "Recovery key file is corrupted.",
+  "Berkas sudah tersimpan, aktifkan": "File saved, activate",
+  "Berkas terlalu besar (maksimal 80 MB).": "File is too large (maximum 80 MB).",
+  "Berkas terlalu besar.": "File is too large.",
+  "Berkas tidak bisa dibaca.": "File can't be read.",
+  "berkurang.": "decreased.",
+  "bertambah.": "increased.",
+  "besok": "tomorrow",
+  "Biaya Admin & Bank": "Admin & Bank Fees",
+  "Biaya tambahan": "Extra fees",
+  "bila": "if",
+  "Bila sebagian sudah dibayar sebelum memakai SaKu, isi sisanya saja.": "If part was already paid before using SaKu, just enter the remaining amount.",
+  "Boleh dilewati. Pengingat ini muncul lagi setiap kali Anda masuk, sampai kata sandinya diganti.": "You can skip this. This reminder will appear again each time you log in until you change your password.",
+  "bonus": "bonus",
+  "Bonus & THR": "Bonus & Holiday Allowance",
+  "BPJS Kesehatan & Ketenagakerjaan": "BPJS Health & Employment",
+  "Browser ini tidak bisa membuka cadangan terkompresi. Pakai browser yang lebih baru.": "This browser can't open compressed backups. Use a newer browser.",
+  "Browser menolak menyimpan pengaturan.": "Browser refused to save settings.",
+  "Browser menolak penyimpanan data situs. Buka di jendela biasa, bukan jendela pribadi.": "The browser blocked site data storage. Open it in a regular window, not a private window.",
+  "Buat Acara": "Create Event",
+  "Buat akun": "Create account",
+  "Buat akun admin": "Create admin account",
+  "Buat akun administrator pertama. Kata sandi awalnya": "Create the first administrator account. Its initial password",
+  "Buat Akun Baru": "Create New Account",
+  "Buat cadangan seluruh perangkat secara berkala.": "Back up all device data regularly.",
+  "Buat kategori pemasukan atau pengeluaran sendiri dan pilih ikonnya.": "Create your own income or expense categories and choose their icons.",
+  "Buat kategori sendiri dan pilih ikonnya": "Create your own category and choose its icon",
+  "Buat kode Anda": "Create your code",
+  "Buat kode teman (segera hadir)": "Create friend code (coming soon)",
+  "Buat kunci pemulihan": "Create Recovery Key",
+  "Buat kunci pemulihan dulu.": "Create a recovery key first.",
+  "Buat proyek": "Create Project",
+  "Buat sendiri, minimal": "Create your own, at least",
+  "Buat sendiri, minimal {1} karakter. Dipakai untuk masuk setelah disetujui admin.": "Create your own, at least {1} characters. Used to log in after admin approval.",
+  "Budget (bagian dari batas {1})": "Budget (part of the {1} limit)",
+  "Budget {1} terpakai": "Budget {1} used",
+  "Budget kategori adalah pecahan dari batas pengeluaran. Isi batas pengeluaran di bagian bawah halaman ini dulu, lalu bagi sebagian ke kategori yang ingin Anda jaga.": "Category budgets are a portion of your spending limit. Set the spending limit at the bottom of this page first, then assign part of it to the categories you want to watch.",
+  "Budget Kategori Baru": "New Category Budget",
+  "Budget kategori dihapus": "Category budget deleted",
+  "Budget kategori diperbarui": "Category budget updated",
+  "Budget kategori ditambahkan": "Category budget added",
+  "Budget per Kategori": "Budget per Category",
+  "Buka": "Open",
+  "Buka {1}": "Open {1}",
+  "Buka di Yahoo Finance": "Open in Yahoo Finance",
+  "Buka halaman ini lewat claude.ai dan masuk ke akun Claude Anda agar catatan keuangan bisa disimpan.": "Open this page through claude.ai and log in to your Claude account so your financial records can be saved.",
+  "Buka Jatuh Tempo": "Open Due Dates",
+  "Buka link konfirmasi / aktivasi akun melalui email Anda (cek juga folder spam). Setelah link dibuka, akun langsung aktif dan Anda bisa masuk.": "Open the confirmation / activation link in your email (also check spam). Once the link is opened, your account is active and you can sign in.",
+  "Buka menu": "Open menu",
+  "Buka menu Teman": "Open Friends menu",
+  "Buka menu Teman. Setiap akun punya kode sendiri. Salin atau kirim kode itu ke teman lewat chat.": "Open the Friends menu. Every account has its own code. Copy it or send it to a friend by chat.",
+  "Buka rute di Google Maps": "Open route in Google Maps",
+  "bukan": "not",
+  "Bukan pemasukan. Saldo kas bertambah dan saldo": "Not income. Cash balance goes up and balance",
+  "Bukan pemasukan. Saldo kas bertambah dan saldo {1} berkurang.": "Not income. Cash balance goes up and {1} balance goes down.",
+  "Bukan pembayaran tagihan": "Not a bill payment",
+  "Bukan pengeluaran. Saldo berpindah antar rekening; saldo total tetap.": "Not an expense. Balance moves between accounts; total balance stays the same.",
+  "Bukan pengeluaran. Saldo kas berkurang dan saldo": "Not an expense. Cash balance goes down and balance",
+  "Bukan pengeluaran. Saldo kas berkurang dan saldo {1} bertambah.": "Not an expense. Cash balance goes down and {1} balance goes up.",
+  "Bukan pengeluaran. Saldo rekening asal berkurang dan saldo e-wallet bertambah; saldo total tetap.": "Not an expense. The source account balance goes down and the e-wallet balance goes up; total balance stays the same.",
+  "buku": "book",
+  "Buku & Alat Tulis": "Books & Stationery",
+  "bulan": "months",
+  "Bulan": "Month",
+  "bulan ini": "this month",
+  "Bulan ini": "This month",
+  "Bulan ini belum dimulai.": "This month hasn't started yet.",
+  "Bulan ini:": "This month:",
+  "Bulan ini: {1} dari": "This month: {1} of",
+  "Bulan ini: {1} dari {2}": "This month: {1} of {2}",
+  "Bulan ini: {1} dari {2}.": "This month: {1} of {2}.",
+  "bulan lalu": "last month",
+  "Bulan lalu": "Last month",
+  "Bulan mulai": "Start month",
+  "Bulan pengeluaran": "Expense months",
+  "bulan pengeluaran, sekitar": "months of expenses, about",
+  "bulan pengeluaran.": "months of expenses.",
+  "Bulan selesai": "End month",
+  "Bulan selesai harus sama dengan atau setelah bulan mulai.": "End month must be the same as or after the start month.",
+  "Bulan Terakhir": "Last Month",
+  "Bulanan": "Monthly",
+  "bunga": "interest",
+  "Bunga": "Interest",
+  "Bunga Tabungan": "Savings Interest",
+  "bus": "bus",
+  "Bus Antar Kota": "Intercity Bus",
+  "Cabut Admin Pembantu": "Remove Assistant Admin",
+  "Cabut Administrator": "Remove Administrator",
+  "Cadangan 7 hari terakhir": "Backups from the last 7 days",
+  "Cadangan belum disimpan": "Backup not saved yet",
+  "Cadangan Catatan Lama": "Old Entries Backup",
+  "Cadangan Data": "Data Backup",
+  "Cadangan diunduh": "Backup downloaded",
+  "Cadangan diunduh:": "Backup downloaded:",
+  "Cadangan diunduh: {1} transaksi": "Backup downloaded: {1} transactions",
+  "Cadangan diunduh: {1} transaksi{2}": "Backup downloaded: {1} transactions{2}",
+  "Cadangan diunduh: {1} transaksi{2}{3}": "Backup downloaded: {1} transactions{2}{3}",
+  "Cadangan diunduh: {1} transaksi{2}{3}. Simpan berkasnya di tempat aman.": "Backup downloaded: {1} transactions{2}{3}. Store the file somewhere safe.",
+  "Cadangan diunduh: {1} transaksi{2}{3}. Simpan berkasnya di tempat aman.{4}": "Backup downloaded: {1} transactions{2}{3}. Store the file somewhere safe.{4}",
+  "Cadangan diunduh. File ini memuat semua akun dan catatan, simpan di tempat aman.": "Backup downloaded. This file contains all accounts and entries, so keep it somewhere safe.",
+  "Cadangan ini berasal dari edisi lain (sandi tidak cocok), jadi tidak bisa dipulihkan di sini.": "This backup is from another edition (password doesn't match), so it can't be restored here.",
+  "Cadangan ini bukan milik akun tersebut.": "This backup doesn't belong to that account.",
+  "Cadangan ini disegel dengan kunci brankas lain, jadi server ini tidak bisa membukanya. Pasang VAULT_SECRET yang sama dengan server asalnya.": "This backup was sealed with a different vault key, so this server can't open it. Set the same VAULT_SECRET as the original server.",
+  "Cadangan memuat terlalu banyak transaksi.": "The backup contains too many transactions.",
+  "Cadangan Seluruh Akun": "All Accounts Backup",
+  "Cadangan seluruh akun diunduh": "All-accounts backup downloaded",
+  "Cadangan terakhir": "Last backup",
+  "Cadangan terakhir:": "Last backup:",
+  "Cadangan terkunci diunduh:": "Locked backup downloaded:",
+  "Cadangan terkunci diunduh: {1} akun,": "Locked backup downloaded: {1} accounts,",
+  "Cadangan terkunci diunduh: {1} akun, {2}": "Locked backup downloaded: {1} accounts, {2}",
+  "Cadangan terkunci diunduh: {1} akun, {2} transaksi,": "Locked backup downloaded: {1} accounts, {2} transactions,",
+  "Cadangan terkunci diunduh: {1} akun, {2} transaksi, {3}": "Locked backup downloaded: {1} accounts, {2} transactions, {3}",
+  "Cadangan terkunci diunduh: {1} akun, {2} transaksi, {3} foto.": "Locked backup downloaded: {1} accounts, {2} transactions, {3} photos.",
+  "Cadangan terkunci diunduh: {1} akun, {2} transaksi, {3} foto.{4}": "Locked backup downloaded: {1} accounts, {2} transactions, {3} photos.{4}",
+  "Cadangan tertutup aktif": "Locked backup active",
+  "Cadangan tidak memuat akun administrator yang aktif.": "Backup doesn't contain an active administrator account.",
+  "Cadangkan Sekarang": "Back Up Now",
+  "Cadangkan Semua Akun": "Back Up All Accounts",
+  "Cadangkan semua data": "Back Up All Data",
+  "Cairkan Investasi": "Withdraw Investment",
+  "Cara bagi": "Split method",
+  "Cara membayar": "Payment method",
+  "Cara memulihkan": "How to restore",
+  "Cari bank": "Search banks",
+  "Cari bank… (mis. Mandiri, BCA, Octo)": "Search banks… (e.g. Mandiri, BCA, Octo)",
+  "Cari catatan, kategori, atau barang": "Search entries, categories, or items",
+  "Cari ikon": "Search icons",
+  "Cari ikon… (mis. makan, mobil, hotel)": "Search icons… (e.g. food, car, hotel)",
+  "Cari kategori": "Search categories",
+  "Cari kategori…": "Search categories…",
+  "Cari transaksi": "Search transactions",
+  "Cashback & Pengembalian": "Cashback & Refunds",
+  "Cashback dompet digital": "E-wallet cashback",
+  "Catat barang atau kegiatan yang Anda inginkan, lengkap dengan tanggal rencana dan estimasi biayanya. SaKu menghitung berapa yang perlu disisihkan per hari, minggu, atau bulan.": "Note things or activities you want, with a planned date and estimated cost. SaKu works out how much to set aside per day, week, or month.",
+  "Catat bunga": "Record interest",
+  "Catat cicilan KPR, mobil, HP, atau cicilan lain. SaKu mengingatkan setiap jatuh tempo dan menghitung sisa tagihannya.": "Record KPR, car, phone, or other installments. SaKu reminds you of every due date and calculates the remaining bills.",
+  "Catat hasil": "Record income",
+  "Catat hutang Anda ke orang lain, atau uang yang Anda pinjamkan. SaKu mengingatkan saat jatuh tempo dan menghitung sisanya. Hutang tidak dihitung sebagai pemasukan atau pengeluaran, hanya menggeser saldo.": "Record debts you owe to others, or money you've lent out. SaKu reminds you on due dates and calculates what's left. Debts aren't counted as income or expenses; they only shift your balance.",
+  "Catat ke SaKu": "Record to SaKu",
+  "Catat pemasukan atau pengeluaran pertama Anda. Foto struk bisa dipakai untuk mengisi daftar barang.": "Record your first income or expense. You can use a receipt photo to fill in the item list.",
+  "Catat Sekarang": "Record Now",
+  "catat tiap transaksi": "record every transaction",
+  "Catat transaksi": "Record transaction",
+  "Catat Transaksi": "Record Transaction",
+  "Catat uang pinjaman ke Transaksi": "Record loan money in Transactions",
+  "catatan": "notes",
+  "Catatan": "Note",
+  "Catatan / barang": "Entry / item",
+  "catatan aktif": "active entries",
+  "Catatan atau nama toko": "Note or store name",
+  "Catatan ditutup. Sisa": "Entry closed. Remaining",
+  "Catatan ditutup. Sisa {1} dianggap selesai.": "Entry closed. Remaining {1} is considered settled.",
+  "catatan hutang dibuat.": "Debt entry created.",
+  "Catatan hutang dihapus": "Debt entry deleted",
+  "catatan keluar": "expense entries",
+  "Catatan lama yang memakai kategori yang dihapus akan tampil sebagai “Lainnya”.": "Older entries that used a deleted category will appear as “Other”.",
+  "catatan masuk": "income entries",
+  "catatan menunggu diunggah.": "entries waiting to be uploaded.",
+  "catatan offline berhasil diunggah": "offline entries uploaded successfully",
+  "catatan offline tetap tersimpan dan akan diunggah setelah Anda masuk.": "offline entries are kept and will upload after you log in.",
+  "Catatan setiap akun disimpan terpisah.": "Each account's entries are saved separately.",
+  "Catatan Terbaru": "Latest Entries",
+  "catatan…": "entries…",
+  "Catatannya dihitung sebagai tunai.": "Its entries now count as cash.",
+  "Cek Email Anda": "Check Your Email",
+  "Charge EV": "EV Charging",
+  "cicil": "installment",
+  "Cicil": "Pay Installment",
+  "Cicil tiap akhir bulan": "Pay installments at month end",
+  "Cicil tiap bulan, di tanggal yang sama": "Pay installments monthly, on the same date",
+  "cicilan": "installments",
+  "Cicilan": "Installments",
+  "Cicilan & Hutang": "Installments & Debts",
+  "Cicilan & Kartu Kredit": "Installments & Credit Cards",
+  "cicilan aktif": "active installments",
+  "Cicilan bulan ini": "Installments this month",
+  "Cicilan dan hutang yang perlu dibayar": "Installments and debts to pay",
+  "Cicilan dihapus": "Installment deleted",
+  "Cicilan diperbarui": "Installment updated",
+  "Cicilan ditambahkan": "Installment added",
+  "Cicilan Elektronik & Furnitur": "Electronics & Furniture Installment",
+  "Cicilan floating: angka ini perkiraan. Sesuaikan dengan tagihan bulan ini sebelum menyimpan.": "Floating installment: these figures are estimates. Adjust to this month's bill before saving.",
+  "Cicilan HP": "Phone installment",
+  "Cicilan ke · Bulan": "Installment # · Month",
+  "Cicilan KPR": "Mortgage installment",
+  "Cicilan lunas. Terima kasih sudah disiplin.": "Installment paid off. Thanks for staying disciplined.",
+  "Cicilan Mobil": "Car Installment",
+  "Cicilan Motor": "Motorcycle Installment",
+  "Cicilan Multiguna": "Multipurpose Loan Installment",
+  "Cicilan per bulan": "Installment per month",
+  "Cicilan per bulan tidak boleh melebihi nominal pinjaman.": "Monthly installment can't exceed the loan amount.",
+  "Cicilan sebelum Anda memakai SaKu.": "Installments from before you used SaKu.",
+  "cicilan terakhir selesai": "last installment finished",
+  "Cicilan terbayar": "Installments paid",
+  "Cicilan terlalu kecil: jumlah cicilan melebihi 600 kali.": "Installment is too small: the number of installments exceeds 600.",
+  "Cicilan tidak boleh melebihi nominal pinjaman.": "Installment can't exceed the loan amount.",
+  "Cicilan, hutang & target": "Installments, debts & goals",
+  "cicilan:": "installments:",
+  "Ciutkan": "Collapse",
+  "Ciutkan menu": "Collapse menu",
+  "Cloud Firestore belum diaktifkan di proyek Firebase Anda. Buka Firestore Database lalu klik Create database.": "Cloud Firestore isn't enabled in your Firebase project. Open Firestore Database and click Create database.",
+  "Coba kata lain atau tekan Tambah Kategori.": "Try another word or tap Add Category.",
+  "Coba lagi": "Try again",
+  "Coba lagi.": "Try again.",
+  "Coba tampilkan": "Try showing",
+  "Coba ubah kata kunci atau filter.": "Try changing the keyword or filter.",
+  "cocok dengan cadangan ini": "matches this backup",
+  "Contoh:": "Example:",
+  "Cuci Motor/Mobil": "Motorcycle/Car Wash",
+  "Cukup": "Got it",
+  "cukup sampai akhir": "enough until the end",
+  "cukup sampai akhir {1}, proyeksi total": "enough until the end of {1}, projected total",
+  "cukup sampai akhir {1}, proyeksi total {2}": "enough until the end of {1}, projected total {2}",
+  "cukup sampai akhir {1}, proyeksi total {2} (": "enough until the end of {1}, projected total {2} (",
+  "cukup sampai akhir {1}, proyeksi total {2} ({3}": "enough until the end of {1}, projected total {2} ({3}",
+  "cukup sampai akhir {1}, proyeksi total {2} ({3} dari": "enough until the end of {1}, projected total {2} ({3} of",
+  "cukup sampai akhir {1}, proyeksi total {2} ({3} dari {4}": "enough until the end of {1}, projected total {2} ({3} of {4}",
+  "cukup sampai akhir {1}, proyeksi total {2} ({3} dari {4})": "enough until the end of {1}, projected total {2} ({3} of {4})",
+  "daftar": "list",
+  "Daftar": "Sign up",
+  "Daftar Akun": "Account List",
+  "Daftar transaksi": "Transaction list",
+  "dalam": "in",
+  "Dalam anggaran, sisa": "Within budget, remaining",
+  "Dalam pengembangan": "In development",
+  "dalam rupiah": "in rupiah",
+  "dan": "and",
+  "dan {1} foto": "and {1} photos",
+  "dana": "funds",
+  "Dana Darurat": "Emergency Fund",
+  "Dana darurat, tabungan, investasi, dan impian lain": "Emergency fund, savings, investments, and other dreams",
+  "Dana hampir habis": "Funds Almost Empty",
+  "Dana mulai menipis": "Funds Starting to Run Low",
+  "Dana sudah cukup. Waktunya mewujudkannya!": "You have enough. Time to make it happen!",
+  "Dana terkumpul setara": "Funds saved equal to",
+  "Dana terkumpul setara {1} bulan pengeluaran.": "Funds saved equal {1} months of expenses.",
+  "Dana terpakai": "Funds used",
+  "Dana terpakai, hampir habis": "Funds used, almost used up",
+  "Dana terpakai, mendekati batas": "Funds used, nearing the limit",
+  "dana tersedia": "funds available",
+  "Dana tersedia": "Funds available",
+  "Dana wishlist “{1}” sudah cukup!": "Wishlist “{1}” is fully funded!",
+  "dapur": "kitchen",
+  "Darat": "Land",
+  "Darat, laut, udara, atau gabungan": "Land, sea, air, or a mix",
+  "dari": "of",
+  "Dari": "From",
+  "dari {1}": "of {1}",
+  "dari {1} acara": "from {1} events",
+  "dari {1} hari": "of {1} days",
+  "dari {1}{2}": "of {1}{2}",
+  "dari {1}{2}.": "of {1}{2}.",
+  "dari {1}{2}. {3}": "of {1}{2}. {3}",
+  "Dari akun": "From account",
+  "dari pemasukan": "of income",
+  "Dari rekening": "From account",
+  "Dari semua catatan": "From all entries",
+  "dari target aktif": "from active goals",
+  "Dari titik singgah yang aktif": "From active stops",
+  "dari total": "of total",
+  "darurat": "emergency",
+  "Darurat & Tak Terduga": "Emergency & Unexpected",
+  "Dasar": "Base",
+  "Dasar {1} + tambahan {2}.": "Base {1} + extra {2}.",
+  "Data {1} akun dipulihkan": "{1} account data restored",
+  "Data acara tidak valid.": "Invalid event data.",
+  "Data akun di dalam cadangan rusak.": "Account data inside the backup is corrupted.",
+  "Data baru saja berubah.": "Data was just changed.",
+  "Data berhasil dipulihkan": "Data restored successfully",
+  "Data catatan di dalam cadangan rusak.": "Entry data inside the backup is corrupted.",
+  "data cicilan, hutang & target": "installment, debt & goal data",
+  "data cicilan, hutang & target dipulihkan": "installment, debt & goal data restored",
+  "data cicilan/hutang/target rusak dilewati.": "corrupted installment/debt/goal data skipped.",
+  "Data contoh dihapus": "Sample data deleted",
+  "Data contoh siap. Hapus kapan saja di Pengaturan.": "Sample data is ready. Delete it anytime in Settings.",
+  "data contoh?": "sample data?",
+  "Data di balik grafik ada di sheet Bulanan, Kategori, dan Harian. Angka diperbarui saat Anda mengunduh ulang dari SaKu.": "The data behind the charts is in the Monthly, Category, and Daily sheets. Numbers update when you download again from SaKu.",
+  "Data dipulihkan dari cadangan. Silakan masuk lagi.": "Data restored from backup. Please log in again.",
+  "Data IHSG belum bisa diambil dari sumbernya. Coba lagi beberapa saat lagi.": "IHSG data can't be retrieved from its source yet. Try again in a little while.",
+  "Data IHSG belum bisa diambil.": "IHSG data couldn't be fetched.",
+  "Data IHSG belum dimuat.": "IHSG data hasn't loaded yet.",
+  "Data IHSG tersedia di edisi Netlify dan Supabase.": "IHSG data is available in the Netlify and Supabase editions.",
+  "Data IHSG tidak tersedia di edisi ini.": "IHSG data isn't available in this edition.",
+  "Data per": "Data as of",
+  "Data per {1}{2}. Data tertunda dan hanya untuk informasi.": "Data as of {1}{2}. Data is delayed and for information only.",
+  "Data perjalanan tidak valid.": "Invalid trip data.",
+  "Data rencana hasil pemulihan terlalu besar.": "Restored plans data is too large.",
+  "Data rencana sudah terlalu besar. Hapus data lama dulu.": "Plans data is too large. Delete old data first.",
+  "Data sudah ada.": "Data already exists.",
+  "data tercapai. Hapus data lama dulu.": "data limit reached. Delete old data first.",
+  "Data terlalu besar untuk dibagikan.": "The data is too large to share.",
+  "Data terlalu besar.": "Data is too large.",
+  "Data tersimpan di browser perangkat ini saja (tanpa server), jadi tidak muncul di perangkat lain.": "Data is stored in this device's browser only (no server), so it won't appear on other devices.",
+  "Data tersimpan di database Supabase milik Anda dan otomatis sinkron di semua perangkat tempat Anda masuk.": "Your data is stored in your own Supabase database and syncs automatically on every device where you're logged in.",
+  "Data tersimpan di Firebase milik Anda dan otomatis sinkron di semua perangkat tempat Anda masuk.": "Your data is stored in your own Firebase and syncs automatically on every device where you're logged in.",
+  "Data tidak bisa disimpan. Akun Claude Anda mungkin hanya punya akses lihat, atau fotonya terlalu besar.": "Data couldn't be saved. Your Claude account may only have view access, or the photo may be too large.",
+  "Data tidak ditemukan.": "Data not found.",
+  "Data tidak valid.": "Invalid data.",
+  "Data transaksi tidak valid.": "Transaction data is invalid.",
+  "Database belum dibuat": "Database not created yet",
+  "Database belum disiapkan": "Database not set up yet",
+  "Database Firestore belum dibuat. Buka Firestore Database lalu klik Create database.": "The Firestore database hasn't been created. Open Firestore Database and click Create database.",
+  "daun": "leaf",
+  "Defisit": "Deficit",
+  "Defisit, pengeluaran melebihi pemasukan": "Deficit, expenses exceed income",
+  "Denda & Tilang": "Fines & Tickets",
+  "dengan": "with",
+  "Dengan": "With",
+  "Dengan {1} per bulan, perkiraan tercapai": "At {1} per month, expected to reach it by",
+  "Dengan {1} per bulan, perkiraan tercapai {2}": "At {1} per month, expected to reach it by {2}",
+  "Dengan {1} per bulan, perkiraan tercapai {2}{3}": "At {1} per month, expected to reach it by {2}{3}",
+  "Dengan {1} per bulan, perkiraan tercapai {2}{3}.": "At {1} per month, expected to reach it by {2}{3}.",
+  "dengan laju sekarang:": "at the current pace:",
+  "Desain dan tampilan": "Design and screens",
+  "detik": "seconds",
+  "di": "in",
+  "di atas": "above",
+  "di bawah": "below",
+  "Di edisi ini pemulihan": "In this edition, restoring",
+  "di server, jadi cadangan tetap bisa dipulihkan bila server dipindah.": "on the server, so backups can still be restored if the server is moved.",
+  "di Supabase), lalu pilih username dan kata sandi administrator.": "in Supabase), then choose an administrator username and password.",
+  "Di tab": "In the tab",
+  "diaktifkan": "enabled",
+  "dianggap selesai.": "considered settled.",
+  "Dibagi ke kategori": "Assigned to categories",
+  "Dibagi sebanding dengan nilai pesanan tiap orang.": "Split proportionally to each person's order value.",
+  "Dibagikan ke {1} teman": "Shared with {1} friends",
+  "Dibagikan ke Anda": "Shared with you",
+  "dibanding": "compared to",
+  "dibanding {1}": "compared to {1}",
+  "dibanding {1} pada": "compared to {1} on",
+  "dibanding {1} pada {2}": "compared to {1} on {2}",
+  "Dibayar": "Paid",
+  "Dibayar dari": "Paid from",
+  "Dibayar oleh": "Paid by",
+  "Dibuat": "Created",
+  "Dibuat {1},": "Created {1},",
+  "Dibuat {1}, {2}": "Created {1}, {2}",
+  "dibuat. Kata sandi awal:": "created. Initial password:",
+  "dicabut": "revoked",
+  "dicadangkan": "backed up",
+  "dicadangkan dari saldo pemasukan": "reserved from the income balance",
+  "dicadangkan.": "backed up.",
+  "Dicatat di Transaksi sebagai “": "Recorded in Transactions as “",
+  "Dicatat di Transaksi sebagai “{1}”{2}": "Recorded in Transactions as “{1}”{2}",
+  "Dicatat di wishlist saja, bukan sebagai transaksi.": "Recorded in the wishlist only, not as a transaction.",
+  "Dicatat sebagai “": "Recorded as “",
+  "Dicatat sebagai “{1}” pada tanggal pinjam. Hanya menggeser saldo, bukan {2}. Matikan bila uangnya sudah tercatat atau terjadi sebelum Anda memakai SaKu.": "Recorded as “{1}” on the borrow date. Only shifts the balance, not {2}. Turn off if the money is already recorded or happened before you started using SaKu.",
+  "Diesel": "Diesel",
+  "dihapus": "deleted",
+  "Dihapus di perangkat. Disinkronkan otomatis saat online.": "Deleted on this device. Will sync automatically when online.",
+  "Dihutang oleh": "Owed by",
+  "dijeda": "paused",
+  "dinonaktifkan": "disabled",
+  "Dipakai saat acara dicatat ke Transaksi.": "Used when the event is recorded to Transactions.",
+  "diperbarui": "updated",
+  "Dipinjam orang": "Lent to others",
+  "Dipulihkan:": "Restored:",
+  "Dipulihkan: {1} akun,": "Restored: {1} accounts,",
+  "Dipulihkan: {1} akun, {2}": "Restored: {1} accounts, {2}",
+  "Dipulihkan: {1} akun, {2} transaksi.": "Restored: {1} accounts, {2} transactions.",
+  "direset ke kata sandi awal (": "reset to the initial password (",
+  "disetujui. Masuk dengan kata sandi yang dibuat saat mendaftar.": "approved. Log in with the password you created when signing up.",
+  "Disimpan di": "Saved in",
+  "diskon": "discount",
+  "Diskon": "Discount",
+  "Diskon: -": "Discount: -",
+  "Ditalangi": "Advanced",
+  "Ditalangi {1}": "Covered by {1}",
+  "ditambah": "added",
+  "ditambahkan": "added",
+  "Diterima": "Received",
+  "ditolak": "rejected",
+  "Ditolak": "Rejected",
+  "ditutup": "closed",
+  "Ditutup": "Closed",
+  "Dokter & Rumah Sakit": "Doctor & Hospital",
+  "dolar Amerika Serikat": "US dollar",
+  "Dolar Amerika Serikat": "US Dollar",
+  "dompet": "wallet",
+  "Dompet": "Wallet",
+  "Dompet yang dijaga hari ini, hati yang tenang esok hari. Semangat!": "A wallet guarded today, a calm heart tomorrow. You've got this!",
+  "e-wallet": "e-wallet",
+  "E-Wallet": "E-Wallet",
+  "Edisi Firebase hanya bisa mengganti seluruh catatan akun saat memulihkan.": "The Firebase edition can only replace all account entries when restoring.",
+  "Edisi ini tidak punya server penjaga rahasia, jadi cadangan dikunci dengan": "This edition doesn't have a secrets server, so backups are locked with",
+  "elektronik": "electronics",
+  "Email Anda belum dikonfirmasi. Buka email dari SaKu, klik tautannya (cek folder spam), lalu masuk lagi. Akun langsung aktif tanpa menunggu admin.": "Your email is not confirmed yet. Open the email from SaKu, click its link (check spam), then sign in again. Your account is activated without waiting for an admin.",
+  "Email Anda sudah terverifikasi.": "Your email is already verified.",
+  "Email belum dikonfirmasi": "Email not confirmed",
+  "Email belum terverifikasi. Kirim email verifikasi dari himbauan di atas.": "Email not verified yet. Send the verification email from the notice above.",
+  "Email diganti dan konfirmasi dikirim ke {1}. Cek kotak masuk dan folder spam.": "Email changed and confirmation sent to {1}. Check your inbox and spam folder.",
+  "Email dipakai admin untuk menghubungi Anda.": "Your email is used by the admin to contact you.",
+  "Email diperbarui, tetapi email verifikasi belum terkirim. Coba lagi dari himbauan di atas.": "Email updated, but the verification email was not sent. Try again from the notice above.",
+  "Email diperbarui. Batas kirim 3 kali per jam tercapai, coba kirim lagi nanti.": "Email updated. The limit of 3 sends per hour was reached; try sending again later.",
+  "Email diperbarui. Kami mengirim email verifikasi ke alamat baru.": "Email updated. We sent a verification email to the new address.",
+  "Email disimpan.": "Email saved.",
+  "Email diubah, tetapi email verifikasi belum terkirim. Coba lagi dari himbauan di atas.": "Email changed, but the verification email was not sent. Try again from the notice above.",
+  "Email diubah. Batas kirim 3 kali per jam tercapai, kirim verifikasi lagi nanti.": "Email changed. The limit of 3 sends per hour was reached; send verification again later.",
+  "Email diubah. Buka tautan verifikasi yang kami kirim ke alamat baru.": "Email changed. Open the verification link we sent to the new address.",
+  "Email ini sudah dipakai akun Anda.": "This email is already used by your account.",
+  "Email ini sudah terverifikasi.": "This email is already verified.",
+  "Email ini tidak cocok dengan akun, atau akun sudah diproses admin.": "This email does not match the account, or the account was already handled by an admin.",
+  "Email ini tidak cocok dengan akun, atau email belum terverifikasi.": "This email does not match the account, or the email is not verified yet.",
+  "Email ini tidak cocok dengan pendaftaran, atau akun sudah diproses admin.": "This email does not match the registration, or the account was already handled by an admin.",
+  "Email konfirmasi dikirim ulang ke {1}. Cek kotak masuk dan folder spam.": "Confirmation email resent to {1}. Check your inbox and spam folder.",
+  "Email konfirmasi hanya tersedia di versi web.": "Confirmation email is only available in the web version.",
+  "Email terkonfirmasi": "Email confirmed",
+  "Email terkonfirmasi. Akun Anda sudah aktif, silakan masuk.": "Email confirmed. Your account is active, please sign in.",
+  "Email terverifikasi. Buka Pengaturan lalu ganti kata sandi dalam 15 menit.": "Email verified. Open Settings and change your password within 15 minutes.",
+  "Email terverifikasi. Ganti kata sandi dalam 15 menit.": "Email verified. Change your password within 15 minutes.",
+  "Email terverifikasi. Mengubah email meminta verifikasi ulang lewat tautan yang dikirim ke alamat baru.": "Email verified. Changing it asks for verification again through a link sent to the new address.",
+  "Email tidak valid.": "Invalid email.",
+  "Email tidak valid. Contoh: janedoe@email.com.": "Invalid email. Example: janedoe@email.com.",
+  "Email tidak valid. Contoh: sifulan12@email.com.": "Invalid email. Example: sifulan12@email.com.",
+  "Email verifikasi dikirim ke {1}. Cek kotak masuk dan folder spam.": "Verification email sent to {1}. Check your inbox and spam folder.",
+  "Es teh": "Iced tea",
+  "Estimasi": "Estimate",
+  "Estimasi {1} habis sekitar": "{1} estimated to run out around",
+  "Estimasi {1} habis sekitar {2}": "{1} estimated to run out around {2}",
+  "Estimasi {1} habis sekitar {2},": "{1} estimated to run out around {2},",
+  "Estimasi {1} habis sekitar {2}, {3}": "{1} estimated to run out around {2}, {3}",
+  "Estimasi {1} habis sekitar {2}, {3} hari lagi": "{1} estimated to run out around {2}, {3} days left",
+  "Estimasi {1} habis sekitar {2}, {3} hari lagi{4}": "{1} estimated to run out around {2}, {3} days left{4}",
+  "Estimasi {1} habis sekitar {2}, {3} hari lagi{4}.": "{1} estimated to run out around {2}, {3} days left{4}.",
+  "Estimasi biaya": "Estimated cost",
+  "Estimasi habis": "Estimated run-out",
+  "Estimasi:": "Estimate:",
+  "Estimasi: {1} cukup sampai akhir": "Estimate: {1} lasts until the end of",
+  "Estimasi: {1} cukup sampai akhir {2}": "Estimate: {1} lasts until the end of {2}",
+  "Estimasi: {1} cukup sampai akhir {2}, perkiraan total": "Estimate: {1} lasts until the end of {2}, estimated total",
+  "Estimasi: {1} cukup sampai akhir {2}, perkiraan total {3}": "Estimate: {1} lasts until the end of {2}, estimated total {3}",
+  "Estimasi: {1} cukup sampai akhir {2}, perkiraan total {3}{4}": "Estimate: {1} lasts until the end of {2}, estimated total {3}{4}",
+  "Estimasi: {1} cukup sampai akhir {2}, perkiraan total {3}{4}.": "Estimate: {1} lasts until the end of {2}, estimated total {3}{4}.",
+  "Estimasi: {1} sudah habis": "Estimate: {1} has run out",
+  "Estimasi: {1} sudah habis{2}": "Estimate: {1} has run out{2}",
+  "Estimasi: {1} sudah habis{2}.": "Estimate: {1} has run out{2}.",
+  "Excel + grafik": "Excel + chart",
+  "File cadangan memuat data yang tidak dikenal.": "Backup file contains unrecognized data.",
+  "File cadangan tidak bisa dibaca.": "Backup file can't be read.",
+  "File cadangan tidak memuat daftar akun.": "Backup file doesn't contain an account list.",
+  "File Excel gagal dibuat.": "Failed to create Excel file.",
+  "File ini bukan cadangan SaKu yang valid.": "This isn't a valid SaKu backup file.",
+  "File siap disimpan": "File ready to save",
+  "File terlalu besar untuk dipulihkan.": "File is too large to restore.",
+  "File tidak bisa disimpan di tampilan ini.": "Files can't be saved in this view.",
+  "film": "movies",
+  "Firebase Anda sudah siap dan belum ada akun. Pilih username dan kata sandi administrator. Buat sekarang, karena siapa pun yang membuka alamat ini lebih dulu bisa menjadi admin.": "Your Firebase is ready and there are no accounts yet. Choose an administrator username and password. Create it now, because whoever opens this address first can become the admin.",
+  "Firebase Authentication belum dimulai. Di Firebase Console buka Authentication lalu klik Get started.": "Firebase Authentication hasn't been started. In the Firebase Console, open Authentication and click Get started.",
+  "Firebase Authentication menolak permintaan": "Firebase Authentication rejected the request",
+  "Firebase belum dihubungkan. Tempel konfigurasi proyek Firebase Anda.": "Firebase isn't connected yet. Paste your Firebase project configuration.",
+  "Firebase sedang bermasalah. Coba lagi sebentar lagi.": "Firebase is having problems. Try again in a moment.",
+  "Firebase tidak terjangkau": "Firebase unreachable",
+  "Firestore belum aktif": "Firestore not enabled",
+  "Firestore menolak permintaan:": "Firestore rejected the request:",
+  "Fitur baru": "New feature",
+  "Fitur baru: Teman": "New feature: Friends",
+  "Fitur baru: Teman. Berbagi rencana dengan kode.": "New feature: Friends. Share plans with a code.",
+  "Fitur ini belum aktif. Tampilan di atas hanya gambaran. Data Anda tidak dibagikan ke siapa pun.": "This feature is not active yet. The view above is only an illustration. Your data is not shared with anyone.",
+  "Flat: nominal cicilan sama setiap bulan sampai lunas.": "Flat: the installment amount is the same every month until paid off.",
+  "foto": "photos",
+  "Foto": "Photo",
+  "Foto barang yang dibeli": "Photo of items purchased",
+  "Foto belum bisa dibaca. Coba foto yang lebih jelas, atau isi barang manual.": "Photo couldn't be read yet. Try a clearer photo, or enter items manually.",
+  "Foto belum bisa dibaca. Coba foto yang lebih jelas.": "Photo couldn't be read yet. Try a clearer photo.",
+  "Foto di dalam cadangan rusak.": "Photos inside the backup are corrupted.",
+  "Foto dihapus.": "Photo removed.",
+  "Foto dipotong persegi dan dikecilkan otomatis.": "The photo is cropped square and resized automatically.",
+  "Foto profil diperbarui.": "Profile photo updated.",
+  "foto rusak dilewati.": "corrupted photos skipped.",
+  "foto tidak bisa diambil.": "photos couldn't be fetched.",
+  "Foto tidak bisa dibaca. Coba foto lain yang lebih jelas.": "Photo couldn't be read. Try a different, clearer photo.",
+  "Foto tidak bisa dibuka. Coba foto lain.": "Photo couldn't be opened. Try another photo.",
+  "Foto tidak bisa dimuat": "Photo couldn't be loaded",
+  "Foto tidak bisa disimpan.": "The photo could not be saved.",
+  "Foto tidak valid atau terlalu besar.": "The photo is invalid or too large.",
+  "Foto tidak valid.": "Invalid photo.",
+  "Foto, tanggal lahir, dan email": "Photo, birth date, and email",
+  "foto.": "photos.",
+  "Frankfurter (kurs rujukan Bank Sentral Eropa)": "Frankfurter (European Central Bank reference rates)",
+  "Freelance & Proyek": "Freelance & Projects",
+  "Gabungkan": "Merge",
+  "Gadget & Elektronik": "Gadgets & Electronics",
+  "gagal": "failed",
+  "Gagal masuk. Coba lagi.": "Couldn't log in. Please try again.",
+  "Gagal membaca foto. Coba lagi nanti.": "Couldn't read the photo. Try again later.",
+  "Gagal membuat akun.": "Couldn't create account.",
+  "Gagal membuat cadangan.": "Failed to create backup.",
+  "Gagal memuat data teman.": "Could not load friend data.",
+  "Gagal mencadangkan.": "Failed to back up.",
+  "Gagal mengaktifkan.": "Failed to enable.",
+  "Gagal mengirim email. Coba lagi.": "Could not send the email. Try again.",
+  "Gagal mengubah email. Coba lagi.": "Could not change the email. Try again.",
+  "Gagal menyimpan. Periksa koneksi lalu coba lagi.": "Couldn't save. Check your connection and try again.",
+  "Gagal:": "Failed:",
+  "Gagal. Coba lagi.": "Failed. Try again.",
+  "gaji": "salary",
+  "Gaji": "Salary",
+  "Gaji bulanan": "Monthly salary",
+  "Galeri": "Gallery",
+  "game": "game",
+  "Game & Top-up Game": "Games & Game Top-up",
+  "Ganti": "Replace",
+  "Ganti berkas kunci": "Replace key file",
+  "Ganti foto": "Change photo",
+  "Ganti Kata Sandi": "Change Password",
+  "Ganti Kata Sandi Anda?": "Change Your Password?",
+  "Ganti sandi saya": "Change My Password",
+  "Ganti sekarang": "Change now",
+  "Ganti Semua Data": "Replace All Data",
+  "gas": "gas",
+  "Gas LPG & Galon": "LPG Gas & Water Gallons",
+  "gaya": "lifestyle",
+  "Gaya Hidup": "Lifestyle",
+  "Gaya Hidup & Hiburan": "Lifestyle & Entertainment",
+  "Gigi & Kacamata": "Dental & Eyeglasses",
+  "Golongan I": "Class I",
+  "Grafik batang pemasukan dan pengeluaran. Total masuk {1}, total keluar {2}.": "Bar chart of income and expenses. Total in {1}, total out {2}.",
+  "Grafik dan perubahan: 30 hari terakhir.": "Chart and changes: last 30 days.",
+  "Grafik garis pengeluaran kumulatif.": "Cumulative expense line chart.",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal": "Cumulative expense line chart. {1} up to date",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal {2}": "Cumulative expense line chart. {1} up to date {2}",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal {2} {3}": "Cumulative expense line chart. {1} up to date {2} {3}",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal {2} {3},": "Cumulative expense line chart. {1} up to date {2} {3},",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal {2} {3}, {4}": "Cumulative expense line chart. {1} up to date {2} {3}, {4}",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal {2} {3}, {4} pada tanggal yang sama": "Cumulative expense line chart. {1} up to date {2} {3}, {4} on the same date",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal {2} {3}, {4} pada tanggal yang sama {5}": "Cumulative expense line chart. {1} up to date {2} {3}, {4} on the same date {5}",
+  "Grafik garis pengeluaran kumulatif. {1} sampai tanggal {2} {3}, {4} pada tanggal yang sama {5}.": "Cumulative expense line chart. {1} up to date {2} {3}, {4} on the same date {5}.",
+  "Gula 1 kg": "Sugar 1 kg",
+  "habis sekitar": "runs out in about",
+  "hadiah": "gifts",
+  "Hadiah & Angpao": "Gifts & Angpao",
+  "Hadiah & Donasi": "Gifts & Donations",
+  "haji": "pilgrimage",
+  "Haji & Umrah": "Hajj & Umrah",
+  "Halaman": "Page",
+  "Halaman {1}{2} dari": "Page {1}{2} of",
+  "Halaman {1}{2} dari {3}": "Page {1}{2} of {3}",
+  "hampir habis": "almost used up",
+  "Hanya": "Only",
+  "Hanya administrator atau admin pembantu yang boleh melakukan ini.": "Only an administrator or assistant admin can do this.",
+  "Hanya administrator yang boleh melakukan ini.": "Only administrators can do this.",
+  "Hanya mengubah simbol dan format angka. Nominal dicatat dalam satuan utuh (tanpa sen) dan angka yang sudah tercatat tidak dikonversi. Untuk menghitung nilai tukar, buka menu Kurs.": "This only changes the symbol and number format. Amounts are recorded in whole units (no cents), and figures already recorded are not converted. To calculate exchange rates, open the Rates menu.",
+  "Hanya pendaftaran yang menunggu yang bisa ditolak.": "Only pending sign-ups can be rejected.",
+  "Hapus": "Delete",
+  "Hapus {1}": "Delete {1}",
+  "Hapus barang {1}": "Delete item {1}",
+  "Hapus data contoh": "Delete sample data",
+  "Hapus data contoh (": "Delete sample data (",
+  "Hapus data contoh ({1})": "Delete sample data ({1})",
+  "Hapus foto": "Remove photo",
+  "Hapus item {1}": "Delete item {1}",
+  "Hapus konfigurasi": "Clear Configuration",
+  "Hapus ruas": "Delete leg",
+  "Hapus tambahan": "Remove extra",
+  "Harga BBM (Rp/L)": "Fuel price (Rp/L)",
+  "Harga item {1}": "Item {1} price",
+  "Harga satuan": "Unit price",
+  "Harga satuan barang {1}": "Unit price of item {1}",
+  "hari": "days",
+  "Hari": "Day",
+  "hari bursa)": "trading days)",
+  "hari ini": "today",
+  "Hari ini": "Today",
+  "Hari Ini": "Today",
+  "Hari ini ·": "Today ·",
+  "Hari ini berat, besok bisa lebih ringan. Mulai dari satu langkah kecil.": "Today is tough, tomorrow can be lighter. Start with one small step.",
+  "Hari ini tanggal rencananya.": "Today is the planned date.",
+  "hari lagi": "days left",
+  "hari lagi,": "days left,",
+  "hari lagi).": "days left).",
+  "hari sebelum": "days before",
+  "hari tercatat, angka makin akurat seiring waktu.": "days recorded, figures get more accurate over time.",
+  "harian": "daily",
+  "Harian": "Daily",
+  "hasil": "result",
+  "Hasil": "Earnings",
+  "Hasil & Dividen Investasi": "Investment Returns & Dividends",
+  "Hasil akhirnya": "The end result",
+  "Hasil akhirnya {1} transaksi, melebihi batas": "The end result is {1} transactions, exceeding the limit",
+  "Hasil akhirnya {1} transaksi, melebihi batas {2}": "The end result is {1} transactions, exceeding the limit of {2}",
+  "Hasil akhirnya {1} transaksi, melebihi batas {2} per akun. Hapus sebagian transaksi lama dulu, atau pakai \"Ganti Semua Data\".": "The end result is {1} transactions, exceeding the limit of {2} per account. Delete some older transactions first, or use \"Replace All Data\".",
+  "Hasil Sewa (Kos/Properti)": "Rental Income (Boarding House/Property)",
+  "Hasil simpanan": "Savings returns",
+  "Hasil Usaha & Jualan": "Business & Sales Income",
+  "Hentikan": "Stop sharing",
+  "hewan": "pet",
+  "Hewan Peliharaan": "Pets",
+  "hiburan": "entertainment",
+  "Hiburan & Nonton": "Entertainment & Movies",
+  "Hilang otomatis setelah (detik)": "Automatically disappear after (seconds)",
+  "Hobi & Koleksi": "Hobbies & Collectibles",
+  "hotel": "hotel",
+  "Hotel & Penginapan": "Hotels & Lodging",
+  "HP": "Phone",
+  "Hubungkan ke Firebase": "Connect to Firebase",
+  "Hubungkan ke Supabase": "Connect to Supabase",
+  "hutang": "debts",
+  "Hutang": "Debts",
+  "Hutang & Piutang": "Debts & Receivables",
+  "Hutang Anda ke": "Your debt to",
+  "Hutang Anda ke {1}": "Your debt to {1}",
+  "Hutang diperbarui": "Debt updated",
+  "Hutang ditambahkan": "Debt added",
+  "Hutang ke": "Debt to",
+  "Hutang lunas. Terima kasih sudah disiplin.": "Debt paid off. Thanks for staying disciplined.",
+  "Hutang saya": "My debts",
+  "Hutang Saya": "My Debts",
+  "Hutang saya dan uang yang dipinjam orang": "My debts and money lent to others",
+  "Hutang tersimpan, tetapi uang pinjaman belum tercatat di Transaksi. Buka “Ubah” untuk mencoba lagi.": "Debt saved, but the loan money isn't recorded in Transactions yet. Open “Edit” to try again.",
+  "hutang:": "debts:",
+  "Ibadah & Keagamaan": "Worship & Religious Giving",
+  "ID foto tidak valid.": "Invalid photo ID.",
+  "ID tidak valid.": "Invalid ID.",
+  "ID transaksi tidak valid.": "Invalid transaction ID.",
+  "Ikon tidak ditemukan.": "No icons found.",
+  "Indeks Harga Saham Gabungan": "Jakarta Composite Index",
+  "Indeks Saham (IHSG)": "Stock Index (IHSG)",
+  "Informasi ini bukan nasihat investasi. Kurs dan IHSG bisa berbeda dari angka resmi bank atau bursa, dan tidak otomatis mengubah nominal catatan Anda.": "This information is not investment advice. Rates and IHSG may differ from official bank or exchange figures, and do not automatically change the amounts in your entries.",
+  "Ingat saya di perangkat ini": "Remember me on this device",
+  "Ingatkan saat jatuh tempo": "Remind on due date",
+  "ini": "this",
+  "Ini bukan berkas cadangan tertutup SaKu. Cadangan pribadi (.json) dipulihkan lewat Pengaturan di akun masing-masing.": "This isn't a SaKu locked backup file. Personal backups (.json) are restored through Settings in each account.",
+  "Ini bukan berkas kunci pemulihan SaKu.": "This isn't a SaKu recovery key file.",
+  "Ini bukan file cadangan SaKu.": "This isn't a SaKu backup file.",
+  "Ini cadangan seluruh perangkat milik Admin (edisi statis). Pulihkan lewat akun Administrator di menu Pengaturan, bukan di sini.": "This is a whole-device backup belonging to the Admin (static edition). Restore it through the Administrator account in the Settings menu, not here.",
+  "Ini contoh tampilan pengingat. Nanti muncul bila pengeluaran bulan ini sudah mendekati dana atau anggaran Anda.": "This is a sample reminder. It will appear when this month's spending gets close to your funds or budget.",
+  "Ini melebihi saldo pemasukan Anda.": "This exceeds your income balance.",
+  "ini sejauh ini": "this so far",
+  "ini. Isi batas anggaran di bawah untuk mulai memantau.": "this period. Set a spending limit below to start tracking.",
+  "Insight": "Insights",
+  "internet": "internet",
+  "Internet rumah": "Home internet",
+  "investasi": "investment",
+  "Investasi": "Investment",
+  "Isi 31 untuk akhir bulan.": "Enter 31 for end of month.",
+  "Isi angka 1 sampai 1440 menit.": "Enter a number from 1 to 1440 minutes.",
+  "Isi angka bulat 1 sampai 1440 menit.": "Enter a whole number from 1 to 1440 minutes.",
+  "Isi angka bulat 5 sampai 600 detik.": "Enter a whole number from 5 to 600 seconds.",
+  "Isi batas pengeluaran dulu sebelum membagikan anggaran.": "Set the spending limit before sharing the budget.",
+  "Isi batas pengeluaran dulu.": "Set the spending limit first.",
+  "Isi BBM": "Fuel",
+  "Isi BBM dan istirahat": "Fuel and rest",
+  "Isi BBM dan makan": "Fuel and meal",
+  "Isi bensin": "Fill up fuel",
+  "Isi berkas cadangan rusak.": "The backup file's contents are corrupted.",
+  "Isi biaya dan tanggal rencana (yang belum lewat) untuk melihat kebutuhan menabung.": "Enter the cost and a planned date (not in the past) to see how much to save.",
+  "Isi bulan mulai dan bulan selesai.": "Enter the start and end months.",
+  "Isi cadangan rusak: daftar transaksi tidak ditemukan.": "Backup contents are corrupted: transaction list not found.",
+  "Isi cadangan terlalu besar untuk satu akun.": "Backup contents are too large for one account.",
+  "Isi cicilan per bulan.": "Enter the monthly installment.",
+  "Isi data contoh": "Fill in sample data",
+  "Isi data diri Anda. Akun aktif setelah Anda mengonfirmasi email.": "Fill in your details. Your account is active once you confirm your email.",
+  "Isi data diri Anda. Akun aktif setelah disetujui admin.": "Enter your details. Your account will be active once approved by an admin.",
+  "Isi estimasi biaya.": "Enter the estimated cost.",
+  "Isi formulir di atas lalu pilih ikonnya.": "Fill in the form above, then choose its icon.",
+  "Isi jarak untuk ruas darat.": "Enter the distance for the land leg.",
+  "Isi jumlah budget lebih dari 0.": "Enter a budget amount above 0.",
+  "Isi jumlah bulan pengeluaran antara 1 sampai 60.": "Enter an expense months value between 1 and 60.",
+  "Isi jumlah tambahan lebih dari 0.": "Enter an extra amount greater than 0.",
+  "Isi jumlah uang lebih dari nol.": "Enter an amount greater than zero.",
+  "Isi jumlah yang ditabung.": "Enter the amount to save.",
+  "Isi Kategori": "Category Details",
+  "Isi kota berangkat dan tujuan untuk membuka rute di Google Maps.": "Enter the departure city and destination to open the route in Google Maps.",
+  "Isi lama perjalanan untuk ruas laut atau udara.": "Enter the duration for the sea or air leg.",
+  "Isi lama tampil antara 5 dan 600 detik.": "Old content shows for between 5 and 600 seconds.",
+  "Isi minimal satu item dengan harga.": "Enter at least one item with a price.",
+  "Isi nama 2–40 karakter.": "Enter a name of 2–40 characters.",
+  "Isi nama acara.": "Enter the event name.",
+  "Isi nama belakang Anda.": "Enter your last name.",
+  "Isi nama cicilan.": "Enter the installment name.",
+  "Isi nama dan kata sandi.": "Enter a name and password.",
+  "Isi nama depan Anda.": "Enter your first name.",
+  "Isi nama kategori.": "Enter a category name.",
+  "Isi nama minimal 2 huruf.": "Enter a name of at least 2 letters.",
+  "Isi nama orangnya.": "Enter the person's name.",
+  "Isi nama perjalanan.": "Enter a trip name.",
+  "Isi nama rekening.": "Enter an account name.",
+  "Isi nama target.": "Enter the goal name.",
+  "Isi nama wishlist.": "Enter a wishlist name.",
+  "Isi nominal cicilan.": "Enter the installment amount.",
+  "Isi nominal hutang.": "Enter the debt amount.",
+  "Isi nominal target.": "Enter the goal amount.",
+  "Isi tanggal jatuh tempo antara 1 sampai 31.": "Enter a due date between 1 and 31.",
+  "Isi tanggal rencana untuk melihat berapa yang perlu dikumpulkan.": "Enter a planned date to see how much you need to save.",
+  "Isi total tagihan.": "Enter the total bill.",
+  "Isi username dan kata sandi dulu, lalu kirim ulang.": "Enter your username and password first, then resend.",
+  "Isi username dan kata sandi dulu.": "Enter your username and password first.",
+  "Isi username dan kata sandi.": "Enter a username and password.",
+  "Istirahat": "Rest",
+  "Istirahat tiap": "Rest every",
+  "Item pesanan": "Order items",
+  "Itu kode Anda sendiri. Kirim kode ini ke teman, bukan dimasukkan di sini.": "That is your own code. Send it to a friend instead of entering it here.",
+  "Iuran-iuran": "Dues & Contributions",
+  "Izin membaca foto ditolak. Anda tetap bisa mengisi barang secara manual.": "Photo reading permission was denied. You can still enter items manually.",
+  "Jadikan Admin Pembantu": "Make Assistant Admin",
+  "Jadikan Administrator": "Make Administrator",
+  "Jadikan bawaan": "Set as default",
+  "Jadwal": "Schedule",
+  "Jadwal cicilan": "Installment schedule",
+  "Jajan Ramean": "Group Treats",
+  "Jajan sore": "Afternoon snacks",
+  "Jalankan berkas": "Run the file",
+  "Jalur tidak didukung:": "Unsupported path:",
+  "jam": "clock",
+  "Jam berangkat": "Departure time",
+  "janedoe": "janedoe",
+  "Jangan Lupa Cadangkan Data Anda": "Don't Forget to Back Up Your Data",
+  "Jangan menyerah. Atur ulang prioritas, cari tambahan pemasukan, dan bangkit pelan-pelan.": "Don't give up. Reset your priorities, look for extra income, and get back on your feet step by step.",
+  "Jarak (km)": "Distance (km)",
+  "Jarak darat": "Land distance",
+  "Jatah per hari": "Daily allowance",
+  "jatuh": "due",
+  "Jatuh tempo": "Due date",
+  "Jatuh Tempo": "Due Dates",
+  "Jatuh tempo berikutnya": "Next due date",
+  "Jatuh tempo pengembalian": "Repayment due date",
+  "Jatuh tempo pertama": "First due date",
+  "Jatuh tempo terdekat": "Next due date",
+  "Jatuh tempo tidak boleh sebelum tanggal acara.": "Due date can't be before the event date.",
+  "Jatuh tempo tidak boleh sebelum tanggal pinjam.": "Due date can't be before the borrow date.",
+  "Jatuh tempo, cicilan, dan hutang agar tidak ada yang terlewat.": "Due dates, installments, and debts so nothing is missed.",
+  "Jeda": "Pause",
+  "jenis": "types",
+  "Jenis": "Type",
+  "jenis barang": "item type",
+  "Jenis cicilan": "Installment type",
+  "Jenis data tidak bisa dibagikan.": "This kind of data cannot be shared.",
+  "Jenis data tidak dikenal.": "Unknown data type.",
+  "Jenis kategori": "Category type",
+  "Jenis rekening": "Account type",
+  "Jenis ruas": "Leg type",
+  "Jenis target": "Goal type",
+  "Jenis transaksi": "Transaction type",
+  "Jenis transaksi tidak valid.": "Invalid transaction type.",
+  "jika": "if",
+  "Jml": "Qty",
+  "jual": "sell",
+  "Jual Barang Bekas": "Sell Used Items",
+  "Jumlah": "Amount",
+  "Jumlah (": "Amount (",
+  "Jumlah ({1})": "Amount ({1})",
+  "Jumlah akun sudah mencapai batas.": "Account limit reached.",
+  "Jumlah akun sudah mencapai batas. Hubungi admin.": "Account limit reached. Contact the administrator.",
+  "Jumlah barang {1}": "Quantity for item {1}",
+  "Jumlah bertanda minus berarti uang keluar. Setor/tarik/hasil simpanan bukan pengeluaran atau pemasukan (hasil tidak menyentuh kas). Gunakan filter di baris judul atau PivotTable untuk analisis lanjutan.": "Amounts with a minus sign mean money out. Deposits, withdrawals, and savings returns are not expenses or income (returns don't touch cash). Use the filters in the header row or a PivotTable for deeper analysis.",
+  "Jumlah bulan yang sudah dibayar melebihi tenor (": "Months paid exceed the tenor (",
+  "Jumlah bulan yang sudah dibayar melebihi tenor ({1} bulan).": "Months paid exceed the tenor ({1} months).",
+  "Jumlah catatan": "Number of entries",
+  "Jumlah dibayar": "Amount paid",
+  "Jumlah disetor": "Amount deposited",
+  "Jumlah ditabung": "Amount saved",
+  "Jumlah ditarik": "Amount withdrawn",
+  "Jumlah diterima": "Amount received",
+  "Jumlah kategori buatan sendiri sudah mencapai batas (80).": "You have reached the limit of 80 custom categories.",
+  "Jumlah melebihi sisa": "Amount exceeds remaining",
+  "Jumlah melebihi sisa {1}.": "Amount exceeds remaining {1}.",
+  "Jumlah rekening sudah mencapai batas (40).": "You have reached the limit of 40 accounts.",
+  "Jumlah tambahan": "Extra amount",
+  "Jumlah teman sudah mencapai batas ({1}).": "Friend limit reached ({1}).",
+  "Jumlah uang tidak valid.": "Invalid amount.",
+  "Kado ulang tahun teman": "Friend's birthday gift",
+  "kalau": "if",
+  "kalender": "calendar",
+  "kali bayar.": "payments.",
+  "Kalian sekarang berteman": "You are now friends",
+  "Kalian sudah berteman.": "You are already friends.",
+  "Kamera": "Camera",
+  "Kami mengirim email konfirmasi. Klik tautan di dalamnya (cek folder spam) dan akun Anda langsung aktif.": "We sent a confirmation email. Click the link inside (check your spam folder) and your account is activated right away.",
+  "Kamu membantu mencatat pengeluaran. Foto terlampir adalah struk belanja atau barang yang dibeli di Indonesia (mata uang Rupiah). Hari ini:": "You're helping record expenses. The attached photo is a shopping receipt or an item bought in Indonesia (in Rupiah). Today:",
+  "Kamu membantu mencatat pengeluaran. Foto terlampir adalah struk belanja atau barang yang dibeli di Indonesia (mata uang Rupiah). Hari ini: {1}.": "You're helping record expenses. The attached photo is a shopping receipt or an item bought in Indonesia (in Rupiah). Today: {1}.",
+  "Kamu sudah hebat karena mau mencatat. Tinggal atur langkah berikutnya.": "You're doing great by tracking. Just plan your next step.",
+  "kapal": "ship",
+  "Kapal & Ferry": "Ships & Ferries",
+  "karakter.": "characters.",
+  "karakter. Dipakai untuk masuk setelah disetujui admin.": "characters. Used to log in after admin approval.",
+  "karena": "because",
+  "kartu": "card",
+  "Kata sandi": "Password",
+  "Kata sandi {1} direset ke kata sandi awal (": "Password for {1} was reset to the initial password (",
+  "Kata sandi {1} direset ke kata sandi awal ({2}": "Password for {1} was reset to the initial password ({2}",
+  "Kata sandi {1} direset ke kata sandi awal ({2})": "Password for {1} was reset to the initial password ({2})",
+  "Kata sandi admin": "Admin password",
+  "Kata sandi akun ini berubah. Silakan masuk lagi.": "This account's password has changed. Please log in again.",
+  "Kata sandi baru": "New password",
+  "Kata sandi baru minimal": "New password must be at least",
+  "Kata sandi baru minimal {1} karakter.": "New password must be at least {1} characters.",
+  "Kata sandi diganti. Pakai yang baru saat masuk berikutnya.": "Password changed. Use the new one next time you log in.",
+  "Kata sandi minimal": "Password must be at least",
+  "Kata sandi minimal {1} karakter.": "Password must be at least {1} characters.",
+  "Kata sandi minimal 6 karakter.": "Password must be at least 6 characters.",
+  "Kata sandi saat ini": "Current password",
+  "Kata sandi saat ini salah.": "Current password is incorrect.",
+  "Kata sandi terlalu lemah. Pakai minimal 6 karakter.": "Password is too weak. Use at least 6 characters.",
+  "Kata sandi terlalu panjang (maksimal 100 karakter).": "Password is too long (maximum 100 characters).",
+  "kategori": "category",
+  "Kategori": "Category",
+  "kategori ·": "category ·",
+  "Kategori bagian Anda": "Your share category",
+  "Kategori Buatan Anda": "Your Custom Categories",
+  "Kategori dengan nama itu sudah ada.": "A category with that name already exists.",
+  "Kategori dihapus": "Category deleted",
+  "Kategori diperbarui": "Category updated",
+  "Kategori ditambahkan": "Category added",
+  "kategori ini pada": "this category on",
+  "Kategori pengeluaran Anda": "Your expense category",
+  "Kategori Saya": "My Categories",
+  "Kategori tidak valid.": "Invalid category.",
+  "Ke": "To",
+  "Kebutuhan Harian": "Daily Needs",
+  "Kebutuhan menabung": "Savings needed",
+  "Kebutuhan Rumah Tangga": "Household Supplies",
+  "Kegiatan": "Activity",
+  "Kegiatan ini sudah terlaksana.": "This activity is done.",
+  "Kelola": "Manage",
+  "Kelompok": "Group",
+  "Keluar": "Out",
+  "Keluar otomatis setelah": "Log out automatically after",
+  "Keluar otomatis setelah {1} menit tanpa aktivitas.": "Log out automatically after {1} minutes of inactivity.",
+  "Keluar-masuk": "In & Out",
+  "keluarga": "family",
+  "Keluarga & Sosial": "Family & Social",
+  "Kemajuan target": "Goal progress",
+  "Kemajuan wishlist": "Wishlist progress",
+  "Kembali": "Back",
+  "Kembali ke": "Back to",
+  "Kembali ke Masuk": "Back to Log In",
+  "Kembali ke Pengaturan": "Back to Settings",
+  "Kembali ke sekarang": "Back to now",
+  "Kemeja kerja": "Work shirts",
+  "kendaraan": "vehicle",
+  "Kendaraan": "Vehicle",
+  "Kendaraan dan jadwal": "Vehicle and schedule",
+  "Kendaraan Pribadi": "Personal Vehicles",
+  "kepada": "to",
+  "kepada Anda.": "to you.",
+  "kereta": "train",
+  "Kereta Api": "Train",
+  "Kereta commuter": "Commuter train",
+  "kerja": "work",
+  "kesehatan": "health",
+  "Kesehatan": "Health",
+  "Kesehatan & Obat": "Health & Medicine",
+  "Ketik ulang kata sandi": "Re-enter password",
+  "Ketuk nama kategori untuk melihat isinya. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.": "Tap a category name to see its contents. Deposits and withdrawals to savings aren't counted as expenses.",
+  "Ketuk tombol + kapan saja untuk mencatat pemasukan atau pengeluaran.": "Tap the + button any time to record income or an expense.",
+  "Keuangan sehat dibangun dari keputusan kecil. Tunda satu keinginan hari ini.": "Healthy finances are built on small decisions. Put off one want today.",
+  "Keuangan, Cicilan & Pajak": "Finance, Installments & Taxes",
+  "kini administrator": "now an administrator",
+  "Kirim email verifikasi": "Send verification email",
+  "Kirim ke Keluarga": "Money Sent to Family",
+  "Kirim ke teman": "Send to a friend",
+  "Kirim kode lewat chat. Teman memasukkannya di menu Teman pada akun SaKu miliknya.": "Send the code by chat. Your friend enters it in the Friends menu of their own SaKu account.",
+  "Kirim pendaftaran": "Submit Sign-Up",
+  "Kirim permintaan": "Send request",
+  "Kirim ulang email konfirmasi": "Resend confirmation email",
+  "Kiriman Keluarga": "Family Remittances",
+  "Kode disalin": "Code copied",
+  "Kode ini bukan kata sandi": "This code is not a password",
+  "Kode ini bukan kata sandi dan tidak membuka data Anda. Teman baru terhubung setelah Anda menyetujui permintaannya.": "This code is not a password and does not open your data. A friend is only connected after you approve their request.",
+  "Kode kamu disalin": "Code copied",
+  "Kode setup": "Setup code",
+  "Kode setup salah.": "Incorrect setup code.",
+  "Kode teman": "Friend code",
+  "Kode teman Anda": "Your friend code",
+  "Kode teman belum bisa dibuat. Coba lagi.": "Could not create a friend code. Try again.",
+  "Kode teman dan permintaan terhubung": "Friend code and connection requests",
+  "Kode teman tidak ditemukan. Periksa lagi kodenya.": "Friend code not found. Check the code again.",
+  "Kode teman tidak lengkap. Contoh: SAKU-7K2M-9QXA.": "The friend code is incomplete. Example: SAKU-7K2M-9QXA.",
+  "Koleksi tidak didukung:": "Unsupported collection:",
+  "Kolom Kumulatif kosong untuk tanggal yang belum terjadi. Tabel hari memakai seluruh catatan pengeluaran.": "The Cumulative column is blank for dates that haven't happened yet. The day table uses all expense entries.",
+  "koma (,)": "comma (,)",
+  "Kombinasi": "Combined",
+  "Komisi & Insentif": "Commission & Incentives",
+  "Konfigurasi Firebase": "Firebase Configuration",
+  "Konfigurasi tidak cocok": "Configuration mismatch",
+  "Konfirmasi email gagal. Coba lagi.": "Email confirmation failed. Try again.",
+  "Konfirmasi kata sandi tidak sama.": "Passwords don't match.",
+  "Konfirmasi Pembayaran": "Confirm Payment",
+  "Konfirmasi Penerimaan": "Confirm Receipt",
+  "Konsep cicilan": "Installment plan",
+  "Konsumsi (km/L)": "Consumption (km/L)",
+  "konversi": "convert",
+  "Konversi": "Convert",
+  "Konversi mata uang": "Currency Conversion",
+  "Konversi Mata Uang": "Currency Converter",
+  "Konversi mata uang dan lihat kurs serta indeks terbaru.": "Convert currencies and see the latest rates and indexes.",
+  "koper": "luggage",
+  "kopi": "coffee",
+  "Kopi & Jajan": "Coffee & Snacks",
+  "Kopi susu": "Milk coffee",
+  "kosong": "empty",
+  "Kosongkan agar dihitung otomatis dari tenggat.": "Leave empty to calculate automatically from the deadline.",
+  "KPR, mobil, HP, dan cicilan lain": "KPR, car, phone, and other installments",
+  "KRL Commuter Line": "KRL Commuter Line",
+  "Kumpul": "Saving",
+  "Kumpulkan per bulan": "Save per month",
+  "Kumulatif": "Cumulative",
+  "kumulatif per tanggal": "cumulative by date",
+  "Kunci ANTHROPIC_API_KEY di server tidak valid.": "The ANTHROPIC_API_KEY on the server is invalid.",
+  "Kunci API Firebase tidak cocok. Periksa konfigurasi yang ditempel.": "Firebase API key doesn't match. Check the pasted configuration.",
+  "Kunci API Google Maps": "Google Maps API key",
+  "kunci pemulihan": "recovery key",
+  "Kunci pemulihan di Firebase tidak valid.": "Recovery key in Firebase is invalid.",
+  "Kunci pemulihan sudah dibuat": "Recovery key created",
+  "Kunci pemulihan sudah dipasang. Pakai berkas kunci yang dibuat saat pertama kali.": "A recovery key is already set up. Use the key file created the first time.",
+  "Kunci pemulihan tidak cocok dengan kodenya.": "Recovery key doesn't match its code.",
+  "Kunci pemulihan tidak valid.": "Recovery key is invalid.",
+  "Kunci penyegel berasal dari variabel": "Sealing key comes from a variable",
+  "Kunci penyegel dibuat dan disimpan di server. Agar cadangan tetap bisa dipulihkan bila server dipindah atau datanya hilang, isi variabel": "The sealing key is created and stored on the server. To keep backups restorable if the server is moved or its data is lost, fill in the variable",
+  "Kunci tidak bisa dibuat.": "Key can't be created.",
+  "Kuota Firebase hari ini habis. Coba lagi nanti.": "Today's Firebase quota has been used up. Try again later.",
+  "Kurangi penumpang": "Fewer passengers",
+  "kurs": "rates",
+  "Kurs": "Rates",
+  "Kurs & Indeks": "Rates & Indices",
+  "Kurs Mata Uang": "Currency Rates",
+  "Kurs per": "Rates as of",
+  "Kurs per {1} · sumber": "Rates as of {1} · source",
+  "Kurs per {1} · sumber {2}": "Rates as of {1} · source {2}",
+  "Kurs per {1} · sumber {2}{3}": "Rates as of {1} · source {2}{3}",
+  "Kurs per {1} · sumber {2}{3}. Kurs tengah harian, bukan kurs jual/beli bank.": "Rates as of {1} · source {2}{3}. Daily mid-market rates, not bank buy/sell rates.",
+  "Kurs perkiraan bawaan (": "Default estimated rates (",
+  "Kurs perkiraan bawaan ({1}). Kurs terbaru belum bisa diambil; hubungkan ke internet lalu tekan Perbarui.": "Default estimated rates ({1}). Latest rates couldn't be fetched; connect to the internet, then press Update.",
+  "kurs tidak lengkap": "incomplete rates",
+  "Kustom": "Custom",
+  "Lab & Medical Check-up": "Lab Tests & Medical Check-up",
+  "Lahir": "Born",
+  "lain": "other",
+  "lainnya": "other",
+  "Lainnya": "More",
+  "Lainnya (": "Other (",
+  "Lainnya ({1} kategori)": "Other ({1} categories)",
+  "lalu": "last",
+  "Lama (jam)": "Duration (hours)",
+  "langganan": "subscriptions",
+  "Langganan Digital": "Digital Subscriptions",
+  "Langganan streaming": "Streaming subscription",
+  "Langkah": "Step",
+  "Langkah {1} dari {2}": "Step {1} of {2}",
+  "Langsung masuk ke saldo": "Goes directly to balance",
+  "Langsung masuk ke saldo {1}. Tidak menambah saldo kas dan bukan pemasukan.": "Goes directly to the {1} balance. Doesn't add to cash balance and isn't income.",
+  "Lanjut": "Next",
+  "Laporan": "Report",
+  "Laporan gagal dibuat.": "Failed to create report.",
+  "Laporan Keuangan": "Financial Report",
+  "Laporan Keuangan {1}": "Financial Report {1}",
+  "Laporan PDF": "PDF Report",
+  "laptop": "laptop",
+  "Laundry": "Laundry",
+  "Laut": "Sea",
+  "Layanan baca foto gagal merespons.": "The photo reading service failed to respond.",
+  "Layanan baca foto sedang sibuk. Coba lagi nanti.": "The photo reading service is busy. Try again later.",
+  "Layanan baca foto tidak bisa dihubungi.": "The photo reading service can't be reached.",
+  "lebih boros": "spending more",
+  "lebih hemat": "spending less",
+  "Lembur & Tunjangan": "Overtime & Allowances",
+  "lepas": "freelance",
+  "lewat": "overdue",
+  "Lewat": "Overdue",
+  "Lewat {1}": "Over by {1}",
+  "Lewat {1}.": "Past {1}.",
+  "Lewat tenggat": "Past deadline",
+  "Lewati": "Skip",
+  "liburan": "vacation",
+  "Liburan": "Vacation",
+  "Liburan & Perjalanan": "Holidays & Travel",
+  "Lihat aturan keamanan": "View Security Rules",
+  "Lihat cara kerja": "See how it works",
+  "Lihat cara kerja ": "See how it works",
+  "Lihat dengan data contoh": "View with sample data",
+  "Lihat isi kategori {1}": "View {1} Category",
+  "Lihat semua": "View All",
+  "Lihat semua {1} kategori": "View All {1} Categories",
+  "Lihat semua di Transaksi": "View All in Transactions",
+  "listrik": "electricity",
+  "Listrik & Air": "Electricity & Water",
+  "Lunas": "Paid Off",
+  "Lunas dalam": "Paid off in",
+  "Lunas dalam {1} kali bayar.": "Paid off in {1} payments.",
+  "Lunas semua": "Mark All Paid Off",
+  "Lunasi": "Pay off",
+  "Main bareng teman": "Hanging out with friends",
+  "makan": "food",
+  "Makan": "Meal",
+  "Makan & Minum": "Food & Drinks",
+  "Makan dan istirahat": "Meals and rest",
+  "Makan dan istirahat ": "Meal and rest",
+  "Makan malam": "Dinner",
+  "Makan Malam": "Dinner",
+  "Makan siang": "Lunch",
+  "Makan Siang": "Lunch",
+  "Makan siang bareng teman kantor atau jajan ramai-ramai? Masukkan tagihan dan pesertanya, SaKu membagi bagian tiap orang (rata atau per item, lengkap dengan pajak, ongkir, dan diskon). Bagian teman yang Anda talangi otomatis jadi catatan Memberi Hutang.": "Lunch with office friends or group snacks? Add the bill and participants, and SaKu splits each person's share (evenly or per item, including tax, shipping, and discounts). Friends' shares you advance automatically become Lend Money entries.",
+  "Makanan & Minuman": "Food & Drinks",
+  "Maksimal 30 peserta.": "Maximum 30 participants.",
+  "Maksimal 60 item.": "Maximum 60 items.",
+  "malam": "night",
+  "masih": "still",
+  "Master Data Akun": "Account Master Data",
+  "masuk": "in",
+  "Masuk": "In",
+  "Masuk atau daftar": "Log In or Sign Up",
+  "Masuk dengan Email/Kata sandi belum diaktifkan. Di Firebase Console buka Authentication → Sign-in method → Email/Password → Enable.": "Log in with Email/Password isn't enabled yet. In the Firebase Console, open Authentication → Sign-in method → Email/Password → Enable.",
+  "Masuk ke": "To account",
+  "Masuk ke rekening": "Into account",
+  "masuk vs keluar": "in vs out",
+  "Masukkan email baru Anda:": "Enter your new email:",
+  "Masukkan email yang Anda pakai saat mendaftar untuk menyelesaikan konfirmasi:": "Enter the email you used to register to finish the confirmation:",
+  "Masukkan email yang benar:": "Enter the correct email:",
+  "Masukkan kode teman.": "Enter a friend code.",
+  "Mata uang buku": "Book currency",
+  "Mata uang buku:": "Book currency:",
+  "Matikan titik yang tidak ingin Anda singgahi. Waktu tiba dan biaya ikut dihitung ulang.": "Turn off stops you do not want to make. Arrival time and cost are recalculated.",
+  "maupun": "as well as",
+  "melebihi": "exceeds",
+  "Melebihi anggaran": "Over budget",
+  "Melebihi sisa batas pengeluaran. Yang masih bisa dibagi: {1}.": "Exceeds the remaining spending limit. You can still assign: {1}.",
+  "Melebihi sisa batas. Yang masih bisa dibagi: {1}.": "Exceeds the remaining limit. You can still assign: {1}.",
+  "Membaca foto…": "Reading photo…",
+  "membayar": "paying",
+  "Membayar": "Paying",
+  "Memberi hutang": "Lend money",
+  "Memberi Hutang": "Lend Money",
+  "Memberi Hutang ke": "Lend Money to",
+  "Memberi Hutang ke {1} teman ({2})": "Lend Money to {1} friends ({2})",
+  "Membuat…": "Creating…",
+  "Membuka buku kas…": "Opening cashbook…",
+  "Memeriksa status cadangan…": "Checking backup status…",
+  "Memeriksa…": "Checking…",
+  "Memproses foto…": "Processing photo…",
+  "Memuat catatan": "Loading entries",
+  "Memuat catatan…": "Loading entries…",
+  "Memuat daftar akun…": "Loading account list…",
+  "Memuat foto…": "Loading photo…",
+  "Memuat IHSG…": "Loading IHSG…",
+  "Memulihkan": "Restoring",
+  "Memulihkan {1}{2} dari": "Restoring {1}{2} of",
+  "Memulihkan {1}{2} dari {3}": "Restoring {1}{2} of {3}",
+  "Memulihkan {1}{2} dari {3}:": "Restoring {1}{2} of {3}:",
+  "Memulihkan {1}{2} dari {3}: {4}": "Restoring {1}{2} of {3}: {4}",
+  "Memulihkan {1}{2} dari {3}: {4}…": "Restoring {1}{2} of {3}: {4}…",
+  "Memulihkan data…": "Restoring data…",
+  "Memulihkan data… {1} dari": "Restoring data… {1} of",
+  "Memulihkan data… {1} dari {2}": "Restoring data… {1} of {2}",
+  "Menahan diri itu bukan pelit, itu cerdas. Kamu sedang menjaga masa depanmu.": "Holding back isn't stingy, it's smart. You're protecting your future.",
+  "menambah transaksi yang belum ada dan memperbarui yang lebih lama, tanpa menghapus apa pun.": "adds transactions that don't exist yet and updates older ones, without deleting anything.",
+  "Menambahkan contoh": "Adding samples",
+  "Menambahkan contoh {1} dari": "Adding sample {1} of",
+  "Menambahkan contoh {1} dari {2}": "Adding sample {1} of {2}",
+  "Menampilkan 100 catatan terbaru.": "Showing the latest 100 entries.",
+  "Mencatat…": "Recording…",
+  "Mendaftar": "Signing up",
+  "mendekati batas": "nearing the limit",
+  "Mengambil foto": "Fetching photos",
+  "Mengambil foto {1} dari": "Fetching photos {1} of",
+  "Mengambil foto {1} dari {2}": "Fetching photos {1} of {2}",
+  "Mengambil foto {1} dari {2}…": "Fetching photos {1} of {2}…",
+  "Mengambil kurs terbaru…": "Fetching latest rates…",
+  "mengembalikan akun persis seperti isi cadangan; transaksi yang tidak ada di cadangan ikut dihapus.": "restores the account exactly as in the backup; transactions not in the backup are deleted too.",
+  "mengganti seluruh catatan": "replaces all entries",
+  "menggeser": "shifts",
+  "Menghapus akun": "Deleting account",
+  "Menghapus akun {1}…": "Deleting account {1}…",
+  "Mengirim…": "Sending…",
+  "Mengumpulkan secara": "Saving",
+  "Mengunci catatan": "Locking entries",
+  "Mengunci catatan {1}{2} dari": "Locking entries {1}{2} of",
+  "Mengunci catatan {1}{2} dari {3}": "Locking entries {1}{2} of {3}",
+  "Mengunci catatan {1}{2} dari {3} akun…": "Locking entries {1}{2} of {3} accounts…",
+  "Mengunggah": "Uploading",
+  "Mengunggah {1}": "Uploading {1}",
+  "Mengunggah {1} catatan…": "Uploading {1} entries…",
+  "menit": "minutes",
+  "menit tanpa aktivitas.": "minutes of inactivity.",
+  "menit. Silakan masuk lagi.": "minutes. Please log in again.",
+  "Menu lainnya": "More menu",
+  "Menu Teman untuk akun pengguna.": "The Friends menu is for user accounts.",
+  "Menunggu": "Waiting",
+  "Menunggu jawaban": "Awaiting reply",
+  "Menunggu unggah": "Waiting to upload",
+  "Menurut tren pengeluaran, cukup sekitar": "Based on your spending trend, will last about",
+  "Menurut tren pengeluaran, cukup sekitar {1} hari": "Based on your spending trend, will last about {1} days",
+  "Menurut tren pengeluaran, cukup sekitar {1} hari{2}": "Based on your spending trend, will last about {1} days{2}",
+  "Menyiapkan cadangan…": "Preparing backup…",
+  "Menyiapkan…": "Preparing…",
+  "Menyimpan berkas…": "Saving file…",
+  "Menyimpan…": "Saving…",
+  "Menyusul": "Coming later",
+  "Metode tidak didukung.": "Method not supported.",
+  "Mi ayam": "Chicken noodles",
+  "Mi instan": "Instant noodles",
+  "Minggu": "Week",
+  "minggu lalu": "last week",
+  "Mingguan": "Weekly",
+  "Minimal {1} karakter": "At least {1} characters",
+  "Minimal 6 karakter": "At least 6 characters",
+  "Minyak goreng 2 L": "Cooking oil 2 L",
+  "mis. Alfamart": "e.g. Alfamart",
+  "mis. Ani, Rekan kerja": "e.g. Ani, Coworker",
+  "mis. BTN, Adira, Kredivo": "e.g. BTN, Adira, Kredivo",
+  "mis. Budi": "e.g. Budi",
+  "mis. Budi Santoso": "e.g. Budi Santoso",
+  "mis. Budi, Koperasi Kantor": "e.g. Budi, Office Cooperative",
+  "mis. CGK ke UPG": "e.g. CGK to UPG",
+  "mis. Dana darurat 6 bulan": "e.g. 6-month emergency fund",
+  "mis. Doe": "e.g. Doe",
+  "mis. Feri Merak ke Bakauheni": "e.g. Merak to Bakauheni ferry",
+  "mis. Jakarta": "e.g. Jakarta",
+  "mis. Jane": "e.g. Jane",
+  "mis. janedoe": "e.g. janedoe",
+  "mis. janedoe@email.com": "e.g. janedoe@email.com",
+  "mis. Kamera mirrorless, liburan ke Bali": "e.g. Mirrorless camera, trip to Bali",
+  "mis. KPR Rumah, Motor Vario": "e.g. Home Mortgage, Vario Motorbike",
+  "mis. Langganan Netflix": "e.g. Netflix subscription",
+  "mis. Makan siang Jumat, Jajan sore kantor": "e.g. Friday lunch, Office afternoon snacks",
+  "mis. Mandiri 1": "e.g. Mandiri 1",
+  "mis. Mudik Lebaran": "e.g. Eid homecoming trip",
+  "mis. Santoso": "e.g. Santoso",
+  "mis. sifulan12": "e.g. sifulan12",
+  "mis. sifulan12@email.com": "e.g. sifulan12@email.com",
+  "mis. Tabungan nikah, DP rumah": "e.g. Wedding savings, home down payment",
+  "mis. Tol Trans-Jawa": "e.g. Trans-Java toll road",
+  "mis. untuk modal usaha": "e.g. for business capital",
+  "mis. Yogyakarta": "e.g. Yogyakarta",
+  "mobil": "car",
+  "Mobil": "Car",
+  "Mobil & Motor": "Car & Motorcycle",
+  "Mohon transfer ke": "Please transfer to",
+  "Mohon transfer ke {1}. Terima kasih!": "Please transfer to {1}. Thank you!",
+  "motor": "motorcycle",
+  "Motor": "Motorbike",
+  "Motor tidak masuk tol": "Motorbikes cannot use toll roads",
+  "MRT & LRT": "MRT & LRT",
+  "mrt krl": "MRT & KRL",
+  "Mulai": "Start",
+  "Mulai dengan mencatat transaksi pertama.": "Start by recording your first transaction.",
+  "Mulai menipis bukan berarti gagal. Ini tanda untuk melangkah lebih bijak. Kamu pasti bisa!": "Running low doesn't mean failure. It's a sign to step more wisely. You've got this!",
+  "mulai tanggal": "starting on",
+  "Multiguna": "Multipurpose",
+  "naik": "up",
+  "Naik": "Up",
+  "Nama": "Name",
+  "Nama acara": "Event name",
+  "Nama barang": "Item name",
+  "Nama barang {1}": "Item {1} name",
+  "Nama belakang": "Last name",
+  "Nama cicilan": "Installment name",
+  "Nama depan": "First name",
+  "Nama harus memuat huruf atau angka.": "Name must include letters or numbers.",
+  "Nama ini sudah dipakai. Tambahkan inisial atau nama belakang.": "This name is already taken. Add an initial or a last name.",
+  "Nama item": "Item name",
+  "Nama item {1}": "Item {1} name",
+  "Nama kategori": "Category name",
+  "Nama masuk:": "Username:",
+  "Nama masuk: {1} ·": "Username: {1} ·",
+  "Nama masuk: {1} · {2}": "Username: {1} · {2}",
+  "Nama perjalanan": "Trip name",
+  "Nama rekening": "Account name",
+  "Nama ruas": "Leg name",
+  "Nama target": "Goal name",
+  "Nama teman": "Friend's name",
+  "Nama teman (pisahkan dengan koma)": "Friends' names (separate with commas)",
+  "Nama untuk masuk:": "Username to log in:",
+  "Nama yang Anda isi menjadi nama untuk masuk. Akun yang dibuat admin memakai kata sandi awal": "The name you enter becomes your username. Accounts created by an admin use the initial password",
+  "Nanti": "Later",
+  "Nanti saja": "Maybe later",
+  "Nanti Saja": "Maybe Later",
+  "Nasi goreng": "Fried rice",
+  "Nasi padang": "Padang rice",
+  "Navigasi": "Navigation",
+  "Navigasi utama": "Main navigation",
+  "nikah": "wedding",
+  "Nilai yang Sama di Mata Uang Lain": "Same Value in Other Currencies",
+  "No": "No.",
+  "nominal": "amount",
+  "Nominal": "Amount",
+  "Nominal belum bisa dihitung karena belum ada catatan pengeluaran. Catat pengeluaran dulu, atau ubah target ke nominal.": "Amount can't be calculated yet because there are no expense entries. Record some expenses first, or change the goal to a fixed amount.",
+  "nominal pinjaman": "loan amount",
+  "Nominal pinjaman": "Loan amount",
+  "Nominal sudah terpenuhi oleh uang yang terkumpul.": "The amount has been reached by the funds saved.",
+  "Nominal target": "Goal amount",
+  "nominal target belum diketahui": "goal amount not known yet",
+  "Nomor HP": "Phone number",
+  "Nomor HP tidak valid. Isi 8–15 angka, contoh 081234567890.": "Invalid phone number. Enter 8–15 digits, e.g. 081234567890.",
+  "nonaktif": "inactive",
+  "Nonaktif": "Inactive",
+  "Nonaktif / Ditolak": "Inactive / Rejected",
+  "Nonaktifkan": "Deactivate",
+  "Nonton bioskop": "Movies",
+  "obat": "medicine",
+  "Ojek online": "Ride-hailing",
+  "Ojek Online & Angkutan Umum": "Ride-hailing & Public Transport",
+  "olahraga": "sports",
+  "Olahraga & Gym": "Sports & Gym",
+  "oleh": "by",
+  "Oleh": "By",
+  "Oleh-oleh": "Souvenirs",
+  "Ongkir": "Shipping",
+  "Ongkir:": "Shipping:",
+  "opsional": "optional",
+  "orang": "people",
+  "pada": "on",
+  "pada tanggal yang sama": "on the same date",
+  "pagi": "morning",
+  "pajak": "tax",
+  "Pajak & Administrasi": "Taxes & Admin Fees",
+  "Pajak & servis": "Tax & service",
+  "Pajak & servis {1}%": "Tax & service {1}%",
+  "Pajak dan servis, persen": "Tax and service, percent",
+  "Pajak Kendaraan (STNK)": "Vehicle Tax (Registration)",
+  "Pajak/servis": "Tax/service",
+  "Pajak/servis {1}%:": "Tax/service {1}%:",
+  "Pajak/servis {1}%: {2}": "Tax/service {1}%: {2}",
+  "Pakai nama lain, mis.": "Try another name, e.g.",
+  "Pakai username dan kata sandi akun Anda. Belum punya akun? Pilih Daftar.": "Use your username and password. No account yet? Choose Sign Up.",
+  "pakaian": "clothing",
+  "Pakaian & Fashion": "Clothing & Fashion",
+  "paket": "package",
+  "Pantau akun, tanpa membuka catatan keuangan": "Monitor accounts without opening financial entries",
+  "Parkir": "Parking",
+  "pasar": "market",
+  "Pastikan berkas SQL migrasi sudah dijalankan di": "Make sure the SQL migration file has been run in",
+  "Pastikan fungsi": "Make sure the function",
+  "Pastikan rahasia": "Make sure the secret",
+  "Patungan": "Split Bill",
+  "Patungan makan dan jajan bareng teman": "Splitting meals and snacks with friends",
+  "Paylater & Pinjaman Online": "Paylater & Online Loans",
+  "payung": "umbrella",
+  "PBB & Pajak Rumah": "Property Tax (PBB)",
+  "Pecah uang Anda menurut rekening: pilih bank mana yang bersaldo (boleh lebih dari satu bank yang sama), e-wallet, atau uang tunai.": "Split your money by account: choose which banks hold a balance (you can add more than one from the same bank), e-wallets, or cash.",
+  "Pecah uang Anda menurut rekening: pilih bank mana yang bersaldo (boleh lebih dari satu bank yang sama), e-wallet, atau uang tunai. Saat mencatat transaksi, pilih rekening yang dipakai.": "Split your money by account: choose which banks hold a balance (you can add more than one from the same bank), e-wallets, or cash. When recording a transaction, choose the account you used.",
+  "Pelan tapi pasti: yang perlu dulu, yang diinginkan nanti.": "Slow and steady: what you need first, what you want later.",
+  "Pelunasan dari": "Repayment from",
+  "Pelunasan dari {1}": "Repayment from {1}",
+  "Pelunasan hutang ke": "Debt repayment to",
+  "Pelunasan hutang ke {1}": "Debt repayment to {1}",
+  "Pelunasan piutang": "Receivables repaid",
+  "Pelunasan Piutang": "Receivable Repayment",
+  "pemasukan": "income",
+  "Pemasukan": "Income",
+  "PEMASUKAN": "INCOME",
+  "Pemasukan Lainnya": "Other Income",
+  "Pemasukan vs pengeluaran per bulan": "Income vs expenses per month",
+  "pembayaran": "payments",
+  "Pembayaran": "Payment",
+  "Pembayaran dicatat": "Payment recorded",
+  "Pemberi cicilan": "Lender",
+  "Pemilik halaman ini perlu membukanya lebih dulu untuk membuat akun administrator.": "The owner of this page needs to open it first to create an administrator account.",
+  "Pemisah desimal:": "Decimal separator:",
+  "Pemulihan selesai:": "Restore complete:",
+  "Pemulihan selesai: {1}.": "Restore complete: {1}.",
+  "Pemulihan selesai: {1}.{2}": "Restore complete: {1}.{2}",
+  "Penarikan": "Withdrawal",
+  "Penarikan dicatat": "Withdrawal recorded",
+  "Pendaftaran": "Sign-up",
+  "Pendaftaran {1} ditolak": "Sign-up {1} declined",
+  "Pendaftaran Anda ditolak admin. Hubungi administrator.": "Your sign-up was declined by the admin. Contact an administrator.",
+  "Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.": "Your sign-up is still awaiting admin approval. Try again later.",
+  "Pendaftaran Menunggu": "Pending Sign-Ups",
+  "Pendaftaran Menunggu (": "Pending Sign-Ups (",
+  "Pendaftaran Menunggu ({1})": "Pending Sign-Ups ({1})",
+  "pendaftaran menunggu persetujuan": "sign-up awaiting approval",
+  "Pendaftaran Terkirim": "Sign-Up Submitted",
+  "Pendapatan Rutin": "Recurring Income",
+  "pendidikan": "education",
+  "Pendidikan": "Education",
+  "Pendidikan & Kursus": "Education & Courses",
+  "penerimaan": "receipts",
+  "Penerimaan": "Receipt",
+  "Penerimaan dicatat": "Receipt recorded",
+  "Pengaturan": "Settings",
+  "Pengaturan akun": "Account settings",
+  "Pengaturan di dalam cadangan rusak.": "Settings inside the backup are corrupted.",
+  "Pengaturan Profil": "Profile Settings",
+  "pengeluaran": "expenses",
+  "Pengeluaran": "Expenses",
+  "PENGELUARAN": "EXPENSES",
+  "Pengeluaran (": "Expenses (",
+  "Pengeluaran ({1})": "Expenses ({1})",
+  "Pengeluaran {1}": "Spending {1}",
+  "Pengeluaran {1} {2} dari {3}": "Expenses {1} {2} of {3}",
+  "Pengeluaran {1} vs": "Spending {1} vs",
+  "Pengeluaran {1} vs {2}": "Spending {1} vs {2}",
+  "Pengeluaran {1} vs {2} (kumulatif)": "Expenses {1} vs {2} (cumulative)",
+  "pengeluaran Anda, kategori": "your expenses, category",
+  "Pengeluaran di luar kategori berbudget bulan ini: {1}.": "Spending outside budgeted categories this month: {1}.",
+  "Pengeluaran di luar kategori berbudget periode ini: {1}.": "Spending outside budgeted categories this period: {1}.",
+  "Pengeluaran harian –": "Daily expenses –",
+  "pengeluaran jajan ramean": "group treat expenses",
+  "Pengeluaran melebihi dana": "Spending exceeds funds",
+  "Pengeluaran per hari dalam seminggu": "Expenses by day of the week",
+  "Pengeluaran per kategori": "Expenses by category",
+  "Pengeluaran per Kategori": "Expenses by Category",
+  "Pengeluaran per kategori –": "Expenses by category –",
+  "Pengeluaran seluruh data": "All-time expenses",
+  "Pengeluaran terbesar": "Largest expense",
+  "Pengguna": "User",
+  "Pengguna otomatis keluar bila tidak ada aktivitas selama waktu ini. Isi dalam menit, antara 1 dan 1440. Bawaannya 20 menit.": "Users are automatically logged out after this period of inactivity. Enter minutes, between 1 and 1440. Default is 20 minutes.",
+  "Pengingat Cadangan": "Backup Reminder",
+  "Pengingat cadangan disimpan": "Backup reminder saved",
+  "Pengingat Dana Menipis": "Low Funds Reminder",
+  "Pengingat diaktifkan": "Reminder turned on",
+  "Pengingat dimatikan": "Reminder turned off",
+  "Pensiun & Santunan": "Pension & Benefits",
+  "penuh": "full",
+  "Penumpang": "Passengers",
+  "Penumpang dan kendaraan": "Passengers and vehicle",
+  "Penutupan sebelumnya": "Previous close",
+  "Penyimpanan Belum Tersedia": "Storage Unavailable",
+  "Penyimpanan browser gagal.": "Browser storage failed.",
+  "Penyimpanan browser tidak bisa dibuka.": "Browser storage can't be opened.",
+  "Penyimpanan browser tidak cukup untuk memulihkan cadangan ini.": "Browser storage isn't big enough to restore this backup.",
+  "Penyimpanan browser tidak tersedia": "Browser storage unavailable",
+  "Penyimpanan browser tidak tersedia.": "Browser storage isn't available.",
+  "Penyimpanan browser tidak tersedia. Jika Anda memakai jendela pribadi, buka di jendela biasa.": "Browser storage isn't available. If you're using a private window, open it in a regular window.",
+  "Penyimpanan catatan penuh. Hapus transaksi lama dulu.": "Entry storage is full. Delete old transactions first.",
+  "Penyimpanan di browser penuh. Hapus foto atau transaksi lama, atau pindahkan data lewat cadangan.": "Browser storage is full. Delete old photos or transactions, or move data using a backup.",
+  "Penyimpanan di perangkat penuh. Sambungkan ke internet dulu agar catatan terunggah, lalu coba lagi.": "Device storage is full. Connect to the internet first so entries can upload, then try again.",
+  "Penyimpanan penuh. Hapus beberapa foto atau transaksi lama, lalu coba lagi.": "Storage is full. Delete some old photos or transactions, then try again.",
+  "per akun. Hapus sebagian transaksi lama dulu, atau pakai \"Ganti Semua Data\".": "per account. Delete some older transactions first, or use \"Replace All Data\".",
+  "per bulan": "per month",
+  "per bulan agar tercapai": "per month to reach it",
+  "per bulan, perkiraan tercapai": "per month, expected to reach it",
+  "per bulan, tiap tanggal": "per month, on the same date",
+  "per bulan, tiap tanggal {1}": "per month, on day {1}",
+  "per bulan.": "per month.",
+  "per Hari": "Per Day",
+  "Per hari": "Per day",
+  "per hari ·": "per day ·",
+  "per hari (7 hari terakhir": "per day (last 7 days",
+  "per hari × 7": "per day × 7",
+  "per hari,": "per day,",
+  "per hari)": "per day)",
+  "per Minggu": "per Week",
+  "Per minggu": "Per week",
+  "per minggu ·": "per week ·",
+  "per orang": "per person",
+  "Peran": "Role",
+  "Peran admin pembantu {1} dicabut": "Assistant admin role removed for {1}",
+  "Peran admin pembantu Anda dicabut": "Your assistant admin role has been removed",
+  "Peran administrator": "Administrator role",
+  "Peran administrator {1} dicabut": "Administrator role removed for {1}",
+  "Peran administrator Anda dicabut": "Your administrator role has been removed",
+  "Peran akun ini tidak bisa diubah. Pastikan akunnya aktif dan perannya berbeda.": "This account's role can't be changed. Make sure the account is active and the role is different.",
+  "Perawatan Diri": "Personal Care",
+  "Perawatan Mobil": "Car Maintenance",
+  "Perawatan Motor": "Motorcycle Maintenance",
+  "perbaikan": "repairs",
+  "Perbaikan & Perabot": "Repairs & Furniture",
+  "Perbaikan Mobil": "Car Repairs",
+  "Perbaikan Motor": "Motorcycle Repairs",
+  "Perbarui": "Update",
+  "Perbarui kurs": "Update Rates",
+  "Periksa data pendaftar. Setelah disetujui, akun aktif dan pendaftar masuk dengan kata sandi yang ia buat sendiri.": "Review the applicant's details. Once approved, the account becomes active and the applicant logs in with the password they created themselves.",
+  "Periksa koneksi internet Anda, lalu coba lagi.": "Check your internet connection, then try again.",
+  "Perintah tidak dikenal.": "Unknown command.",
+  "periode": "period",
+  "Periode": "Period",
+  "Periode berikutnya": "Next period",
+  "Periode cicilan tidak valid (1 sampai 600 bulan).": "Invalid installment period (1 to 600 months).",
+  "Periode dimulai tanggal (tanggal gajian)": "Period starts on (payday)",
+  "periode ini": "this period",
+  "Periode ini": "This period",
+  "periode lalu": "last period",
+  "Periode lalu": "Last period",
+  "Periode mengikuti bulan kalender (tanggal 1 sampai akhir bulan).": "Periods follow calendar months (the 1st to the end of the month).",
+  "Periode rekap": "Overview period",
+  "Periode saat ini:": "Current period:",
+  "Periode saat ini: {1}. Periode berikutnya mulai tanggal": "Current period: {1}. Next period starts on",
+  "Periode saat ini: {1}. Periode berikutnya mulai tanggal {2}": "Current period: {1}. Next period starts on {2}",
+  "Periode saat ini: {1}. Periode berikutnya mulai tanggal {2}.": "Current period: {1}. Next period starts on {2}.",
+  "Periode sebelumnya": "Previous period",
+  "Periode:": "Period:",
+  "Periode: {1}. Urut dari pengeluaran terbesar. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.": "Period: {1}. Sorted from largest expense. Savings deposits and withdrawals are not counted as expenses.",
+  "Perjalanan": "Trips",
+  "Perjalanan & Wisata": "Travel & Tourism",
+  "Perjalanan Baru": "New Trip",
+  "Perjalanan dihapus": "Trip deleted",
+  "Perjalanan diperbarui": "Trip updated",
+  "Perjalanan disimpan": "Trip saved",
+  "Perkiraan akhir": "Projected end",
+  "Perkiraan akhir {1} dengan laju sekarang:": "Projected end {1} at current pace:",
+  "Perkiraan akhir bulan:": "Estimated end of month:",
+  "Perkiraan akhir bulan: {1}.": "Estimated end of month: {1}.",
+  "Perkiraan biaya": "Estimated cost",
+  "Perkiraan tiba": "Estimated arrival",
+  "Perkiraan total biaya": "Estimated total cost",
+  "perkiraan total untuk {1} orang": "estimated total for {1} people",
+  "perkiraan, belum ada": "estimate, no data yet",
+  "perkiraan, belum ada {1} penuh": "estimate, no full {1} yet",
+  "Perlu dibayar sekarang": "Due for payment now",
+  "Perlu Persetujuan": "Needs Approval",
+  "Perlu Persetujuan ({1})": "Needs Approval ({1})",
+  "Perlu sekitar {1} per bulan sampai tanggal rencana.": "About {1} per month is needed until the planned date.",
+  "Perlu sekitar {1} per hari sampai tanggal rencana.": "About {1} per day is needed until the planned date.",
+  "Perlu sekitar {1} per minggu sampai tanggal rencana.": "About {1} per week is needed until the planned date.",
+  "Permintaan dibatalkan": "Request cancelled",
+  "Permintaan diterima": "Request accepted",
+  "Permintaan ditolak": "Request declined",
+  "Permintaan ini sudah tidak ada.": "This request no longer exists.",
+  "Permintaan masuk": "Incoming requests",
+  "Permintaan masuk muncul di menu Teman dengan tanda angka. Terima untuk saling terhubung. Putuskan kapan saja.": "Incoming requests appear in the Friends menu with a number badge. Accept to connect. Disconnect any time.",
+  "Permintaan pertemanan baru dari {1}": "New friend request from {1}",
+  "Permintaan terkirim. Menunggu persetujuan teman.": "Request sent. Waiting for your friend's approval.",
+  "Permintaan tidak valid.": "Invalid request.",
+  "Pernikahan": "Wedding",
+  "Persentase Pengeluaran terhadap Total": "Expenses as a Percentage of Total",
+  "Persentase pengeluaran:": "Expense percentage:",
+  "Pertemanan diputuskan": "Friend disconnected",
+  "Perubahan tersimpan di perangkat. Diunggah otomatis saat online.": "Changes saved on this device. Uploaded automatically when online.",
+  "Pesan Antar Makanan": "Food Delivery",
+  "Pesan undangan disalin. Tempel di chat teman.": "Invitation copied. Paste it in your friend's chat.",
+  "pesawat": "airplane",
+  "Peserta": "Participants",
+  "peserta · dibayar": "participants · paid",
+  "Peta rute": "Route map",
+  "Pilih akun yang akan dipulihkan.": "Choose the accounts to restore.",
+  "Pilih bank atau e-wallet": "Choose a bank or e-wallet",
+  "Pilih bank.": "Choose a bank.",
+  "Pilih Berkas Cadangan": "Choose Backup File",
+  "Pilih berkas cadangan (.json) yang pernah Anda unduh dari SaKu.": "Choose a backup file (.json) you've previously downloaded from SaKu.",
+  "Pilih berkas cadangan (.skbak) yang diunduh dari sini. Isinya tidak ditampilkan; sistem langsung memasukkannya ke akun pemiliknya.": "Choose a backup file (.skbak) downloaded from here. Its contents aren't shown; the system restores them directly into the owner's account.",
+  "Pilih berkas kunci pemulihan": "Choose recovery key file",
+  "Pilih berkas kunci pemulihan yang cocok dengan cadangan ini.": "Choose the recovery key file that matches this backup.",
+  "Pilih e-wallet tujuan.": "Choose a destination e-wallet.",
+  "Pilih e-wallet.": "Choose an e-wallet.",
+  "Pilih file gambar (JPG, PNG, atau WebP).": "Choose an image file (JPG, PNG, or WebP).",
+  "Pilih ikon": "Choose icon",
+  "Pilih jalur, kendaraan, dan jam berangkat. SaKu menyusun titik isi BBM, makan, dan istirahat, lalu menghitung perkiraan BBM, waktu tiba, dan total biaya.": "Choose the route, vehicle, and departure time. SaKu plans fuel, meal, and rest stops, then estimates fuel, arrival time, and total cost.",
+  "Pilih jenis cicilan.": "Select an installment type.",
+  "Pilih jenis hutang.": "Select a debt type.",
+  "Pilih kata sandi yang berbeda dari kata sandi awal.": "Choose a password different from the initial password.",
+  "Pilih kategori pengeluaran.": "Choose an expense category.",
+  "Pilih konsep cicilan.": "Select an installment plan.",
+  "Pilih minimal satu teman.": "Pick at least one friend.",
+  "Pilih pengguna yang dijadikan administrator atau admin pembantu.": "Choose which users become an administrator or assistant admin.",
+  "Pilih pengguna yang dijadikan administrator. Akun administrator mengelola aplikasi dan tidak dipakai mencatat transaksi; catatan lama miliknya tetap tersimpan dan kembali bila perannya dicabut.": "Choose the user to make an administrator. Administrator accounts manage the app and aren't used to record transactions; their existing entries stay saved and return if the role is removed.",
+  "Pilih peran: administrator atau pengguna.": "Choose a role: administrator or user.",
+  "Pilih peran: administrator, admin pembantu, atau pengguna.": "Choose a role: administrator, assistant admin, or user.",
+  "Pilih persen dari batas": "Choose a percentage of the limit",
+  "Pilih rekening tujuan.": "Choose a destination account.",
+  "Pilih salah satu kategori.": "Choose a category.",
+  "Pilih sendiri apa yang dibagikan: anggaran, rencana nikah, wishlist, atau perjalanan.": "Choose what to share: budget, wedding plan, wishlist, or trips.",
+  "Pilih siapa saja yang ikut membayar tiap item. Bila tidak dipilih khusus, item dibagi ke semua peserta.": "Choose who shares the cost of each item. If none are selected, the item is split among all participants.",
+  "Pilih tanggal jatuh tempo yang valid.": "Choose a valid due date.",
+  "Pilih tanggal lahir yang valid.": "Choose a valid birth date.",
+  "Pilih tanggal pinjam yang valid.": "Choose a valid borrow date.",
+  "Pilih tanggal yang valid.": "Choose a valid date.",
+  "Pilihan pengingat cadangan tidak valid.": "Invalid backup reminder option.",
+  "Pindah saldo": "Transfer",
+  "Pindah Saldo Antar Rekening": "Transfer Between Accounts",
+  "pinjam": "borrow",
+  "Pinjam dari": "Borrow from",
+  "Pinjam dari {1}": "Borrowed from {1}",
+  "Pinjaman diterima": "Loans received",
+  "Pinjaman Diterima": "Loans Received",
+  "Pinjamkan ke": "Lend to",
+  "Pinjamkan ke {1}": "Lent to {1}",
+  "piutang": "receivables",
+  "Piutang dari": "Receivable from",
+  "Popok & Perlengkapan Bayi": "Diapers & Baby Supplies",
+  "Porsi": "Portion",
+  "Pratinjau skema": "Schematic preview",
+  "prestasi": "achievement",
+  "Profil, kata sandi, kategori sendiri, dan cadangan data.": "Profile, password, your own categories, and data backup.",
+  "projectId tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.": "projectId not found or malformed. Copy the entire firebaseConfig block from the Firebase Console.",
+  "Proyek lepas": "Freelance project",
+  "Pulihkan": "Restore",
+  "Pulihkan {1} akun terpilih": "Restore {1} selected accounts",
+  "Pulihkan dari cadangan": "Restore from Backup",
+  "Pulihkan dari Cadangan": "Restore from Backup",
+  "Pulihkan dari Cadangan Tertutup": "Restore from Locked Backup",
+  "pulsa": "phone credit",
+  "Pulsa & Internet": "Mobile Credit & Internet",
+  "Putar": "Play",
+  "Putuskan": "Disconnect",
+  "Rasio tabungan": "Savings rate",
+  "rata-rata {1}": "average {1}",
+  "rata-rata {1} {2}": "average {1} {2}",
+  "rata-rata {1} {2} penuh": "average {1} {2} in full",
+  "Rata-Rata Pengeluaran": "Average Expenses",
+  "Rata-rata pengeluaran Anda": "Your average expenses",
+  "Rata-rata pengeluaran Anda {1} per bulan": "Your average expenses are {1} per month",
+  "Rata-rata pengeluaran Anda {1} per bulan{2}": "Your average expenses are {1} per month{2}",
+  "Rata-rata pengeluaran:": "Average spending:",
+  "Rata-rata pengeluaran: {1} per hari ·": "Average spending: {1} per day ·",
+  "Rata-rata pengeluaran: {1} per hari · {2}": "Average spending: {1} per day · {2}",
+  "Rata-rata pengeluaran: {1} per hari · {2} per minggu ·": "Average spending: {1} per day · {2} per week ·",
+  "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3}": "Average spending: {1} per day · {2} per week · {3}",
+  "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per": "Average spending: {1} per day · {2} per week · {3} per",
+  "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per {4}": "Average spending: {1} per day · {2} per week · {3} per {4}",
+  "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per {4}.": "Average spending: {1} per day · {2} per week · {3} per {4}.",
+  "Rata-rata per transaksi": "Average per transaction",
+  "rata-rata.": "average.",
+  "Reimburse & Ganti Biaya": "Reimbursements",
+  "Rekap": "Overview",
+  "REKAP": "OVERVIEW",
+  "Rekap Kategori": "Category Overview",
+  "Rekap pengeluaran per kategori": "Expense overview by category",
+  "Rekap Pengeluaran per Kategori": "Expenses by Category Overview",
+  "Rekening": "Accounts",
+  "Rekening asal dan tujuan tidak boleh sama.": "Source and destination accounts can't be the same.",
+  "Rekening bawaan pembayaran diatur": "Default payment account set",
+  "Rekening dihapus.": "Account deleted.",
+  "Rekening dihapus. Catatannya dihitung sebagai tunai.": "Account deleted. Its entries now count as cash.",
+  "Rekening diperbarui": "Account updated",
+  "Rekening ditambahkan": "Account added",
+  "Rem sedikit sekarang, lega banyak nanti. Kamu mampu melewatinya!": "Ease off a little now, relief later. You can get through this!",
+  "rencana": "plans",
+  "Rencana": "Plans",
+  "rencana akan datang": "upcoming plans",
+  "Rencana baru": "New plan",
+  "Rencana dan wishlist bersama": "Shared plans and wishlist",
+  "Rencana nikah": "Wedding plan",
+  "Rencana pengeluaran yang disusun berdua.": "Spending plans made together.",
+  "Rencana setor per bulan": "Monthly deposit plan",
+  "Rentang berikutnya": "Next range",
+  "Rentang insight": "Insights range",
+  "Rentang sebelumnya": "Previous range",
+  "Rentang tanggal": "Date range",
+  "Rentang waktu": "Time range",
+  "Reset kata sandi": "Reset Password",
+  "Reset kata sandi, perubahan peran, dan penghapusan akun hanya bisa dilakukan administrator.": "Only an administrator can reset passwords, change roles, or delete accounts.",
+  "Rincian": "Details",
+  "Rincian 7 hari terakhir": "Last 7 Days",
+  "Rincian biaya": "Cost breakdown",
+  "Rincian disalin. Tempel di WhatsApp atau obrolan.": "Details copied. Paste them in WhatsApp or chat.",
+  "Rincian per hari": "Daily breakdown",
+  "Rincian per minggu": "Weekly breakdown",
+  "ringgit Malaysia": "Malaysian ringgit",
+  "Ringgit Malaysia": "Malaysian Ringgit",
+  "Ringkas jadwal": "Schedule summary",
+  "Ringkasan": "Summary",
+  "Ringkasan {1}": "{1} summary",
+  "Ringkasan Akun": "Account Summary",
+  "Ringkasan saldo": "Balance summary",
+  "Ringkasan saldo, pemasukan, dan pengeluaran Anda ada di sini.": "Your balance, income, and expense summary lives here.",
+  "Ringkasan tabungan dan investasi": "Savings and investments summary",
+  "Riwayat": "History",
+  "Riwayat setoran": "Deposit history",
+  "Ruas darat": "Land leg",
+  "Ruas laut": "Sea leg",
+  "Ruas perjalanan": "Trip legs",
+  "Ruas udara": "Air leg",
+  "rumah": "home",
+  "Rumah": "Home",
+  "Rumah & Keuangan": "Home & Finance",
+  "Rumah & Tagihan": "Home & Bills",
+  "Rupiah Indonesia": "Indonesian Rupiah",
+  "Rupiah Pengeluaran": "Rupiah Expenses",
+  "Rute": "Route",
+  "Rute, titik singgah, dan estimasi biaya bareng teman.": "Routes, stops, and cost estimates with friends.",
+  "saat": "when",
+  "Saat mencatat transaksi, pilih rekening yang dipakai.": "When recording a transaction, choose the account you used.",
+  "Sabun cuci piring": "Dish soap",
+  "SaKu · {1} · Bulan laporan:": "SaKu · {1} · Report month:",
+  "SaKu · {1} · Bulan laporan: {2}": "SaKu · {1} · Report month: {2}",
+  "SaKu · {1} · Bulan laporan: {2} · Dibuat": "SaKu · {1} · Report month: {2} · Created",
+  "SaKu · {1} · Bulan laporan: {2} · Dibuat {3}": "SaKu · {1} · Report month: {2} · Created {3}",
+  "SaKu Masih Kosong": "SaKu Is Still Empty",
+  "SaKu memakai Firebase milik Anda sebagai server: akun dan catatan tersimpan di sana dan sinkron di semua perangkat. Siapkan sekali saja (gratis di paket Spark).": "SaKu uses your own Firebase as its server: accounts and entries are stored there and sync across all devices. Set it up once (free on the Spark plan).",
+  "SaKu memakai Supabase milik Anda sebagai server: akun dan catatan tersimpan di sana dan sinkron di semua perangkat. Siapkan sekali saja, lalu masukkan alamat proyeknya di bawah.": "SaKu uses your own Supabase as its server: accounts and entries are stored there and sync across all devices. Set it up once, then enter the project URL below.",
+  "Salah email? Ubah email": "Wrong email? Change email",
+  "saldo": "balance",
+  "Saldo": "Balance",
+  "Saldo = setoran − penarikan + bunga atau hasil. Setoran hanya mengurangi saldo kas dan penarikan menambahnya; keduanya bukan pengeluaran atau pemasukan, jadi tidak masuk Rekap maupun anggaran. Bunga dan dividen langsung masuk ke saldo masing-masing dan tidak menambah kas. Nilai pasar investasi tidak dihitung otomatis; catat kenaikannya sebagai hasil.": "Balance = deposits − withdrawals + interest or returns. Deposits only reduce the cash balance and withdrawals add to it; neither is an expense or income, so they're not included in Overview or budgets. Interest and dividends go straight to their own balances and don't add to cash. Market value of investments isn't calculated automatically; record increases as returns.",
+  "Saldo akhir": "Ending balance",
+  "Saldo akhir = saldo bulan sebelumnya + selisih + setor/tarik simpanan (setoran mengurangi saldo, penarikan menambahnya; keduanya bukan pengeluaran atau pemasukan).": "Ending balance = previous month's balance + net + savings deposits/withdrawals (deposits reduce the balance, withdrawals add to it; neither counts as an expense or income).",
+  "Saldo akhir per bulan": "Ending balance per month",
+  "saldo awal": "opening balance",
+  "Saldo awal": "Opening balance",
+  "Saldo bebas": "Free balance",
+  "Saldo kas": "Cash balance",
+  "Saldo keseluruhan": "Total balance",
+  "SALDO KESELURUHAN": "TOTAL BALANCE",
+  "Saldo keseluruhan Anda kini": "Your total balance now",
+  "Saldo menurut bank, e-wallet, dan tunai": "Balance by bank, e-wallet, and cash",
+  "Saldo per Rekening": "Balance per Account",
+  "saldo selalu jelas": "your balance is always clear",
+  "saldo terpisah": "separate balances",
+  "Saldo terpisah dari saldo kas": "Balance separate from cash balance",
+  "Saldo total semua rekening": "Total balance of all accounts",
+  "Salin aturan keamanan": "Copy Security Rules",
+  "Salin kode": "Copy code",
+  "Salin manual: tekan lama teks aturan di bawah, lalu pilih Salin.": "Copy manually: press and hold the rules text below, then choose Copy.",
+  "Salin Rincian": "Copy Details",
+  "salinan": "copy",
+  "Salinan disimpan di {1} Anda": "Copy saved in your {1}",
+  "Salinan terkunci tersedia untuk": "Locked copy available for",
+  "Saling terhubung": "Get connected",
+  "salon": "salon",
+  "Sama rata": "Split evenly",
+  "sampai": "until",
+  "Sampai": "To",
+  "sampai tanggal": "up to date",
+  "Sampai tanggal": "Up to date",
+  "Sampai tanggal {1}:": "Up to {1}:",
+  "Sampai tanggal {1}: {2}": "As of {1}: {2}",
+  "Sampai tanggal {1}: {2} dibanding": "As of {1}: {2} compared to",
+  "Sampai tanggal {1}: {2} dibanding {3}": "As of {1}: {2} compared to {3}",
+  "Sampai tanggal {1}: {2} dibanding {3} pada": "As of {1}: {2} compared to {3} on",
+  "Sampai tanggal {1}: {2} dibanding {3} pada {4}": "As of {1}: {2} compared to {3} on {4}",
+  "Sampai tanggal {1}: {2} dibanding {3} pada {4}{5}": "As of {1}: {2} compared to {3} on {4}{5}",
+  "Sampai tanggal {1}: {2} dibanding {3} pada {4}{5}.": "As of {1}: {2} compared to {3} on {4}{5}.",
+  "Sandi awal": "Initial password",
+  "sarapan": "breakfast",
+  "Sarapan": "Breakfast",
+  "Sate": "Satay",
+  "Satu buku kas pribadi yang rapi: catat, atur, dan pantau uang Anda di HP maupun laptop.": "One neat personal cashbook: record, organize, and track your money on your phone or laptop.",
+  "Satu catatan offline ditolak server:": "The server rejected one offline entry:",
+  "satu-satunya cara membuka cadangan": "the only way to open a backup",
+  "Saya": "Me",
+  "Saya Berhutang": "I Owe",
+  "sebagai": "as",
+  "Sebagian catatan di sini adalah data contoh.": "Some entries here are sample data.",
+  "Sebagian data mungkin sudah masuk. Ulangi dengan \"Gabungkan\" untuk melengkapi.": "Some data may already have been added. Try again with \"Merge\" to complete it.",
+  "Sebagian mungkin sudah tercatat; tekan Catat Sekarang lagi untuk melanjutkan tanpa dobel.": "Some may already be recorded; tap Record Now again to continue without duplicates.",
+  "sebelum": "before",
+  "Sebelum SaKu": "Before SaKu",
+  "Sedang dikerjakan": "In progress",
+  "Sedekah Jumat": "Friday Charity",
+  "sehat": "healthy",
+  "sejak": "since",
+  "sejak {1}": "since {1}",
+  "Sekali bayar": "One-time payment",
+  "Sekali bayar (lunas sekaligus)": "One-time payment (paid in full)",
+  "Sekarang Anda bisa terhubung dengan teman atau pasangan memakai kode khusus, lalu berbagi rencana bersama. Intro singkat ini hanya muncul sekali.": "You can now connect with friends or your partner using a special code and share plans together. This short intro only appears once.",
+  "sekitar": "around",
+  "sekitar {1} hari lagi,": "about {1} days left,",
+  "sekitar {1} hari lagi, {2}": "about {1} days left, {2}",
+  "Sekitar {1} per orang untuk {2} orang": "About {1} per person for {2} people",
+  "sekolah": "school",
+  "Selamat malam": "Good evening",
+  "Selamat pagi": "Good morning",
+  "Selamat siang": "Good afternoon",
+  "Selamat sore": "Good afternoon",
+  "Selesai": "Done",
+  "Selisih": "Net",
+  "SELISIH": "NET",
+  "Selisih bulan ini": "Net this month",
+  "seluruh": "all",
+  "Seluruh batas sudah dibagi.": "The whole limit is already assigned.",
+  "Semua": "All",
+  "Semua angka adalah perkiraan. Ubah harga BBM, tol, dan tiket sesuai kondisi di lapangan.": "All figures are estimates. Adjust fuel, toll, and ticket prices to match real conditions.",
+  "Semua catatan": "All entries",
+  "Semua catatan keuangan Anda. Cari, ubah, atau hapus dari sini.": "All your financial records. Search, edit, or delete from here.",
+  "Semua cicilan dan hutang Anda aman untuk sementara.": "All your installments and debts are safe for now.",
+  "Semua kategori": "All categories",
+  "Semua kategori sudah punya budget.": "Every category already has a budget.",
+  "semua sudah lunas": "all paid off",
+  "Semua uang ada di": "All your money lives in",
+  "Semua waktu": "All time",
+  "senilai {1}": "worth {1}",
+  "Sertakan foto struk (berkas lebih besar)": "Include receipt photos (larger file)",
+  "Server belum diatur: isi variabel SETUP_CODE di Netlify, lalu deploy ulang.": "Server not configured: set the SETUP_CODE variable in Netlify, then redeploy.",
+  "Server belum disiapkan": "Server not set up yet",
+  "Server ini belum punya kunci brankas, jadi tidak bisa membuka cadangan. Pasang VAULT_SECRET yang sama dengan server asalnya.": "This server doesn't have a vault key yet, so it can't open backups. Set the same VAULT_SECRET as the original server.",
+  "Server sedang bermasalah. Coba lagi sebentar lagi.": "The server is having problems. Try again in a moment.",
+  "Server sedang sibuk. Coba lagi sebentar lagi.": "The server is busy. Try again shortly.",
+  "Server tidak terjangkau": "Server unreachable",
+  "Server tidak terjangkau. Periksa koneksi internet Anda.": "Server unreachable. Check your internet connection.",
+  "Service Elektronik": "Electronics Repair",
+  "servis": "service",
+  "Servis AC": "AC Service",
+  "Sesi Anda tidak lagi berlaku. Silakan masuk lagi.": "Your session is no longer valid. Please log in again.",
+  "Sesi berakhir dalam": "Session ends in",
+  "Sesi berakhir dalam {1}. Sentuh layar untuk tetap masuk.": "Session ends in {1}. Tap the screen to stay logged in.",
+  "Sesi berakhir karena tidak ada aktivitas selama": "Session ended due to inactivity for",
+  "Sesi berakhir karena tidak ada aktivitas selama {1} menit. Silakan masuk lagi.": "Session ended after {1} minutes of inactivity. Please log in again.",
+  "Sesi berakhir. Silakan masuk lagi.": "Your session has ended. Please log in again.",
+  "sesuai": "according to",
+  "Sesuai rencana": "On track",
+  "setelah": "after",
+  "setelah {1} dicadangkan": "after {1} is set aside",
+  "Setelah akhir": "After the end",
+  "Setelah disetujui admin, masuk memakai username dan kata sandi tersebut. Lupa kata sandi? Admin dapat meresetnya.": "Once an admin approves it, log in with that username and password. Forgot your password? An admin can reset it.",
+  "Setelah kode diterima dan disetujui, kalian terhubung. Putuskan kapan saja.": "Once the code is accepted and approved, you are connected. Disconnect any time.",
+  "Setelah mengklik tautan, masuk memakai username dan kata sandi tersebut. Belum menerima email? Di layar Masuk pilih Kirim ulang email konfirmasi.": "After clicking the link, sign in with that username and password. No email yet? On the Sign in screen choose Resend confirmation email.",
+  "Setelah selesai, tekan": "When done, press",
+  "Setiap akhir pekan (Sabtu dan Minggu), pengguna yang belum mencadangkan data minggu itu melihat pengingat “Jangan Lupa Cadangkan Data Anda”. Pengingat hilang sendiri setelah beberapa detik dan muncul lagi tiap minggu.": "Every weekend (Saturday and Sunday), users who haven't backed up their data that week see a \"Don't Forget to Back Up Your Data\" reminder. It disappears on its own after a few seconds and reappears each week.",
+  "Setiap akun mendapat kode khusus. Kode ini bukan kata sandi dan tidak membuka data Anda.": "Every account gets a unique code. The code is not a password and does not open your data.",
+  "Setiap orang pernah di titik ini. Bedanya, kamu memilih bercermin dan berbenah.": "Everyone has been here. The difference is, you chose to reflect and reset.",
+  "Setiap rupiah yang kamu tahan hari ini adalah ketenangan di akhir bulan.": "Every rupiah you hold back today is peace of mind at month's end.",
+  "setor": "deposit",
+  "Setor": "Deposit",
+  "Setor {1} per bulan agar tercapai": "Deposit {1} per month to reach it",
+  "Setor {1} per bulan agar tercapai {2}": "Deposit {1} per month to reach {2}",
+  "Setor {1} per bulan agar tercapai {2}.": "Deposit {1} per month to reach {2}.",
+  "Setor bulan ini": "Deposit this month",
+  "Setor Investasi": "Investment Deposit",
+  "Setor ke": "Deposit to",
+  "Setor ke Target": "Deposit to Goal",
+  "Setor per bulan": "Deposit per month",
+  "Setor simpanan": "Savings deposit",
+  "Setor Tabungan": "Deposit to Savings",
+  "Setoran": "Deposit",
+  "Setoran dicatat": "Deposit recorded",
+  "Setoran dicatat sebagai Setor Tabungan atau Setor Investasi. Hanya menggeser saldo, bukan pengeluaran.": "Deposits are recorded as Savings Deposit or Investment Deposit. Only shifts the balance, not an expense.",
+  "Setujui": "Approve",
+  "sewa": "rent",
+  "Sewa & KPR": "Rent & Mortgage",
+  "Sewa kamar": "Room rent",
+  "Sewa Mobil & Motor": "Car & Motorcycle Rental",
+  "siang": "daytime",
+  "simpan": "save",
+  "Simpan": "Save",
+  "Simpan & lanjut": "Save & Continue",
+  "Simpan anggaran": "Save Budget",
+  "Simpan atau bagikan berkas": "Save or Share File",
+  "Simpan kata sandi": "Save Password",
+  "Simpan perjalanan": "Save trip",
+  "Simpan perubahan": "Save changes",
+  "Simpan salinan": "Save a copy",
+  "Simpan seluruh catatan akun ini ke satu berkas di perangkat Anda. Berkas itu bisa diunggah kembali kapan saja, misalnya saat data hilang, berganti perangkat, atau ingin kembali ke kondisi sebelumnya.": "Save all entries from this account to one file on your device. You can upload that file again anytime, for example if data is lost, you switch devices, or you want to go back to an earlier state.",
+  "Simpan tambahan": "Save Extra",
+  "simpanan": "savings",
+  "Simpanan": "Savings",
+  "Simpanan (setor −, tarik +)": "Savings (deposit −, withdrawal +)",
+  "Simpanan & Hutang": "Savings & Debts",
+  "Singgah di sini": "Stop here",
+  "sisa": "left",
+  "Sisa": "Remaining",
+  "sisa {1}": "{1} remaining",
+  "Sisa {1}": "{1} left",
+  "Sisa {1}.": "{1} left.",
+  "Sisa anggaran": "Remaining budget",
+  "Sisa anggaran {1} dicadangkan dari saldo pemasukan {2}. Setoran tabungan dan investasi tidak dihitung sebagai pengeluaran, hanya mengurangi saldo.": "Remaining budget {1} is reserved from the {2} income balance. Deposits to savings and investments aren't counted as expenses; they only reduce the balance.",
+  "Sisa batas setelah ini: {1} · {2} dari batas.": "Limit remaining after this: {1} · {2} of the limit.",
+  "Sisa batas setelah ini: {1}.": "Limit remaining after this: {1}.",
+  "sisa dari": "remaining of",
+  "Sisa seluruh cicilan": "Total remaining installments",
+  "Sisa tagihan": "Remaining bill",
+  "Sisihkan sekitar {1} per bulan agar terkumpul pada {2}.": "Set aside about {1} per month to reach it by {2}.",
+  "Sisihkan sekitar {1} per hari agar terkumpul pada {2}.": "Set aside about {1} per day to reach it by {2}.",
+  "Sisihkan sekitar {1} per minggu agar terkumpul pada {2}.": "Set aside about {1} per week to reach it by {2}.",
+  "Skincare & Kosmetik": "Skincare & Cosmetics",
+  "Soto ayam": "Chicken soto",
+  "Sparepart Mobil": "Car Spare Parts",
+  "Sparepart Motor": "Motorcycle Spare Parts",
+  "Status cadangan tidak bisa dibaca.": "Backup status can't be read.",
+  "struk": "receipt",
+  "Submenu {1}": "{1} Submenu",
+  "sudah": "already",
+  "sudah {1}": "already {1}",
+  "Sudah ada rekening bernama itu.": "That account name is already used.",
+  "Sudah ada rekening bernama itu. Pakai nama lain, mis. {1} 2.": "That account name is already used. Try another, e.g. {1} 2.",
+  "Sudah Bayar": "Paid",
+  "sudah di-deploy": "has been deployed",
+  "sudah dibayar": "paid",
+  "Sudah Dibayar": "Paid",
+  "Sudah dibayar (bulan)": "Paid (months)",
+  "sudah diisi, dan proyek tidak sedang": "is set, and the project is not currently",
+  "Sudah dikembalikan seluruhnya.": "Fully repaid.",
+  "sudah habis": "already run out",
+  "Sudah habis": "Used up",
+  "Sudah Lunas": "Paid Off",
+  "sudah sama": "already the same",
+  "Sudah terbeli / terlaksana": "Bought / done",
+  "Sudah Tercapai / Ditutup": "Reached / Closed",
+  "Sudah terkumpul": "Already saved",
+  "sudah terlampaui": "already exceeded",
+  "Sudah Terwujud": "Fulfilled",
+  "Sumber pemasukan": "Income sources",
+  "Sumber Pemasukan": "Income Source",
+  "Sumber pemasukan –": "Income sources –",
+  "Susu UHT": "UHT Milk",
+  "SUV / MPV": "SUV / MPV",
+  "Tabung": "Save",
+  "Tabung ke Wishlist": "Save to Wishlist",
+  "tabungan": "savings",
+  "Tabungan": "Savings",
+  "tabungan & investasi": "savings & investments",
+  "Tabungan & Investasi": "Savings & Investments",
+  "Tabungan & investasi periode ini:": "Savings & investments this period:",
+  "Tabungan & investasi periode ini: {1}. Bukan pengeluaran atau pemasukan, hanya menggeser saldo.": "Savings & investments this period: {1}. Not an expense or income, it only shifts your balance.",
+  "Tabungan bulanan": "Monthly savings",
+  "Tabungan wishlist ditambah {1}": "Wishlist savings increased by {1}",
+  "tagihan": "bills",
+  "Tagihan": "Bills",
+  "Tagihan Jatuh Tempo": "Due Bills",
+  "tagihan lainnya ada di menu Jatuh Tempo.": "Other bills are in Due Dates.",
+  "tagihan yang sudah dihapus": "deleted bills",
+  "Tahapan pengembangan": "Development stages",
+  "Tahu": "Tofu",
+  "tahun": "year",
+  "Tahun": "Year",
+  "taksi": "taxi",
+  "Taksi": "Taxi",
+  "Taksi dari dan ke bandara": "Taxi to and from the airport",
+  "Talangi": "Advance",
+  "Talangi {1}": "Covered for {1}",
+  "Tambah": "Add",
+  "Tambah anggaran": "Add budget",
+  "Tambah Anggaran": "Add Budget",
+  "Tambah Anggaran {1}": "Add {1} Budget",
+  "Tambah barang": "Add item",
+  "Tambah budget kategori": "Add category budget",
+  "Tambah Cicilan": "Add Installment",
+  "Tambah email": "Add email",
+  "Tambah Hutang": "Add Debt",
+  "Tambah item": "Add item",
+  "Tambah kategori": "Add category",
+  "Tambah Kategori": "Add Category",
+  "Tambah penumpang": "More passengers",
+  "Tambah rekening": "Add account",
+  "Tambah Rekening": "Add Account",
+  "Tambah ruas": "Add leg",
+  "Tambah Target": "Add Goal",
+  "Tambah teman": "Add a friend",
+  "Tambah teman dulu.": "Add a friend first.",
+  "Tambah wishlist": "Add wishlist",
+  "Tambah Wishlist": "Add Wishlist",
+  "Tambahan anggaran": "Extra budget",
+  "Tambahan anggaran {1} dihapus": "Extra budget {1} deleted",
+  "Tambahan hanya berlaku untuk bulan ini. Anggaran yang bertambah mengurangi saldo pemasukan yang bebas dipakai.": "Extra budget only applies to this month. Added budget reduces the free income balance.",
+  "Tambahkan bank, e-wallet, atau tunai di bawah.": "Add a bank, e-wallet, or cash below.",
+  "Tambahkan cicilan atau hutang, lalu jatuh temponya akan muncul di sini dan diingatkan setiap hari.": "Add an installment or debt, and its due date will show up here and you'll be reminded every day.",
+  "Tambahkan minimal satu ruas perjalanan.": "Add at least one trip leg.",
+  "Tambahkan minimal satu teman.": "Add at least one friend.",
+  "Tambahkan rekening bank, e-wallet, dan tunai, lalu pindahkan saldo antar rekening.": "Add bank accounts, e-wallets, and cash, then move balances between accounts.",
+  "Tambahkan rekening dulu di Pengaturan Rekening.": "Add an account first in Account Settings.",
+  "Tampilkan": "Show",
+  "Tampilkan kata sandi": "Show password",
+  "Tampilkan lebih banyak": "Show more",
+  "Tampilkan lebih sedikit": "Show less",
+  "Tampilkan pengingat akhir pekan": "Show weekend reminder",
+  "Tampilkan semua {1} bulan": "Show all {1} months",
+  "Tampilkan semua {1} cicilan": "Show all {1} installments",
+  "Tanaman & Taman": "Plants & Garden",
+  "Tandai selesai / ditutup": "Mark as done / closed",
+  "Tandai sudah lunas / ditutup": "Mark as paid off / closed",
+  "Tanggal": "Date",
+  "Tanggal {1}{2}": "Date {1}{2}",
+  "Tanggal berangkat": "Departure date",
+  "Tanggal berangkat tidak valid.": "Invalid departure date.",
+  "Tanggal jatuh tempo": "Due date",
+  "Tanggal jatuh tempo tidak valid.": "Invalid due date.",
+  "Tanggal lahir": "Birth date",
+  "Tanggal lahir disimpan.": "Birth date saved.",
+  "Tanggal mulai tidak valid.": "Start date is invalid.",
+  "Tanggal pinjam": "Borrow date",
+  "Tanggal pinjam tidak valid.": "Invalid borrowed date.",
+  "Tanggal rencana": "Planned date",
+  "Tanggal rencana sudah lewat. Sisa {1}. Ubah tanggalnya bila perlu.": "The planned date has passed. {1} remaining. Change the date if needed.",
+  "Tanggal rencana tidak valid.": "Invalid planned date.",
+  "Tanggal target tidak valid.": "Invalid goal date.",
+  "Tanggal tenggat tidak valid.": "Deadline date is invalid.",
+  "Tanggal tidak valid.": "Invalid date.",
+  "Tangki penuh": "Full tank",
+  "Tangki penuh, {1} orang": "Full tank, {1} people",
+  "tanpa": "without",
+  "tanpa daftar barang": "without an item list",
+  "Tanpa darat": "No land leg",
+  "tanpa foto": "without photos",
+  "Tanpa rekening, semua catatan dihitung sebagai satu dompet seperti biasa.": "Without accounts, all entries count as one wallet as usual.",
+  "Tanpa tenggat": "No deadline",
+  "tanpa verifikasi JWT": "without JWT verification",
+  "tapi": "but",
+  "target": "target",
+  "Target": "Goal",
+  "Target “": "Goal “",
+  "Target “{1}” tercapai. Selamat!": "Goal “{1}” reached. Congratulations!",
+  "Target {1} bulan pengeluaran, sekitar": "Goal {1} months of expenses, about",
+  "Target {1} bulan pengeluaran, sekitar {2}": "Goal {1} months of expenses, about {2}",
+  "Target {1} bulan pengeluaran, sekitar {2} per bulan.": "Goal {1} months of expenses, about {2} per month.",
+  "Target / Rencana": "Goal / Plan",
+  "Target aktif": "Active goals",
+  "Target dana dan daftar kebutuhan untuk acara besar.": "Fund targets and needs list for a big event.",
+  "Target dihapus": "Goal deleted",
+  "Target dihitung dari": "Goal calculated from",
+  "Target diperbarui": "Goal updated",
+  "Target ditambahkan": "Goal added",
+  "Target ini ditutup.": "This goal is closed.",
+  "Target tercapai. Selamat!": "Goal reached. Congratulations!",
+  "tarik": "withdraw",
+  "Tarik": "Withdraw",
+  "Tarik dari": "Withdraw from",
+  "Tarik dari Target": "Withdraw from Goal",
+  "Tarik napas dulu. Masih ada waktu mengatur ulang, pilih yang benar-benar penting.": "Take a breath first. There's still time to reset, so choose what really matters.",
+  "Tarik simpanan": "Savings withdrawal",
+  "Tarik Tabungan": "Withdraw Savings",
+  "tas": "bag",
+  "Tautan konfirmasi tidak lengkap.": "The confirmation link is incomplete.",
+  "Tautan konfirmasi tidak valid atau sudah kedaluwarsa. Masuk lalu pilih Kirim ulang email konfirmasi.": "The confirmation link is invalid or has expired. Sign in and choose Resend confirmation email.",
+  "Tekan lama kode lalu pilih Salin.": "Long-press the code, then choose Copy.",
+  "Tekan tombol di tiap tagihan bila sudah dibayar, lalu otomatis tercatat di transaksi.": "Tap the button on each bill once paid, and it's automatically recorded in transactions.",
+  "telat": "late",
+  "Telat": "Late",
+  "telat {1} hari": "{1} days late",
+  "Telur 1 kg": "Eggs 1 kg",
+  "Teman": "Friends",
+  "teman (": "friends (",
+  "Teman hanya bisa melihat salinan ini. Perubahan yang Anda buat setelahnya ikut diperbarui otomatis.": "Friends can only view this copy. Changes you make afterwards are updated automatically.",
+  "Teman perlu mengembalikan": "Friend needs to pay back",
+  "Teman perlu mengembalikan {1} kepada Anda.": "Friend needs to pay you back {1}.",
+  "Teman tidak valid.": "Invalid friend.",
+  "Tempe": "Tempeh",
+  "Tempel alamat proyek (contoh:": "Paste the project URL (example:",
+  "Tempel kode dari teman di kolom Tambah teman, lalu kirim permintaan. Teman akan mendapat pemberitahuan.": "Paste your friend's code in Add a friend, then send the request. Your friend will be notified.",
+  "Tempel konfigurasi Firebase pada kolom di bawah, lalu tekan": "Paste the Firebase configuration in the field below, then press",
+  "Tempel kunci Maps Embed API agar peta tampil di sini": "Paste a Maps Embed API key to show the map here",
+  "tempo": "due",
+  "tempo {1}": "due {1}",
+  "Tenggat": "Deadline",
+  "Tenggat sudah lewat.": "Deadline has passed.",
+  "Tenggat sudah lewat. Sisa": "Deadline has passed. Remaining",
+  "Tenggat sudah lewat. Sisa {1}.": "Deadline has passed. {1} remaining.",
+  "Tenggat tidak boleh sebelum tanggal mulai.": "Deadline can't be before the start date.",
+  "Tenor {1} bulan": "Tenor {1} months",
+  "Tenor {1} bulan{2}": "Tenor {1} months{2}",
+  "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
+  "tentang": "about",
+  "Tentang aplikasi": "About this app",
+  "tepat di akhir": "right at the end",
+  "Terakhir diunduh:": "Last downloaded:",
+  "Terakhir masuk": "Last logged in",
+  "Terakhir mencatat": "Last recorded",
+  "Terbayar": "Paid",
+  "Terbesar": "Largest",
+  "Terbesar:": "Largest:",
+  "Terbesar: {1} ·": "Largest: {1} ·",
+  "Terbesar: {1} · {2}": "Largest: {1} · {2}",
+  "tercapai": "reached",
+  "Tercapai": "Reached",
+  "Tercatat.": "Recorded.",
+  "Terendah (": "Low (",
+  "Terendah ({1} hari bursa)": "Low ({1} trading days)",
+  "terhadap": "against",
+  "Terhadap": "Against",
+  "Terima": "Accept",
+  "terima dari": "receive from",
+  "Terima kasih,": "Thank you,",
+  "Terima Sisa": "Receive Remaining",
+  "Terjadi kesalahan di aplikasi. Muat ulang halaman lalu coba lagi.": "An app error occurred. Reload the page and try again.",
+  "Terjadi kesalahan di server. Coba lagi.": "A server error occurred. Try again.",
+  "Terkumpul": "Saved",
+  "terkunci": "locked",
+  "Terlalu banyak percobaan. Coba lagi beberapa menit lagi.": "Too many attempts. Try again in a few minutes.",
+  "Terlalu banyak percobaan. Coba lagi dalam": "Too many attempts. Try again in",
+  "Terlalu banyak percobaan. Coba lagi dalam {1} menit.": "Too many attempts. Try again in {1} minutes.",
+  "Terlalu banyak permintaan yang menunggu. Batalkan sebagian dulu.": "Too many pending requests. Cancel some first.",
+  "Terlalu banyak perubahan sekaligus.": "Too many changes at once.",
+  "Terlalu sering membaca foto. Coba lagi nanti.": "Too many photo scans. Please try again later.",
+  "terlambat": "late",
+  "Terlambat": "Overdue",
+  "terlampaui sejak": "exceeded since",
+  "Termasuk singgah {1}": "Including stops {1}",
+  "terpakai": "used",
+  "Terpakai": "Used",
+  "Tersimpan di perangkat. Diunggah otomatis saat online.": "Saved on this device. Uploaded automatically when online.",
+  "Tertaut:": "Linked:",
+  "tertinggal": "behind",
+  "Tertinggal": "Behind",
+  "Tertinggal dari rencana: seharusnya sudah terkumpul": "Behind plan: should have saved",
+  "Tertinggal dari rencana: seharusnya sudah terkumpul {1}.": "Behind plan: should have saved {1}.",
+  "Tertinggi (": "High (",
+  "Tertinggi ({1} hari bursa)": "High ({1} trading days)",
+  "tetap": "fixed",
+  "tetapi": "but",
+  "Tetapkan tujuan keuangan Anda: dana darurat, tabungan, investasi, atau impian lain. SaKu menghitung berapa yang perlu disetor tiap bulan dan memantau kemajuannya.": "Set your financial goals: an emergency fund, savings, investments, or other dreams. SaKu calculates how much to deposit each month and tracks your progress.",
+  "tiap akhir bulan": "at the end of each month",
+  "tiap tanggal": "on the same date",
+  "Tiba": "Arrive",
+  "Tiba di {1}": "Arriving at {1}",
+  "Tidak ada akun yang dipulihkan.": "No accounts were restored.",
+  "tidak ada arus periode ini": "no activity this period",
+  "Tidak ada barang yang terbaca dari foto ini.": "No items could be read from this photo.",
+  "Tidak Ada Catatan": "No Entries",
+  "Tidak ada catatan di sini": "No entries here",
+  "Tidak ada catatan pengeluaran pada": "No expense entries on",
+  "Tidak ada catatan pengeluaran pada {1}. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.": "No expense entries on {1}. Savings deposits and withdrawals aren't counted as expenses.",
+  "Tidak ada internet.": "No internet connection.",
+  "Tidak ada internet. {1}": "No internet connection. {1}",
+  "Tidak ada kategori yang cocok.": "No matching categories.",
+  "Tidak ada kategori yang cocok. Coba kata lain atau tekan Tambah Kategori.": "No matching categories. Try another word or tap Add Category.",
+  "Tidak ada ruas darat": "No land leg",
+  "tidak ada tagihan": "no bills",
+  "Tidak ada tagihan dalam 7 hari ke depan": "No bills in the next 7 days",
+  "Tidak Ada Transaksi": "No Transactions",
+  "Tidak ada yang disimpan.": "Nothing was saved.",
+  "Tidak ada yang diubah.": "Nothing was changed.",
+  "tidak ada yang jatuh tempo": "nothing due",
+  "Tidak ada yang perlu dicatat.": "Nothing to record.",
+  "Tidak bisa diproses.": "Can't be processed.",
+  "Tidak bisa menyalin otomatis.": "Couldn't copy automatically.",
+  "Tidak bisa menyalin otomatis. Tekan lama pada rincian untuk menyalin.": "Couldn't copy automatically. Press and hold the details to copy.",
+  "Tidak bisa terhubung ke server. Periksa koneksi internet.": "Can't connect to the server. Check your internet connection.",
+  "Tidak termasuk saldo kas": "Excludes cash balance",
+  "Tidak termasuk setoran ke tabungan dan investasi.": "Excludes deposits to savings and investments.",
+  "tidak valid": "invalid",
+  "tiket": "ticket",
+  "Tiket kapal dan pesawat": "Ship and flight tickets",
+  "Tiket kendaraan (Rp)": "Vehicle ticket (Rp)",
+  "Tiket per orang (Rp)": "Ticket per person (Rp)",
+  "Tiket Pesawat": "Flight Tickets",
+  "Tiket Wisata & Hiburan": "Attraction & Entertainment Tickets",
+  "titik (.)": "period (.)",
+  "Titik perjalanan": "Trip stops",
+  "Token listrik": "Electricity token",
+  "tol": "toll",
+  "Tol": "Toll",
+  "Tol mobil (Rp)": "Car toll (Rp)",
+  "Tolak": "Decline",
+  "Topup E-Money (Kartu)": "E-Money Card Top-up",
+  "Topup E-Wallet": "E-Wallet Top-up",
+  "total · rata-rata": "total · average",
+  "total · rata-rata {1} per orang": "total · average {1} per person",
+  "Total {1} · dibayar {2}": "Total {1} · paid {2}",
+  "Total {1}, dibayar": "Total {1}, paid",
+  "Total {1}, dibayar {2}": "Total {1}, paid {2}",
+  "Total {1}, dibayar {2}.": "Total {1}, paid {2}.",
+  "Total 12 bulan": "12-month total",
+  "Total barang": "Total items",
+  "Total catatan pengguna": "Total user entries",
+  "Total dari barang": "Total from items",
+  "Total keluar": "Total out",
+  "TOTAL KELUAR": "TOTAL OUT",
+  "Total masuk": "Total in",
+  "Total pengeluaran": "Total expenses",
+  "Total saldo": "Total balance",
+  "Total tabungan & investasi": "Total savings & investments",
+  "Total tagihan": "Total bill",
+  "Total waktu": "Total time",
+  "transaksi": "transactions",
+  "Transaksi": "Transactions",
+  "transaksi (": "transactions (",
+  "Transaksi (CSV)": "Transactions (CSV)",
+  "Transaksi di Kategori Ini": "Transactions in This Category",
+  "Transaksi di Periode Ini": "Transactions in This Period",
+  "Transaksi dihapus": "Transaction deleted",
+  "Transaksi diperbarui": "Transaction updated",
+  "transaksi ganda digabung.": "duplicate transactions merged.",
+  "Transaksi ini dihitung sebagai pembayaran tagihan tersebut.": "This transaction counts as a payment for that bill.",
+  "transaksi rusak dilewati.": "corrupted transactions skipped.",
+  "transaksi tanpa foto karena fotonya tidak ada di berkas.": "transactions without photos because the photos aren't in the file.",
+  "transaksi tercapai. Hapus transaksi lama dulu.": "transaction limit reached. Delete old transactions first.",
+  "transaksi tercapai. Pakai \"Ganti\" atau hapus transaksi lama dulu.": "transaction limit reached. Use \"Replace\" or delete old transactions first.",
+  "Transaksi tersimpan": "Transaction saved",
+  "transaksi tersimpan di akun ini. Laporan PDF mengikuti periode yang sedang dibuka di Rekap, sedangkan Excel memuat seluruh catatan dengan 8 grafik.": "transactions are saved to this account. The PDF report follows the period currently open in Overview, while the Excel file includes all entries with 8 charts.",
+  "Transaksi yang tidak memilih rekening": "Transactions without an account",
+  "transaksi,": "transactions,",
+  "transaksi, melebihi batas": "transactions, exceeding the limit",
+  "transaksi.": "transactions.",
+  "Transfer bandara": "Airport transfer",
+  "Transfer bandara dan lainnya (Rp, total)": "Airport transfer and others (Rp, total)",
+  "TransJakarta & BRT": "TransJakarta & BRT",
+  "Transportasi Harian": "Daily Transport",
+  "tren": "trend",
+  "Tren pengeluaran": "Expense trend",
+  "Tren pengeluaran {1} per hari (7 hari terakhir {2}, rata-rata {3} ini {4}).": "Expense trend {1} per day (last 7 days {2}, averaging {3} this {4}).",
+  "Tujuan": "Destination",
+  "tukar": "exchange",
+  "Tukar arah": "Swap direction",
+  "Tukar arah konversi": "Swap conversion direction",
+  "Tunai": "Cash",
+  "Tunai / tanpa rekening": "Cash / no account",
+  "Tunai / Tanpa rekening": "Cash / No Account",
+  "Tur & Paket Wisata": "Tours & Travel Packages",
+  "turun": "down",
+  "Turun": "Down",
+  "Tutup": "Close",
+  "Tutup pengingat": "Close reminder",
+  "Uang": "Money",
+  "Uang awal yang sudah terkumpul:": "Starting funds already saved:",
+  "Uang awal yang sudah terkumpul: {1} (tidak dicatat sebagai transaksi).": "Starting funds already saved: {1} (not recorded as a transaction).",
+  "Uang pinjaman belum dicatat di Transaksi. Buka “Ubah” untuk mencatatnya.": "Loan money isn't recorded in Transactions yet. Open “Edit” to record it.",
+  "Uang pinjaman sudah tercatat di Transaksi (": "Loan money is already recorded in Transactions (",
+  "Uang pinjaman sudah tercatat di Transaksi ({1}, {2}). Ubah di sana bila perlu.": "Loan money is already recorded in Transactions ({1}, {2}). Edit it there if needed.",
+  "Uang pinjaman tercatat": "Loan money recorded",
+  "Uang pinjaman tercatat {1} pada {2}.": "Loan money of {1} recorded on {2}.",
+  "Uang yang ditalangi hanya menggeser saldo, bukan pengeluaran. Hanya bagian Anda yang dihitung sebagai pengeluaran.": "Advanced money only shifts the balance, not an expense. Only your share counts as an expense.",
+  "Uang yang sudah ada untuk target ini sebelum memakai SaKu. Tidak dicatat sebagai transaksi.": "Money already set aside for this goal before using SaKu. Not recorded as a transaction.",
+  "Ubah": "Edit",
+  "Ubah Acara": "Edit Event",
+  "Ubah budget {1}": "Edit budget {1}",
+  "Ubah Budget Kategori": "Edit Category Budget",
+  "Ubah Cicilan": "Edit Installment",
+  "Ubah email": "Change email",
+  "Ubah Hutang": "Edit Debt",
+  "Ubah kata sandi akun Anda": "Change your account password",
+  "Ubah Kategori": "Edit Category",
+  "Ubah Perjalanan": "Edit Trip",
+  "Ubah Rekening": "Edit Account",
+  "Ubah rencana": "Edit plan",
+  "Ubah Target": "Edit Goal",
+  "Ubah Transaksi": "Edit Transaction",
+  "Ubah Wishlist": "Edit Wishlist",
+  "Udara": "Air",
+  "Ulangi kata sandi": "Repeat password",
+  "Ulangi kata sandi baru": "Repeat new password",
+  "Ulangi tur menu": "Replay menu tour",
+  "Unduh": "Download",
+  "Unduh Cadangan": "Download Backup",
+  "Unduh cadangan akun Anda sendiri lewat submenu Cadangan Data.": "Download your own account backup from the Data Backup submenu.",
+  "Unduh lagi": "Download again",
+  "Unduh satu berkas berisi seluruh transaksi, foto struk, anggaran, dan rencana milik setiap akun. Isinya": "Download a single file containing all transactions, receipt photos, budgets, and plans for every account. Its contents",
+  "Unduhan belum tersedia di tampilan ini.": "Downloads aren't available in this view yet.",
+  "Unduhan tidak tersedia di tampilan ini.": "Downloads aren't available in this view.",
+  "untuk": "for",
+  "Untuk akun Anda sendiri, pakai menu Pengaturan.": "For your own account, use the Settings menu.",
+  "Untuk keamanan, ganti kata sandi memerlukan verifikasi email. Kirim tautan ke email Anda, klik, lalu kembali ke sini.": "For security, changing your password requires email verification. Send a link to your email, click it, then come back here.",
+  "Untuk Login": "For Login",
+  "untuk:": "for:",
+  "usaha": "business",
+  "Usaha & Sampingan": "Business & Side Hustle",
+  "Username 4–20 karakter: huruf kecil dan angka saja, diawali huruf. Contoh: sifulan12.": "Username must be 4–20 characters: lowercase letters and numbers only, starting with a letter. Example: sifulan12.",
+  "Username admin": "Admin username",
+  "Username admin 4–20 karakter: huruf kecil dan angka, diawali huruf.": "Admin username must be 4–20 characters: lowercase letters and numbers, starting with a letter.",
+  "Username Anda": "Your username",
+  "Username atau kata sandi salah.": "Incorrect username or password.",
+  "Username ini sudah dipakai.": "This username is already taken.",
+  "Username ini sudah dipakai. Coba tambahkan angka lain.": "This username is already taken. Try adding another number.",
+  "Verifikasi email Anda dulu (lihat himbauan di atas) agar kata sandi bisa diganti.": "Verify your email first (see the notice above) so you can change your password.",
+  "Verifikasi email Anda dulu lewat himbauan di atas, lalu ganti kata sandi.": "Verify your email first through the notice above, then change your password.",
+  "Verifikasi email dulu: kirim email verifikasi, klik tautannya, lalu ganti kata sandi (berlaku 15 menit).": "Verify your email first: send the verification email, click its link, then change your password (valid for 15 minutes).",
+  "Versi berkas cadangan ini belum didukung.": "This backup file version isn't supported yet.",
+  "Visa & Paspor": "Visa & Passport",
+  "Vitamin & Suplemen": "Vitamins & Supplements",
+  "Wajib: berkas kunci yang diunduh saat fitur ini pertama diaktifkan": "Required: the key file downloaded when this feature was first enabled",
+  "Waktu tempuh": "Travel time",
+  "Wishlist": "Wishlist",
+  "Wishlist aktif": "Active wishlist",
+  "Wishlist bersama": "Shared wishlist",
+  "Wishlist dihapus": "Wishlist deleted",
+  "Wishlist diperbarui": "Wishlist updated",
+  "Wishlist ditambahkan": "Wishlist added",
+  "Wishlist masih kosong": "Your wishlist is empty",
+  "won Korea": "Korean won",
+  "Won Korea": "Korean Won",
+  "Yakin cabut admin pembantu?": "Are you sure you want to remove this assistant admin?",
+  "Yakin cabut administrator?": "Are you sure you want to remove this administrator?",
+  "Yakin hapus": "Are you sure you want to delete",
+  "Yakin hapus {1} data contoh?": "Are you sure you want to delete {1} sample data?",
+  "Yakin hapus akun dan datanya?": "Are you sure you want to delete the account and its data?",
+  "Yakin hapus budget ini?": "Delete this budget?",
+  "Yakin hapus perjalanan ini?": "Delete this trip?",
+  "Yakin hapus wishlist ini?": "Delete this wishlist item?",
+  "Yakin hapus?": "Confirm delete?",
+  "Yakin hapus? Catatan pembayaran tetap ada.": "Are you sure you want to delete? Payment records will remain.",
+  "Yakin hapus? Setoran tetap ada di Simpanan.": "Delete? Deposits stay in Savings.",
+  "Yakin hapus? Transaksi dan hutang terkait tetap ada.": "Delete? Related transactions and debts will stay.",
+  "Yakin hapus? Transaksi terkait tetap ada.": "Delete? Related transactions will stay.",
+  "Yakin jadikan admin pembantu?": "Are you sure you want to make this user an assistant admin?",
+  "Yakin jadikan administrator?": "Are you sure you want to make this user an administrator?",
+  "Yakin putuskan?": "Disconnect for sure?",
+  "Yakin reset sandi?": "Are you sure you want to reset the password?",
+  "Yakin tolak?": "Are you sure you want to decline?",
+  "Yakin? Catatan": "Are you sure? Entries",
+  "Yakin? Catatan {1} akun diganti": "Are you sure? {1} account entries will be replaced",
+  "Yakin? Isi akun diganti cadangan": "Are you sure? Account contents will be replaced by the backup",
+  "Yakin? Semua data di perangkat ini diganti": "Are you sure? All data on this device will be replaced",
+  "yang": "that",
+  "Yang akan dicatat:": "To be recorded:",
+  "Yang Anda bagikan": "What you share",
+  "Yang Anda buat tadi": "The one you just created",
+  "Yang dibagikan": "What to share",
+  "yang dicatat.": "recorded.",
+  "Yang ikut membayar item {1}": "Who shares the cost of item {1}",
+  "yang muncul.": "that appears.",
+  "Yang nanti bisa dibagikan": "What can be shared later",
+  "Yang penting sadar dan mau memperbaiki. Catatan yang jujur adalah langkah pertama yang berani.": "What matters is being aware and willing to improve. An honest record is a brave first step.",
+  "Yang perlu dibayar": "Due for payment",
+  "Yang perlu dibayar {1}.": "Due for payment {1}.",
+  "yen Jepang": "Japanese yen",
+  "Yen Jepang": "Japanese Yen",
+  "yuan China": "Chinese yuan",
+  "Yuan China": "Chinese Yuan",
+  "Zakat & Sedekah": "Zakat & Charity"
+};
+/* ================= State ================= */
+const S = {
+  phase: 'boot', mounted: null, view: 'rekap', mountedView: null,
+  db: null, user: null, sample: null, downloads: null, canImages: false, canWrite: null, isOwner: false,
+  accounts: {}, accLoaded: false, restored: false, me: null, fails: 0, loginMsg: '', authTab: 'masuk', regDone: null, regBusy: false, pendN: -1,
+  unsubAcc: null, unsubTx: null, unsubSet: null,
+  tx: [], txLoaded: false, byDay: {}, totals: { in: 0, out: 0 }, settings: {}, demoCount: 0, plan: { cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [] }, unsubPlan: [], routeReplace: false,
+  period: 'month', anchor: startOfDay(new Date()), showAll: { out: false, in: false },
+  filters: { q: '', type: 'all', cat: 'all', range: 'all' }, shown: 60,
+  bk: [], form: null, armed: null, armT: null, busy: {}, wide: false, lastFocus: null,
+  sessMin: 20, lastAct: Date.now(), warned: false, cfgReady: true,
+  backup: { on: true, seconds: 30 }, bkPrev: null, bkNote: null
+};
+const me = () => (S.me && S.accounts[S.me.id]) || S.me;
+const isAdmin = () => { const m = me(); return !!m && m.role === 'admin'; };
+/* Admin pembantu: pengguna biasa (punya catatan sendiri) yang juga mendapat menu Admin dengan hak terbatas */
+const isHelper = () => { const m = me(); return !!m && m.role === 'helper'; };
+const isStaff = () => isAdmin() || isHelper();
+const roleName = r => (r === 'admin' ? 'Administrator' : r === 'helper' ? 'Admin Pembantu' : 'Pengguna');
+const VIEWS = {};
+
+let toastT = null;
+function toast(msg) {
+  let t = $('#toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = toastText(msg); t.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3400);
+}
+function toastText(msg) { return msg; } /* kait edisi lain */
+function extraDataActs() { return []; } /* kait edisi lain: tombol tambahan di kartu Data */
+function dataNote() { return ''; } /* kait edisi lain: kalimat tambahan di kartu Data */
+function dbErrMsg(e) {
+  if (e && e.userMessage) return e.userMessage;
+  const c = e && e.code;
+  if (c === 'quota_exceeded') return 'Penyimpanan penuh. Hapus beberapa foto atau transaksi lama, lalu coba lagi.';
+  if (c === 'invalid_argument') return 'Data tidak bisa disimpan. Akun Claude Anda mungkin hanya punya akses lihat, atau fotonya terlalu besar.';
+  if (c === 'resource_exhausted' || c === 'unavailable') return 'Server sedang sibuk. Coba lagi sebentar lagi.';
+  if (c === 'revoked') return 'Akses ke halaman ini dicabut. Muat ulang halaman.';
+  return 'Gagal menyimpan. Periksa koneksi lalu coba lagi.';
+}
+function arm(key) {
+  if (S.armed && S.armed.key === key) return true;
+  S.armed = { key };
+  clearTimeout(S.armT);
+  S.armT = setTimeout(() => { S.armed = null; if (S.phase === 'app' && S.view === 'admin') VIEWS.admin.update(); if (S.phase === 'app' && S.view === 'akun') VIEWS.akun.update(); paintDel(); }, 4000);
+  return false;
+}
+function disarm() { S.armed = null; clearTimeout(S.armT); }
+
+/* ================= Data ================= */
+function indexTx() {
+  S.tx.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.createdAt || '').localeCompare(String(a.createdAt || ''))));
+  const byDay = {}; let ti = 0, to = 0, xf = 0, demo = 0;
+  for (const t of S.tx) {
+    const a = Number(t.amount) || 0, o = byDay[t.date] || (byDay[t.date] = { in: 0, out: 0 });
+    if (isXfer(t)) xf += cashOf(t); else if (t.type === 'in') { o.in += a; ti += a; } else { o.out += a; to += a; }
+    if (t.demo) demo++;
+  }
+  S.byDay = byDay; S.totals = { in: ti, out: to, xf, saldo: ti - to + xf }; S.demoCount = demo;
+}
+function buildBuckets(P, A) {
+  const days = [];
+  if (P === 'day') { for (let i = 6; i >= 0; i--) days.push(addDays(A, -i)); }
+  else if (P === 'week') { const s = startOfWeek(A); for (let i = 0; i < 7; i++) days.push(addDays(s, i)); }
+  else { const rg = cycleOf(A); for (let d = rg.start; d <= rg.end; d = addDays(d, 1)) days.push(d); }
+  return days.map(d => { const k = ymd(d), o = S.byDay[k] || { in: 0, out: 0 }; return { d, key: k, in: o.in, out: o.out }; });
+}
+function filteredTx() {
+  const f = S.filters, q = f.q.trim().toLowerCase(), today = startOfDay(new Date());
+  let from = null, to = null;
+  if (f.range === 'today') { from = to = ymd(today); }
+  else if (f.range === '7') { from = ymd(addDays(today, -6)); to = ymd(today); }
+  else if (f.range === 'month') { const c = cycleOf(today); from = ymd(c.start); to = ymd(c.end); }
+  else if (f.range === 'last') { const c = cycleOf(addDays(cycleOf(today).start, -1)); from = ymd(c.start); to = ymd(c.end); }
+  return S.tx.filter(t => {
+    if (f.type !== 'all' && (t.type !== f.type || (f.cat === 'all' && isXfer(t)))) return false;
+    if (f.cat !== 'all' && t.cat !== f.cat) return false;
+    if (from && (t.date < from || t.date > to)) return false;
+    if (q) {
+      const hay = [catOf(t.cat).label, t.note, (t.items || []).map(i => i.n).join(' '), accLabel(t.acc || ''), t.to ? accLabel(t.to) : ''].join(' ').toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+/* ================= Sesi & akun ================= */
+const marker = a => (a.isDefault || !a.hash) ? 'default' : a.hash;
+function saveSession(a) { try { localStorage.setItem(SESSION_KEY, JSON.stringify({ id: a.id, m: marker(a) })); } catch (e) { /* abaikan */ } }
+function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* abaikan */ } }
+function touchSession(a) {
+  try { const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); if (s && s.id === a.id) saveSession(a); } catch (e) { /* abaikan */ }
+}
+function tryRestore() {
+  if (S.restored || !S.cfgReady) return; S.restored = true;
+  let ses = null;
+  try { ses = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { ses = null; }
+  if (!ses || !ses.id) return;
+  const acc = S.accounts[ses.id];
+  if (!acc || acc.active === false || ses.m !== marker(acc) || !actFresh()) { clearSession(); return; }
+  enterApp(acc);
+}
+function onAccountsChanged() {
+  if (S.phase === 'login' || S.phase === 'boot') { if (S.accLoaded) tryRestore(); if (S.phase === 'login') updateLogin(); return; }
+  if (S.phase !== 'app') return;
+  const acc = S.accounts[S.me.id], was = S.me.role;
+  if (!acc || acc.active === false) { logout('Akun Anda dinonaktifkan atau dihapus oleh administrator.'); return; }
+  if (was && acc.role && acc.role !== was) { reenterForRole(acc, was); return; }
+  S.me = acc; touchSession(acc); paintBadge(); noticePending(false);
+  if (S.view === 'admin') { if (acc.role !== 'admin' && acc.role !== 'helper') { S.view = 'rekap'; renderView(); } else VIEWS.admin.update(); }
+  else if (S.view === 'akun') VIEWS.akun.update();
+}
+/* Peran akun ini diubah admin saat sedang masuk: menu dan halaman disusun ulang tanpa perlu masuk lagi */
+function reenterForRole(acc, was) {
+  if (S.unsubTx) S.unsubTx(); if (S.unsubSet) S.unsubSet(); (S.unsubPlan || []).forEach(f => { try { f(); } catch (e) { /* abaikan */ } });
+  S.unsubTx = S.unsubSet = null; S.unsubPlan = [];
+  closeSheet(true); disarm(); cancelReminder(); bkHidePopup(); dueHidePopup(); hidePwPrompt();
+  S.mounted = null; S.mountedView = null;   // menu bawah & sisi serta halaman disusun ulang sesuai peran baru
+  enterApp(acc);
+  toast(acc.role === 'admin' ? 'Anda kini administrator' : acc.role === 'helper' ? 'Anda kini admin pembantu' : was === 'helper' ? 'Peran admin pembantu Anda dicabut' : 'Peran administrator Anda dicabut');
+}
+function subscribeAccounts() {
+  S.unsubAcc = S.db.collection('accounts').onSnapshot(snap => {
+    const m = {};
+    snap.docs.forEach(d => { const v = d.data(); if (v) m[d.id] = Object.assign({ id: d.id }, v); });
+    S.accounts = m; S.accLoaded = true; onAccountsChanged();
+  }, () => { S.accLoaded = true; onAccountsChanged(); });
+}
+function subscribeLedger() {
+  const base = S.db.doc('ledger/' + S.me.id);
+  S.unsubTx = base.collection('tx').orderBy('date', 'desc').limit(MAX_TX).onSnapshot(snap => {
+    S.tx = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    S.txLoaded = true; indexTx(); if (S.phase === 'app') { renderView(); dueMaybePopup(); }
+  }, () => { S.txLoaded = true; if (S.phase === 'app') renderView(); });
+  S.unsubSet = base.collection('meta').doc('settings').onSnapshot(s => {
+    S.settings = s.exists ? (s.data() || {}) : {}; setCycleDay(S.settings.budgetDay); setCur(S.settings.currency); applyCustomCats(S.settings.customCats);
+    if (S.phase === 'app') renderView();
+  }, () => { /* abaikan */ });
+  S.unsubPlan = PLAN_COLS.map(c => base.collection(c).onSnapshot(snap => {
+    S.plan[c] = snap.docs.map(d => Object.assign({ id: d.id }, d.data())); (S.planGot || (S.planGot = {}))[c] = true;
+    if (S.phase === 'app') { renderView(); planChanged(); }
+  }, () => { (S.planGot || (S.planGot = {}))[c] = true; }));
+}
+function clearPlan() { S.plan = { cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [] }; S.planGot = {}; }
+function enterApp(acc) {
+  S.lastAct = Date.now(); S.warned = false; saveAct(true);
+  S.me = acc; S.phase = 'app'; S.view = routeFirstView(); S.routeReplace = true; S.period = 'month'; S.bkPrev = null; S.bkNote = null; S.anchor = startOfDay(new Date()); S.ins = null;
+  S.filters = { q: '', type: 'all', cat: 'all', range: 'all' }; S.shown = 60;
+  S.tx = []; S.txLoaded = false; S.settings = {}; applyCustomCats(null); S.sub = {}; S.catView = null; S.ins = null; setCycleDay(1); S.byDay = {}; S.totals = { in: 0, out: 0, xf: 0, saldo: 0 }; clearPlan(); S.dueDay = null; S.dueChecked = null;
+  subscribeLedger(); onEnterApp(); showPhase(); S.pendN = -1; setTimeout(() => { if (typeof frBoot === 'function') frBoot(); }, 1200); setTimeout(showPwPrompt, 650); setTimeout(() => noticePending(true), 900); setTimeout(bkTick, 1600);
+}
+/* Kait untuk edisi lain (Netlify menggantikan fungsi-fungsi di bawah ini) */
+function onEnterApp() { /* tidak ada */ }
+function onLogout() { /* tidak ada */ }
+function logout(msg) {
+  onLogout(); if (typeof frStop === 'function') frStop();
+  if (S.unsubTx) S.unsubTx(); if (S.unsubSet) S.unsubSet(); (S.unsubPlan || []).forEach(f => { try { f(); } catch (e) { /* abaikan */ } });
+  S.unsubTx = S.unsubSet = null; S.unsubPlan = []; S.me = null; S.tx = []; S.txLoaded = false; S.settings = {}; applyCustomCats(null); S.sub = {}; S.catView = null; S.ins = null; setCycleDay(1); clearPlan();
+  closeSheet(true); hidePwPrompt(); clearSession(); disarm(); cancelReminder(); bkHidePopup(); dueHidePopup(); routeReset(); S.bkPrev = null; S.bkNote = null;
+  S.phase = 'login'; S.loginMsg = msg || ''; S.restored = true; showPhase();
+  window.scrollTo(0, 0);
+}
+async function doLogin() {
+  const err = $('#l-err'), btn = $('#l-btn'), id = slug($('#l-name').value), pw = $('#l-pw').value;
+  const fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  if (!id || !pw) return fail('Isi nama dan kata sandi.');
+  btn.disabled = true; btn.textContent = 'Memeriksa…';
+  const acc = S.accounts[id];
+  let ok = false;
+  try { ok = !!acc && acc.active !== false && await checkPw(acc, pw); } catch (e) { ok = false; }
+  if (!ok) {
+    S.fails++; await sleep(Math.min(3000, 350 * S.fails));
+    btn.disabled = false; btn.textContent = 'Masuk';
+    return fail(acc && acc.status === 'pending' ? 'Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.' : acc && acc.status === 'rejected' ? 'Pendaftaran Anda ditolak admin. Hubungi administrator.' : acc && acc.active === false ? 'Akun ini dinonaktifkan. Hubungi administrator.' : 'Username atau kata sandi salah.');
+  }
+  S.fails = 0;
+  if ($('#l-rem') && $('#l-rem').checked) saveSession(acc); else clearSession();
+  enterApp(acc);
+}
+async function createAccount() {
+  const nameEl = $('#acc-name'), err = $('#acc-err');
+  const name = nameEl.value.replace(/\s+/g, ' ').trim(), id = slug(name), rv = $('#acc-role') ? $('#acc-role').value : 'user', role = isAdmin() && (rv === 'admin' || rv === 'helper') ? rv : 'user';
+  const fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  if (name.length < 2) return fail('Isi nama minimal 2 huruf.');
+  if (!id) return fail('Nama harus memuat huruf atau angka.');
+  if (S.accounts[id]) return fail('Nama ini sudah dipakai. Tambahkan inisial atau nama belakang.');
+  try {
+    const msg = await createAccountRemote(name, id, role); if (msg) return fail(msg);
+    nameEl.value = ''; $('#acc-prev').innerHTML = 'Nama untuk masuk: <b>—</b>';
+    toast('Akun ' + name + ' dibuat. Kata sandi awal: ' + DEFAULT_PW);
+  } catch (e) { fail(dbErrMsg(e)); }
+}
+async function createAccountRemote(name, id, role) {
+  const ref = S.db.doc('accounts/' + id), snap = await ref.get();
+  if (snap.exists) return 'Nama ini sudah dipakai. Tambahkan inisial atau nama belakang.';
+  await ref.set({ name, role, isDefault: true, active: true, status: 'active', createdAt: new Date().toISOString(), createdBy: S.me.id });
+  return '';
+}
+async function setupAdmin() {
+  try {
+    await S.db.doc('accounts/admin').set({ name: 'Administrator', role: 'admin', isDefault: true, active: true, createdAt: new Date().toISOString(), createdBy: 'setup' });
+    toast('Akun admin dibuat. Masuk dengan nama admin.');
+  } catch (e) { toast(dbErrMsg(e)); }
+}
+async function deleteLedger(id) {
+  const base = S.db.doc('ledger/' + id), snap = await base.collection('tx').limit(MAX_TX).get(), photos = [];
+  const refs = snap.docs.map(d => { const v = d.data(); if (v && v.photo) photos.push(v.photo); return base.collection('tx').doc(d.id); });
+  const all = refs.concat(photos.map(p => base.collection('photos').doc(p)));
+  for (let i = 0; i < all.length; i += 4) await Promise.all(all.slice(i, i + 4).map(r => r.delete()));
+  await base.collection('meta').doc('settings').delete();
+}
+async function changePw() {
+  const err = $('#pw-err'), ok = $('#pw-ok'), cur = $('#pw-cur').value, n1 = $('#pw-new').value, n2 = $('#pw-new2').value;
+  const fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true; ok.hidden = true;
+  if (n1.length < MIN_PW) return fail('Kata sandi baru minimal ' + MIN_PW + ' karakter.');
+  if (n1 === DEFAULT_PW) return fail('Pilih kata sandi yang berbeda dari kata sandi awal.');
+  if (n1 !== n2) return fail('Konfirmasi kata sandi tidak sama.');
+  try {
+    const msg = await applyPwChange(cur, n1); if (msg) return fail(msg);
+    $('#pw-form').reset(); ok.textContent = 'Kata sandi diganti. Pakai yang baru saat masuk berikutnya.'; ok.hidden = false;
+  } catch (e) { fail(dbErrMsg(e)); }
+}
+async function applyPwChange(cur, n1) {
+  const acc = me();
+  if (!(await checkPw(acc, cur))) return 'Kata sandi saat ini salah.';
+  const h = await hashPw(acc.id, n1);
+  await S.db.doc('accounts/' + acc.id).update({ hash: h, isDefault: false });
+  return '';
+}
+function updateDayNote() {
+  const el = $('#bud-day'), n = $('#bud-day-note'); if (!el || !n) return;
+  const d = cleanCycleDay(String(el.value).replace(/\D/g, '') || 1), c = cycleOf(new Date(), d);
+  n.textContent = d === 1 ? 'Periode mengikuti bulan kalender (tanggal 1 sampai akhir bulan).' : 'Periode saat ini: ' + cycleName(c, true) + '. Periode berikutnya mulai tanggal ' + d + '.';
+}
+async function saveBudget() {
+  const v = Number(String($('#bud').value).replace(/\D/g, '')) || 0, dEl = $('#bud-day'), d = cleanCycleDay(dEl ? String(dEl.value).replace(/\D/g, '') || 1 : 1);
+  const need = Object.keys((S.settings && S.settings.catBudgets) || {}).reduce((a, k) => a + (Number(S.settings.catBudgets[k]) || 0), 0);
+  if (need > v) { toast('Batas tidak boleh lebih kecil dari total budget kategori (' + fmtRp(need) + '). Kurangi budget kategori dulu.'); return; }
+  const next = Object.assign({}, S.settings, { budget: v }); if (d > 1) next.budgetDay = d; else delete next.budgetDay;
+  try {
+    await S.db.doc('ledger/' + S.me.id).collection('meta').doc('settings').set(next);
+    toast((v ? 'Anggaran disimpan' : 'Anggaran dihapus') + (d > 1 ? ' · periode mulai tanggal ' + d : ''));
+  } catch (e) { toast(dbErrMsg(e)); }
+}
+const csvCell = v => { let s = String(v == null ? '' : v); if (typeof v === 'string' && /^[=+\-@]/.test(s)) s = "'" + s; return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+async function exportCsv() {
+  const rows = [['Tanggal', 'Jenis', 'Kategori', 'Jumlah (' + curSym() + ')', 'Catatan', 'Barang'].map(h => i18n(h))];
+  S.tx.slice().reverse().forEach(t => rows.push([t.date, i18n(t.type === 'in' ? 'Pemasukan' : 'Pengeluaran'), i18n(catOf(t.cat).label), Number(t.amount) || 0, t.note || '', (t.items || []).map(i => i.n + ' x' + i.q + ' @' + i.p).join(' | ')]));
+  const csv = '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
+  try { await S.downloads.save({ filename: 'saku-' + S.me.id + '-' + ymd(new Date()) + '.csv', data: csv }); toast('File siap disimpan'); }
+  catch (e) { if (!e || e.code !== 'declined') toast('File tidak bisa disimpan di tampilan ini.'); }
+}
+async function addDemo() {
+  if (S.busy.demo) return; S.busy.demo = true;
+  const base = S.db.doc('ledger/' + S.me.id), list = demoTx(), now = new Date().toISOString();
+  try {
+    for (let i = 0; i < list.length; i += 4) {
+      await Promise.all(list.slice(i, i + 4).map(t => base.collection('tx').doc().set(Object.assign({}, t, { createdAt: now, updatedAt: now }))));
+      toast('Menambahkan contoh ' + Math.min(i + 4, list.length) + ' dari ' + list.length);
+    }
+    toast('Data contoh siap. Hapus kapan saja di Pengaturan.');
+  } catch (e) { toast(dbErrMsg(e)); }
+  S.busy.demo = false;
+}
+async function delDemo() {
+  const base = S.db.doc('ledger/' + S.me.id), ids = S.tx.filter(t => t.demo).map(t => t.id);
+  try {
+    for (let i = 0; i < ids.length; i += 4) await Promise.all(ids.slice(i, i + 4).map(id => base.collection('tx').doc(id).delete()));
+    toast('Data contoh dihapus');
+  } catch (e) { toast(dbErrMsg(e)); }
+}
+
+/* ================= Tampilan: login & kerangka ================= */
+function nodbHTML() {
+  return '<div class="boot">' + LOGO + '<h2>Penyimpanan Belum Tersedia</h2><p>Buka halaman ini lewat claude.ai dan masuk ke akun Claude Anda agar catatan keuangan bisa disimpan.</p></div>';
+}
+function loginHTML() {
+  return `<div class="login">
+    <section class="login-brand" aria-label="Tentang aplikasi">
+      <div>
+        <div class="brand">${LOGO}${WM}</div>
+        <h1>Semua uang ada di <span>SaKu.</span></h1>
+        <p>Satu buku kas pribadi yang rapi: catat, atur, dan pantau uang Anda di HP maupun laptop.</p>
+      </div>
+      <div class="saku-art" aria-hidden="true">
+        <svg viewBox="0 0 300 200" role="presentation" focusable="false">
+          <g class="sa-coins">
+            <g class="sa-c1"><circle cx="92" cy="88" r="31"/><circle class="in" cx="92" cy="88" r="21"/></g>
+            <g class="sa-c2"><circle cx="158" cy="68" r="37"/><circle class="in" cx="158" cy="68" r="26"/><text x="158" y="77" text-anchor="middle">${esc(curSym())}</text></g>
+            <g class="sa-c3"><circle cx="224" cy="90" r="28"/><circle class="in" cx="224" cy="90" r="19"/></g>
+          </g>
+          <path class="sa-pk" d="M44 100h212a14 14 0 0 1 14 14v40a38 38 0 0 1-38 38H68a38 38 0 0 1-38-38v-40a14 14 0 0 1 14-14z"/>
+          <path class="sa-st" d="M54 124h192"/>
+          <text class="sa-nm" x="150" y="170" text-anchor="middle">SaKu</text>
+        </svg>
+      </div>
+      <ul class="saku-grid" aria-label="Arti SaKu">
+        <li><b>S</b><span>Simpan</span><small>tabungan &amp; investasi</small></li>
+        <li><b>A</b><span>Anggaran</span><small>batas &amp; estimasi habis</small></li>
+        <li><b>K</b><span>Keluar-masuk</span><small>catat tiap transaksi</small></li>
+        <li><b>U</b><span>Uang</span><small>saldo selalu jelas</small></li>
+      </ul>
+    </section>
+    <section class="login-form-wrap">
+      <div>
+        ${langSwitchHTML()}
+        <div class="seg auth-tabs" id="auth-tabs" role="group" aria-label="Masuk atau daftar" hidden>
+          <button type="button" data-act="auth-tab" data-v="masuk" aria-pressed="true">Masuk</button>
+          <button type="button" data-act="auth-tab" data-v="daftar" aria-pressed="false">Daftar</button>
+        </div>
+        <form class="login-form" id="login-form" novalidate hidden>
+          <h2>Masuk</h2>
+          <p class="sub">Pakai username dan kata sandi akun Anda. Belum punya akun? Pilih Daftar.</p>
+          <div class="field"><label for="l-name">Username</label><input class="input" id="l-name" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="mis. sifulan12"></div>
+          <div class="field"><label for="l-pw">Kata sandi</label><div class="pw"><input class="input" id="l-pw" name="password" type="password" autocomplete="current-password" placeholder="Kata sandi"><button type="button" class="eye" data-act="toggle-pw" data-t="l-pw" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div></div>
+          <label class="check"><input type="checkbox" id="l-rem" checked> Ingat saya di perangkat ini</label>
+          <p class="form-err" id="l-err" role="alert" hidden></p>
+          <button type="button" class="btn btn-ghost btn-sm" id="l-resend" data-act="mail-resend" hidden>Kirim ulang email konfirmasi</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="l-mchg" data-act="mail-change-reg" hidden>Salah email? Ubah email</button>
+          <button class="btn btn-primary" id="l-btn" type="submit">Masuk</button>
+        </form>
+        <form class="login-form" id="reg-form" novalidate hidden>
+          <h2>Daftar Akun</h2>
+          <p class="sub">${S.mailv ? 'Isi data diri Anda. Akun aktif setelah Anda mengonfirmasi email.' : 'Isi data diri Anda. Akun aktif setelah disetujui admin.'}</p>
+          <div class="row2">
+            <div class="field"><label for="r-first">Nama depan</label><input class="input" id="r-first" autocomplete="given-name" maxlength="30" placeholder="mis. Jane"></div>
+            <div class="field"><label for="r-last">Nama belakang</label><input class="input" id="r-last" autocomplete="family-name" maxlength="30" placeholder="mis. Doe"></div>
+          </div>
+          <div class="field"><label for="r-user">Username <span class="lbl-note">(Untuk Login)</span></label><input class="input" id="r-user" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="mis. janedoe"><small class="hint">4–20 huruf kecil atau angka, tanpa spasi. Contoh: <b>janedoe</b></small></div>
+          <div class="field"><label for="r-phone">Nomor HP</label><input class="input" id="r-phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="mis. 081234567890"></div>
+          <div class="field"><label for="r-email">Email</label><input class="input" id="r-email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="80" placeholder="mis. janedoe@email.com"></div>
+          <div class="field"><label for="r-pw">Kata sandi</label><div class="pw"><input class="input" id="r-pw" type="password" autocomplete="new-password" maxlength="100" placeholder="Minimal ${MIN_PW} karakter"><button type="button" class="eye" data-act="toggle-pw" data-t="r-pw" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div><small class="hint">Buat sendiri, minimal ${MIN_PW} karakter. Dipakai untuk masuk ${S.mailv ? 'setelah email dikonfirmasi' : 'setelah disetujui admin'}.</small></div>
+          <div class="field"><label for="r-pw2">Ulangi kata sandi</label><div class="pw"><input class="input" id="r-pw2" type="password" autocomplete="new-password" maxlength="100" placeholder="Ketik ulang kata sandi"><button type="button" class="eye" data-act="toggle-pw" data-t="r-pw2" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div></div>
+          <p class="form-err" id="r-err" role="alert" hidden></p>
+          <button class="btn btn-primary" id="r-btn" type="submit">Kirim pendaftaran</button>
+        </form>
+        <div class="login-form reg-done" id="reg-done" role="status" hidden></div>
+        <div id="l-wait" class="empty"><div class="dot-pulse"></div><p>Memuat daftar akun…</p></div>
+        <div id="l-setup" class="login-form" hidden></div>
+        <p class="login-note">Catatan setiap akun disimpan terpisah.</p>
+      </div>
+    </section>
+  </div>`;
+}
+function noAccounts() { return S.accLoaded && (S.hasAccounts == null ? Object.keys(S.accounts).length === 0 : !S.hasAccounts); }
+function setupHTML() {
+  return '<h2>Belum Ada Akun</h2>' + (S.isOwner
+    ? '<p class="sub">Buat akun administrator pertama. Kata sandi awalnya <code>' + DEFAULT_PW + '</code>.</p><button class="btn btn-primary" data-act="setup-admin">Buat akun admin</button>'
+    : '<p class="sub">Pemilik halaman ini perlu membukanya lebih dulu untuk membuat akun administrator.</p>');
+}
+function submitSetup() { /* hanya edisi Netlify */ }
+function updateLogin() {
+  const f = $('#login-form'); if (!f) return;
+  const none = noAccounts();
+  const ready = S.accLoaded && !none, tab = S.authTab === 'daftar' ? 'daftar' : 'masuk', done = !!S.regDone;
+  f.hidden = !ready || tab !== 'masuk';
+  $('#reg-form').hidden = !ready || tab !== 'daftar' || done;
+  $('#reg-done').hidden = !ready || tab !== 'daftar' || !done;
+  $('#auth-tabs').hidden = !ready;
+  $$('[data-act="auth-tab"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === tab)));
+  $('#l-wait').hidden = S.accLoaded; $('#l-setup').hidden = !none;
+  if (done) {
+    const sent = S.regMail === 'sent';
+    $('#reg-done').innerHTML = sent
+      ? `<div class="done-ic">${ic('check', 28)}</div><h2>Cek Email Anda</h2><p class="sub">Terima kasih, <b>${esc(S.regDone.first)}</b>. Buka link konfirmasi / aktivasi akun melalui email Anda (cek juga folder spam). Setelah link dibuka, akun langsung aktif dan Anda bisa masuk.</p><p class="sub">Belum menerima email? Di layar Masuk pilih Kirim ulang email konfirmasi.</p><button type="button" class="btn btn-ghost" data-act="reg-back">Kembali ke Masuk</button>`
+      : `<div class="done-ic">${ic('check', 28)}</div><h2>Pendaftaran Terkirim</h2><p class="sub">Terima kasih, <b>${esc(S.regDone.first)}</b>. ${S.regMail === 'cap' ? 'Batas pengiriman email tercapai (3 kali per jam), jadi admin akan memeriksa data Anda.' : 'Admin akan memeriksa data Anda lebih dulu.'}</p><div class="done-box"><span>Username Anda</span><b>${esc(S.regDone.username)}</b><span>Kata sandi</span><b>Yang Anda buat tadi</b></div><p class="sub">Setelah disetujui admin, masuk memakai username dan kata sandi tersebut. Lupa kata sandi? Admin dapat meresetnya.</p><button type="button" class="btn btn-ghost" data-act="reg-back">Kembali ke Masuk</button>`;
+  }
+  if (none) { const el = $('#l-setup'), html = setupHTML(); if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; } }
+  const err = $('#l-err');
+  if (S.loginMsg && err) { err.textContent = S.loginMsg; err.hidden = false; S.loginMsg = ''; }
+}
+/* ================= Batas waktu login (tidak ada aktivitas) ================= */
+const DEFAULT_SESSION_MIN = 20, ACT_KEY = 'catatuang.act.v1';
+const cleanMin = v => { const n = Math.round(Number(v)); return n >= 1 && n <= 1440 ? n : DEFAULT_SESSION_MIN; };
+const sessMs = () => cleanMin(S.sessMin) * 60000;
+let actSaved = 0;
+function saveAct(force) { const t = Date.now(); if (!force && t - actSaved < 15000) return; actSaved = t; try { localStorage.setItem(ACT_KEY, String(t)); } catch (e) { /* abaikan */ } }
+function readAct() { try { return Number(localStorage.getItem(ACT_KEY)) || 0; } catch (e) { return 0; } }
+const actFresh = () => Date.now() - readAct() < sessMs();
+const lastActive = () => Math.max(S.lastAct || 0, readAct());
+function onActivity() { /* kait edisi lain */ }
+function markActive() {
+  if (S.phase !== 'app') return;
+  if (Date.now() - lastActive() >= sessMs()) { idleCheck(); return; }
+  S.lastAct = Date.now(); S.warned = false; saveAct(false); onActivity();
+}
+function idleCheck() {
+  if (S.phase !== 'app') return;
+  const left = sessMs() - (Date.now() - lastActive());
+  if (left <= 0) { logout('Sesi berakhir karena tidak ada aktivitas selama ' + cleanMin(S.sessMin) + ' menit. Silakan masuk lagi.'); return; }
+  if (left <= Math.min(60000, sessMs() / 3) && !S.warned) { S.warned = true; toast('Sesi berakhir dalam ' + (left > 45000 ? '1 menit' : Math.max(1, Math.ceil(left / 1000)) + ' detik') + '. Sentuh layar untuk tetap masuk.'); }
+}
+function saveSessMinRemote(n) { const ref = S.db.doc('config/app'); return ref.get().then(c => ref.set(Object.assign({}, c && c.exists ? c.data() : {}, { sessionMinutes: n, updatedAt: new Date().toISOString(), updatedBy: S.me.id }))); }
+async function saveSessMin() {
+  const err = $('#sess-err'), raw = String($('#sess-min').value || '').trim(), n = Number(raw);
+  err.hidden = true;
+  if (!/^\d{1,4}$/.test(raw) || n < 1 || n > 1440) { err.textContent = 'Isi angka 1 sampai 1440 menit.'; err.hidden = false; return; }
+  try { await saveSessMinRemote(n); S.sessMin = n; toast('Batas waktu login diubah menjadi ' + n + ' menit'); VIEWS.admin.update(); }
+  catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+/* ================= Pengingat ganti kata sandi awal (boleh dilewati, muncul tiap masuk) ================= */
+function showPwPrompt() {
+  const m = me();
+  if (S.phase !== 'app' || !m || !m.isDefault || $('#pwp')) return;
+  const bd = document.createElement('div'); bd.id = 'pwp'; bd.className = 'backdrop pwp-bd'; bd.setAttribute('data-act', 'pwp-bd');
+  bd.innerHTML = `<div class="pwp" role="dialog" aria-modal="true" aria-labelledby="pwp-t" aria-describedby="pwp-d"><div class="done-ic">${ic('lock', 26)}</div><h2 id="pwp-t">Ganti Kata Sandi Anda?</h2><p id="pwp-d">Akun Anda masih memakai kata sandi awal. Sebaiknya diganti agar catatan keuangan Anda lebih aman.</p><p class="pwp-s">Boleh dilewati. Pengingat ini muncul lagi setiap kali Anda masuk, sampai kata sandinya diganti.</p><div class="pwp-a"><button type="button" class="btn btn-primary" id="pwp-go" data-act="pwp-go">Ganti sekarang</button><button type="button" class="btn btn-ghost" data-act="pwp-skip">Nanti saja</button></div></div>`;
+  document.body.appendChild(bd);
+  const go = $('#pwp-go'); if (go && go.focus) go.focus();
+}
+function hidePwPrompt() { const p = $('#pwp'); if (p && p.remove) p.remove(); }
+/* ================= Pendaftaran akun (disetujui admin) ================= */
+const pendingList = () => Object.values(S.accounts).filter(a => a.status === 'pending').sort((a, b) => String(a.requestedAt || '').localeCompare(String(b.requestedAt || '')));
+const fmtBirth = d => { if (!isYmd(d)) return '-'; const p = parseYmd(d), now = new Date(); let age = now.getFullYear() - p.getFullYear(); if (now < new Date(now.getFullYear(), p.getMonth(), p.getDate())) age--; return p.getDate() + ' ' + MONTHS_S[p.getMonth()] + ' ' + p.getFullYear() + ' (' + age + ' th)'; };
+const cleanName = v => String(v || '').replace(/\s+/g, ' ').trim();
+function validateReg(v) {
+  if (!/\p{L}/u.test(v.first) || v.first.length > 30) return 'Isi nama depan Anda.';
+  if (!/\p{L}/u.test(v.last) || v.last.length > 30) return 'Isi nama belakang Anda.';
+  if (!/^[a-z][a-z0-9]{3,19}$/.test(v.username)) return 'Username 4–20 karakter: huruf kecil dan angka saja, diawali huruf. Contoh: sifulan12.';
+  if (v.birth && (!isYmd(v.birth) || v.birth < '1900-01-01' || v.birth > ymd(new Date()))) return 'Pilih tanggal lahir yang valid.';
+  if (!/^\+?\d{8,15}$/.test(v.phone)) return 'Nomor HP tidak valid. Isi 8–15 angka, contoh 081234567890.';
+  if (v.email.length > 80 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)) return 'Email tidak valid. Contoh: sifulan12@email.com.';
+  if (String(v.password || '').length < MIN_PW) return 'Kata sandi minimal ' + MIN_PW + ' karakter.';
+  if (v.password.length > 100) return 'Kata sandi terlalu panjang (maksimal 100 karakter).';
+  if (v.password === DEFAULT_PW) return 'Pilih kata sandi yang berbeda dari kata sandi awal.';
+  if (v.password !== v.password2) return 'Konfirmasi kata sandi tidak sama.';
+  return '';
+}
+async function registerAccount() {
+  if (S.regBusy) return;
+  const err = $('#r-err'), btn = $('#r-btn'), fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  const v = { first: cleanName($('#r-first').value), last: cleanName($('#r-last').value), username: String($('#r-user').value || '').trim().toLowerCase(), birth: String(($('#r-birth') || {}).value || '').trim(), phone: String($('#r-phone').value || '').replace(/[\s().-]/g, ''), email: String($('#r-email').value || '').trim(), password: String($('#r-pw').value || ''), password2: String($('#r-pw2').value || '') };
+  const bad = validateReg(v); if (bad) return fail(bad);
+  const dupe = 'Username ini sudah dipakai. Coba tambahkan angka lain.';
+  if (S.accounts[v.username]) return fail(dupe);
+  if (pendingList().length >= 30) return fail('Antrean pendaftaran sedang penuh. Coba lagi nanti atau hubungi admin.');
+  S.regBusy = true; btn.disabled = true; btn.textContent = 'Mengirim…';
+  try {
+    const msg = await submitRegistration({ first: v.first, last: v.last, username: v.username, birth: v.birth, phone: v.phone, email: v.email, password: v.password });
+    if (msg) { fail(msg); }
+    else {
+      S.regDone = { first: v.first, username: v.username };
+      ['#r-first', '#r-last', '#r-user', '#r-phone', '#r-email', '#r-pw', '#r-pw2'].forEach(q => { $(q).value = ''; });
+      updateLogin();
+    }
+  } catch (e) { fail(dbErrMsg(e)); }
+  S.regBusy = false; btn.disabled = false; btn.textContent = 'Kirim pendaftaran';
+}
+async function submitRegistration(v) {
+  const ref = S.db.doc('accounts/' + v.username), snap = await ref.get();
+  if (snap.exists) return 'Username ini sudah dipakai. Coba tambahkan angka lain.';
+  const now = new Date().toISOString(), hash = await hashPw(v.username, v.password);
+  await ref.set({ name: v.first + ' ' + v.last, first: v.first, last: v.last, role: 'user', status: 'pending', active: false, isDefault: false, hash, birth: v.birth, phone: v.phone, email: v.email, requestedAt: now, createdAt: now, createdBy: 'daftar' });
+  return '';
+}
+function regRow(a) {
+  const on = k => S.armed && S.armed.key === k, when = a.requestedAt ? new Date(a.requestedAt) : null;
+  const ts = when && !isNaN(when.getTime()) ? when.getDate() + ' ' + MONTHS_S[when.getMonth()] + ' ' + when.getFullYear() + ', ' + pad(when.getHours()) + ':' + pad(when.getMinutes()) : '-';
+  return `<div class="reg"><div class="reg-h"><span class="avatar">${esc(initials(a.name))}</span><div class="who"><b>${esc(a.name)}</b><small>${esc(a.id)}</small></div><span class="badge def">${a.emailOk === true ? 'Email terkonfirmasi' : a.emailOk === false ? 'Email belum dikonfirmasi' : 'Baru'}</span></div>
+    <dl class="reg-d">${a.birth ? `<div><dt>Tanggal lahir</dt><dd>${esc(fmtBirth(a.birth))}</dd></div>` : ''}<div><dt>Nomor HP</dt><dd>${esc(a.phone || '-')}</dd></div><div><dt>Email</dt><dd>${esc(a.email || '-')}</dd></div><div><dt>Mendaftar</dt><dd>${esc(ts)}</dd></div></dl>
+    <div class="acts"><button class="btn btn-primary btn-sm" data-act="reg-ok" data-id="${esc(a.id)}">${ic('check', 16)} Setujui</button><button class="btn btn-danger btn-sm ${on('rej:' + a.id) ? 'armed' : ''}" data-act="reg-no" data-id="${esc(a.id)}">${on('rej:' + a.id) ? 'Yakin tolak?' : 'Tolak'}</button></div></div>`;
+}
+function paintBadge() {
+  const n = S.phase === 'app' && isStaff() ? pendingList().length : 0;
+  $$('[data-badge]').forEach(b => { b.hidden = !n; b.textContent = n > 9 ? '9+' : String(n); });
+  const d = S.phase === 'app' && !isAdmin() ? dueCount() : 0;
+  $$('[data-due-badge]').forEach(b => { b.hidden = !d; b.textContent = d > 9 ? '9+' : String(d); });
+  if (typeof paintFrBadge === 'function') paintFrBadge();
+}
+function noticePending(first) {
+  if (S.phase !== 'app' || !isStaff()) { S.pendN = -1; return; }
+  const n = pendingList().length;
+  if (n > 0 && (first || n > S.pendN)) toast(n === 1 ? 'Ada 1 pendaftaran menunggu persetujuan' : 'Ada ' + n + ' pendaftaran menunggu persetujuan');
+  S.pendN = n;
+}
+function approveRemote(a) { return S.db.doc('accounts/' + a.id).update({ status: 'active', active: true, approvedAt: new Date().toISOString(), approvedBy: S.me.id }); }
+function rejectRemote(a) { return S.db.doc('accounts/' + a.id).update({ status: 'rejected', active: false, rejectedAt: new Date().toISOString(), rejectedBy: S.me.id }); }
+function resetRemote(a) { return S.db.doc('accounts/' + a.id).update({ isDefault: true, hash: null }); }
+function toggleRemote(a) { return S.db.doc('accounts/' + a.id).update({ active: a.active === false }); }
+function roleRemote(a, role) { return S.db.doc('accounts/' + a.id).update({ role, roleAt: new Date().toISOString(), roleBy: S.me.id }); }
+async function deleteRemote(a) { await deleteLedger(a.id); await S.db.doc('accounts/' + a.id).delete(); }
+function approveReg(id) {
+  const a = S.accounts[id]; if (!a || a.id === S.me.id) return;
+  approveRemote(a)
+    .then(() => toast('Akun ' + a.name + ' disetujui. Masuk dengan kata sandi yang dibuat saat mendaftar.'), e => toast(dbErrMsg(e)));
+}
+function rejectReg(id) {
+  const a = S.accounts[id]; if (!a) return;
+  if (!arm('rej:' + id)) { VIEWS.admin.update(); return; }
+  disarm();
+  rejectRemote(a)
+    .then(() => toast('Pendaftaran ' + a.name + ' ditolak'), e => toast(dbErrMsg(e)));
+  VIEWS.admin.update();
+}
+
+function navItems() {
+  if (isAdmin()) return [['admin', 'Administrator', 'shield', 'Admin'], ['akun', 'Pengaturan', 'settings', 'Akun']];
+  const items = NAV_GROUPS.map(g => [g.id, g.label, g.icon, g.tab]);
+  if (isHelper()) items.splice(items.length - 1, 0, ['admin', 'Admin', 'shield', 'Admin']);   // admin pembantu: semua menu biasa + menu Admin sebelum Pengaturan
+  return items;
+}
+/* Sidebar desktop bisa diciutkan ke rel ikon; pilihan diingat di perangkat ini */
+const SIDE_LS = 'saku.side.v1';
+function sideMin() { try { return localStorage.getItem(SIDE_LS) === '1'; } catch (e) { return !!S.sideMinMem; } }
+function sideSet(v) {
+  S.sideMinMem = !!v; try { localStorage.setItem(SIDE_LS, v ? '1' : '0'); } catch (e) { /* abaikan */ }
+  const sh = $('.shell'); if (sh) sh.classList.toggle('side-min', !!v);
+  const t = $('.side-toggle'); if (t) { t.setAttribute('aria-expanded', String(!v)); t.setAttribute('aria-label', v ? 'Buka menu' : 'Ciutkan menu'); t.title = v ? 'Buka menu' : 'Ciutkan menu'; }
+  clearTimeout(S.sideT); S.sideT = setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch (e) { /* abaikan */ } }, 320);
+}
+function navFold() { try { const v = JSON.parse(localStorage.getItem('saku.navfold') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function navFoldSet(g, shut) {
+  let f = navFold().filter(x => x !== g); if (shut) f.push(g);
+  try { localStorage.setItem('saku.navfold', JSON.stringify(f)); } catch (e) { /* abaikan */ }
+  const el = $('.nav-g[data-g="' + g + '"]'); if (!el) return;
+  el.classList.toggle('shut', !!shut);
+  const hb = el.querySelector('.nav-i'); if (hb && typeof hb.hasAttribute === 'function' && hb.hasAttribute('aria-expanded')) hb.setAttribute('aria-expanded', String(!shut));
+  const b = el.querySelector('.nav-fold'); if (b) { b.setAttribute('aria-expanded', String(!shut)); const t = shut ? 'Buka submenu' : 'Ciutkan submenu'; b.setAttribute('aria-label', t); b.title = t; }
+}
+function shellHTML() {
+  const m = me(), items = navItems();
+  const bdg = i => i[0] === 'admin' ? '<span class="nbadge" data-badge hidden></span>' : i[0] === 'tagihan' ? '<span class="nbadge" data-due-badge hidden></span>' : i[0] === 'teman' ? '<span class="nbadge" data-fr-badge hidden></span>' : '';
+  const subs = g => { const ls = leavesOf(g); return ls.length < 2 ? '' : `<div class="nav-sub" role="group" aria-label="Submenu ${esc((GROUP_OF(g) || {}).label || '')}"><div class="nav-sub-in">${ls.map(k => `<button type="button" class="nav-s" data-act="nav" data-v="${k}"><span class="nav-mk" aria-hidden="true"></span><span>${esc(LEAF[k].sub)}</span></button>`).join('')}</div></div>`; };
+  const fold = navFold();
+  const grp = i => { const sb = isAdmin() ? '' : subs(i[0]); const shut = sb && fold.indexOf(i[0]) >= 0;
+    return `<div class="nav-g${sb ? ' has-sub' : ''}${shut ? ' shut' : ''}" data-g="${i[0]}"><button class="nav-i" data-act="${sb ? 'nav-g' : 'nav'}" data-v="${i[0]}" title="${i[1]}" aria-label="${i[1]}"${sb ? ` aria-expanded="${!shut}"` : ''}>${ic(i[2], 20)}<span class="nav-t">${i[1]}</span>${bdg(i)}</button>${sb}${sb ? `<button type="button" class="nav-fold" data-act="nav-fold" data-g="${i[0]}" aria-expanded="${!shut}" aria-label="${shut ? 'Buka submenu' : 'Ciutkan submenu'}" title="${shut ? 'Buka submenu' : 'Ciutkan submenu'}">${ic('chevl', 14)}</button>` : ''}</div>`; };
+  const side = items.map(grp).join('');
+  const min = sideMin();
+  const tab = i => `<button class="tab" data-act="nav" data-v="${i[0]}"><span class="pill">${ic(i[2], 22)}${bdg(i)}</span><span>${i[3]}</span></button>`;
+  return `<div class="shell${min ? ' side-min' : ''}">
+    <aside class="side" aria-label="Menu">
+      <div class="side-top"><div class="brand">${LOGO}${WM}</div><button type="button" class="side-toggle" data-act="side-toggle" aria-expanded="${!min}" aria-label="${min ? 'Buka menu' : 'Ciutkan menu'}" title="${min ? 'Buka menu' : 'Ciutkan menu'}">${ic('chevl', 18)}</button></div>
+      <nav class="nav" aria-label="Navigasi">${side}</nav>
+      <div class="side-foot">
+        ${langSwitchHTML('lsw-side')}
+        <div class="me"><span class="avatar sm">${esc(initials(m.name))}</span><div><b>${esc(m.name)}</b><small>${roleName(m.role)}</small></div></div>
+        <button class="btn btn-dark btn-sm" data-act="logout" title="Keluar" aria-label="Keluar">${ic('logout', 16)} <span class="lbl">Keluar</span></button>
+      </div>
+    </aside>
+    <div class="main">
+      <div class="topbar"><div class="brand">${LOGO}${WM}</div><div class="top-r">${langSwitchHTML('lsw-top')}<button class="avatar sm" data-act="nav" data-v="akun" aria-label="Pengaturan akun">${esc(initials(m.name))}</button></div></div>
+      <div id="netbar" class="netbar" role="status" hidden></div>
+      <div id="mailbar" class="netbar mailbar" role="status" hidden></div>
+      <div id="view"></div>
+    </div>
+  </div>
+  ${(() => {
+    if (isAdmin()) return `<nav class="tabbar" aria-label="Navigasi utama">${items.map(tab).join('')}</nav>`;
+    const MAIN = ['rekap', 'transaksi', 'tagihan'], mi = items.filter(i => MAIN.indexOf(i[0]) < 0);
+    const by = id => items.filter(i => i[0] === id)[0];
+    const sheetI = i => `<button type="button" class="more-i" data-act="nav" data-v="${i[0]}"><span class="pill">${ic(i[2], 22)}${bdg(i)}</span><span>${i[3]}</span></button>`;
+    return `<nav class="tabbar has-add" aria-label="Navigasi utama">${tab(by('rekap'))}${tab(by('transaksi'))}<span class="tab-gap" aria-hidden="true"></span>${tab(by('tagihan'))}<button type="button" class="tab tab-more" data-act="more" aria-haspopup="true" aria-expanded="false" data-more="${mi.map(i => i[0]).join(',')}"><span class="pill">${ic('more', 22)}<span class="nbadge" data-badge hidden></span><span class="nbadge" data-fr-badge hidden></span></span><span>Lainnya</span></button></nav>
+    <div class="more-scrim" data-act="more-close"></div>
+    <div class="more-sh" role="menu" aria-label="Menu lainnya"><div class="more-h">Menu lainnya</div><div class="more-grid">${mi.map(sheetI).join('')}</div></div>`;
+  })()}
+  ${isAdmin() ? '' : `<button class="fab" data-act="add" aria-label="Catat transaksi">${ic('plus', 26)}<span class="fab-t">Catat transaksi</span></button>`}`;
+}
+function moreSet(v) {
+  const sh = $('.shell'); if (!sh) return;
+  const b = document.body; if (b && b.classList) b.classList.toggle('more-open', !!v);
+  const t = $('.tab-more'); if (t) t.setAttribute('aria-expanded', String(!!v));
+}
+function setNav() {
+  const cur = leafGroup(S.view);
+  $$('.nav-i[data-v], .tab[data-v], .more-i[data-v]').forEach(b => { if (b.dataset.v === cur) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  const tm = $('.tab-more'); if (tm && tm.dataset && tm.dataset.more) { const on = tm.dataset.more.split(',').indexOf(cur) >= 0; if (on) tm.setAttribute('aria-current', 'page'); else tm.removeAttribute('aria-current'); }
+  moreSet(false);
+  const leaf = S.view === 'kategori' ? ((S.catView && S.catView.back) || 'rekap') : S.view;
+  $$('.nav-s[data-v]').forEach(b => { if (b.dataset.v === leaf) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  const ag = $('.nav-g.shut[data-g="' + cur + '"]'); if (ag) navFoldSet(cur, false);
+  if (typeof paintMailBar === 'function') paintMailBar();
+  if (typeof paintAvatars === 'function') paintAvatars();
+  if (typeof tourMaybe === 'function') setTimeout(tourMaybe, 700);
+  paintBadge();
+}
+function showPhase() {
+  const app = $('#app');
+  if (S.mounted !== S.phase) {
+    S.mounted = S.phase;
+    if (S.phase === 'boot') app.innerHTML = '<div class="boot"><div class="dot-pulse"></div><p>Membuka buku kas…</p></div>';
+    else if (S.phase === 'nodb') app.innerHTML = nodbHTML();
+    else if (S.phase === 'login') app.innerHTML = loginHTML();
+    else if (S.phase === 'app') { app.innerHTML = shellHTML(); S.mountedView = null; S.entered = null; }
+  }
+  if (S.phase === 'login') updateLogin();
+  if (S.phase === 'app') renderView();
+}
+/* Transisi halus: animasi hanya saat berpindah halaman / data pertama tampil, tidak tiap data tersinkron */
+const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function enterAnim(kind) {
+  const v = $('#view'); if (!v || !v.classList || reduceMotion()) return;
+  v.classList.remove('enter', 'enter-soft');
+  void v.offsetWidth;
+  v.classList.add(kind);
+  clearTimeout(S.enterT);
+  S.enterT = setTimeout(() => { v.classList.remove('enter', 'enter-soft'); }, kind === 'enter' ? 1200 : 500);
+}
+function countUp(el, to) {
+  if (!el || reduceMotion() || !window.requestAnimationFrame) return;
+  const node = el.lastChild; if (!node || node.nodeType !== 3) return;
+  const t0 = Date.now(), D = 800, abs = Math.abs(to);
+  const step = () => {
+    if (!el.isConnected || S.mountedView !== 'rekap') return;
+    const k = Math.min(1, (Date.now() - t0) / D), e = 1 - Math.pow(1 - k, 4);
+    node.nodeValue = dots(abs * e);
+    if (k < 1) requestAnimationFrame(step); else node.nodeValue = dots(abs);
+  };
+  requestAnimationFrame(step);
+}
+function renderView() {
+  const v = $('#view'); if (!v) return;
+  if (isAdmin()) { if (S.view !== 'admin' && S.view !== 'akun') S.view = 'admin'; }
+  else if (S.view === 'admin' && !isHelper()) S.view = 'rekap';
+  if (S.view === 'kategori' && !S.catView) S.view = 'rekap';
+  if (!VIEWS[S.view]) S.view = isAdmin() ? 'admin' : 'rekap';
+  const V = VIEWS[S.view];
+  if (S.mountedView !== S.view) { v.innerHTML = ''; if (V.mount) V.mount(v); S.mountedView = S.view; setNav(); routePush(S.view, S.routeReplace); S.routeReplace = false; }
+  V.update(); paintBadge();
+  const key = S.view + (S.txLoaded ? ':ok' : ':load');
+  if (S.entered !== key) {
+    S.entered = key; enterAnim('enter');
+    if (S.view === 'rekap' && S.txLoaded) { const b = v.querySelector && v.querySelector('.hero .big'); if (b) countUp(b, kasTotal()); }
+  }
+}
+function skelHTML() {
+  return '<div class="skel-wrap" aria-busy="true" aria-label="Memuat catatan"><div class="skel skel-line"></div><div class="skel skel-hero"></div><div class="skel-grid"><div class="skel skel-card"></div><div class="skel skel-card"></div></div></div>';
+}
+
+/* ================= Tampilan: baris & grafik ================= */
+function txRow(t, pot) {
+  const c = catOf(t.cat), items = Array.isArray(t.items) ? t.items : [], a = Number(t.amount) || 0;
+  const pp = pot ? potOf(t) : null, up = pp ? pp.k !== 'tarik' : t.type === 'in';
+  const sub = t.note || items.map(i => i.n).filter(Boolean).join(', '), xf = accXf(t);
+  return `<button class="tx" data-act="tx-open" data-id="${esc(t.id)}"><span class="chip" style="--c:var(--s${c.slot})">${ic(c.icon, 20)}</span><span><span class="t1">${esc(c.label)}</span><span class="t2">${accTag(t)}${t.pending ? '<span class="pend">Menunggu unggah</span>' : ''}${t.photo ? ic('camera', 13) : ''}<em>${esc(sub)}</em>${items.length ? '<span>· ' + items.length + ' barang</span>' : ''}</span></span><span class="amt ${xf ? 'xf' : up ? 'in' : 'out'}">${xf ? '' : up ? '+' : '-'}${fmtRp(a)}</span></button>`;
+}
+function txGroups(list, limit) {
+  const tot = {};
+  list.forEach(t => { tot[t.date] = (tot[t.date] || 0) + cashOf(t); });
+  let html = '', cur = null;
+  list.slice(0, limit).forEach(t => {
+    if (t.date !== cur) {
+      cur = t.date; const n = tot[t.date];
+      html += `<div class="day-h"><span>${esc(fmtDateLong(parseYmd(t.date)))}</span><span>${n > 0 ? '+' : n < 0 ? '-' : ''}${fmtCompact(Math.abs(n))}</span></div>`;
+    }
+    html += txRow(t);
+  });
+  return html;
+}
+function barPath(x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h));
+  return 'M' + x.toFixed(1) + ',' + (y + h).toFixed(1) + 'V' + (y + r).toFixed(1) + 'Q' + x.toFixed(1) + ',' + y.toFixed(1) + ' ' + (x + r).toFixed(1) + ',' + y.toFixed(1) + 'H' + (x + w - r).toFixed(1) + 'Q' + (x + w).toFixed(1) + ',' + y.toFixed(1) + ' ' + (x + w).toFixed(1) + ',' + (y + r).toFixed(1) + 'V' + (y + h).toFixed(1) + 'Z';
+}
+function trendSVG(bk, W, P) {
+  const H = 224, pl = 46, pr = 6, pt = 12, pb = 28, pw = W - pl - pr, ph = H - pt - pb;
+  const maxV = Math.max(1, ...bk.map(b => Math.max(b.in, b.out)));
+  const top = niceMax(maxV), n = bk.length, slot = pw / n, bw = Math.max(2, Math.min(14, (slot - 4) / 2));
+  const y = v => pt + ph - (v / top) * ph;
+  const selKey = P === 'day' ? ymd(S.anchor) : ymd(new Date());
+  let g = '';
+  bk.forEach((b, i) => { if (b.key === selKey) g += `<rect class="band" x="${(pl + slot * i).toFixed(1)}" y="${pt}" width="${slot.toFixed(1)}" height="${ph}" rx="6"/>`; });
+  [0, top / 2, top].forEach(v => {
+    const yy = y(v).toFixed(1);
+    g += `<line class="${v === 0 ? 'bl' : 'gl'}" x1="${pl}" x2="${W - pr}" y1="${yy}" y2="${yy}"/><text class="ax" x="${pl - 8}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${v === 0 ? '0' : fmtCompact(v)}</text>`;
+  });
+  bk.forEach((b, i) => {
+    const cx = pl + slot * i + slot / 2;
+    if (b.out > 0) g += `<path class="b-out" d="${barPath(cx - bw - 1, y(b.out), bw, y(0) - y(b.out), 3)}"/>`;
+    if (b.in > 0) g += `<path class="b-in" d="${barPath(cx + 1, y(b.in), bw, y(0) - y(b.in), 3)}"/>`;
+    const d = b.d.getDate();
+    if (P === 'month') { if (d === 1 || d % 5 === 0) g += `<text class="ax ${b.key === selKey ? 'sel' : ''}" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle">${d}</text>`; }
+    else g += `<text class="ax ${b.key === selKey ? 'sel' : ''}" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle">${DAYS_S[b.d.getDay()]} ${d}</text>`;
+  });
+  bk.forEach((b, i) => { g += `<rect class="hit" data-i="${i}" x="${(pl + slot * i).toFixed(1)}" y="${pt}" width="${slot.toFixed(1)}" height="${ph + pb - 6}"/>`; });
+  const tin = bk.reduce((s, b) => s + b.in, 0), tout = bk.reduce((s, b) => s + b.out, 0);
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Grafik batang pemasukan dan pengeluaran. Total masuk ${fmtRp(tin)}, total keluar ${fmtRp(tout)}.">${g}</svg>`;
+}
+function drawTrend() {
+  const box = $('#trend'); if (!box) return;
+  const W = Math.max(300, Math.round(box.clientWidth || 640));
+  box.querySelector('.plot').innerHTML = trendSVG(S.bk, W, S.period);
+}
+function showTip(h) {
+  const box = $('#trend'), tip = $('#tip'); if (!box || !tip) return;
+  const b = S.bk[Number(h.dataset.i)]; if (!b) return;
+  tip.innerHTML = `<b>${esc(fmtDateLong(b.d))}</b><span><em>Masuk</em><em>${fmtRp(b.in)}</em></span><span><em>Keluar</em><em>${fmtRp(b.out)}</em></span>`;
+  tip.hidden = false;
+  const br = box.getBoundingClientRect(), hr = h.getBoundingClientRect(), half = tip.offsetWidth / 2;
+  const x = Math.max(half, Math.min(br.width - half, hr.left - br.left + hr.width / 2));
+  tip.style.left = x + 'px'; tip.style.top = '86px';
+}
+function hideTip() { ['#tip', '#tip2'].forEach(k => { const t = $(k); if (t) t.hidden = true; }); }
+function donutSVG(parts, total, topTxt, valTxt, alt) {
+  const R = 64, SW = 24, C = 2 * Math.PI * R, gap = parts.length > 1 ? 2.5 : 0;
+  let off = 0;
+  const segs = parts.map(p => {
+    const len = p.v / total * C, dash = Math.max(0.5, len - gap);
+    const s = `<circle cx="88" cy="88" r="${R}" fill="none" style="stroke:${p.color}" stroke-width="${SW}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 88 88)"/>`;
+    off += len; return s;
+  }).join('');
+  return `<svg viewBox="0 0 176 176" role="img" aria-label="${esc(alt)}"><circle cx="88" cy="88" r="${R}" fill="none" style="stroke:var(--sunken)" stroke-width="${SW}"/>${segs}<text class="dn-t" x="88" y="83" text-anchor="middle">${esc(topTxt)}</text><text class="dn-v" x="88" y="105" text-anchor="middle">${esc(valTxt)}</text></svg>`;
+}
+function rankHTML(rows, total, kind, slots) {
+  const show = rows.slice(0, S.showAll[kind] ? rows.length : 8);
+  const li = show.map(r => {
+    const c = catOf(r.id), sl = slots[r.id], bar = sl ? 'var(--s' + sl + ')' : 'var(--s0)', chipC = 'var(--s' + (sl || c.slot || 1) + ')', pct = r.v / total * 100;
+    return `<li class="rk-li"><button type="button" class="rk" style="--c:${chipC}" data-act="cat-open" data-id="${esc(r.id)}" data-t="${kind}" aria-label="Lihat isi kategori ${esc(c.label)}"><span class="chip">${ic(c.icon, 19)}</span><span class="nm">${esc(c.label)}<small>${r.n}×</small></span><span class="amt">${fmtRp(r.v)}</span><span class="bar"><i style="width:${Math.max(2, pct).toFixed(1)}%;background:${bar}"></i></span><span class="pct">${fmtPct(pct)}</span><span class="go">${ic('chevr', 16)}</span></button></li>`;
+  }).join('');
+  return `<ul class="rank">${li}</ul>` + (rows.length > 8 ? `<button class="btn btn-ghost btn-sm more" data-act="toggle-all" data-k="${kind}">${S.showAll[kind] ? 'Tampilkan lebih sedikit' : 'Lihat semua ' + rows.length + ' kategori'}</button>` : '');
+}
+function spendCard(list, tout) {
+  const rows = catTotals(list, 'out');
+  if (!rows.length) return '<section class="card"><div class="card-h"><h2>Pengeluaran per Kategori</h2></div><div class="empty-s">Belum ada pengeluaran di periode ini.</div></section>';
+  const slots = assignSlots(rows, 5), top = rows[0], c0 = catOf(top.id);
+  const parts = rows.slice(0, 5).map(r => ({ v: r.v, color: 'var(--s' + slots[r.id] + ')' }));
+  const rest = rows.slice(5).reduce((s, r) => s + r.v, 0);
+  if (rest > 0) parts.push({ v: rest, color: 'var(--s0)' });
+  const alt = 'Persentase pengeluaran: ' + rows.slice(0, 5).map(r => catOf(r.id).label + ' ' + fmtPct(r.v / tout * 100)).join(', ') + (rest > 0 ? ', lainnya ' + fmtPct(rest / tout * 100) : '');
+  return `<section class="card" aria-labelledby="h-spend"><div class="card-h"><h2 id="h-spend">Pengeluaran per Kategori</h2><span class="sub">${fmtRp(tout)}</span></div>
+    <p class="lead">${ic('award', 20)}<span>Terbesar: <b>${esc(c0.label)}</b> · ${fmtPct(top.v / tout * 100)} (${fmtRp(top.v)})</span></p>
+    <div class="donut">${donutSVG(parts, tout, 'Total keluar', fmtCompact(tout), alt)}</div>${rankHTML(rows, tout, 'out', slots)}</section>`;
+}
+function incomeCard(list, tin) {
+  const rows = catTotals(list, 'in');
+  if (!rows.length) return '<section class="card"><div class="card-h"><h2>Sumber Pemasukan</h2></div><div class="empty-s">Belum ada pemasukan di periode ini.</div></section>';
+  const slots = assignSlots(rows, 8), top = rows[0], c0 = catOf(top.id);
+  return `<section class="card" aria-labelledby="h-in"><div class="card-h"><h2 id="h-in">Sumber Pemasukan</h2><span class="sub">${fmtRp(tin)}</span></div>
+    <p class="lead">${ic('award', 20)}<span>Terbesar: <b>${esc(c0.label)}</b> · ${fmtPct(top.v / tin * 100)} (${fmtRp(top.v)})</span></p>${rankHTML(rows, tin, 'in', slots)}</section>`;
+}
+function rinciCard(P) {
+  const todayKey = ymd(new Date()), hl = P === 'day' ? ymd(S.anchor) : todayKey;
+  let rows, first, title;
+  if (P === 'month') {
+    first = 'Minggu'; title = 'per Minggu';
+    rows = weekChunks(S.bk).map(r => ({ label: ymd(r.from) === ymd(r.to) ? r.from.getDate() + ' ' + MONTHS_S[r.to.getMonth()] : r.from.getMonth() === r.to.getMonth() ? r.from.getDate() + '–' + r.to.getDate() + ' ' + MONTHS_S[r.to.getMonth()] : r.from.getDate() + ' ' + MONTHS_S[r.from.getMonth()] + '–' + r.to.getDate() + ' ' + MONTHS_S[r.to.getMonth()], in: r.in, out: r.out, now: ymd(r.from) <= hl && hl <= ymd(r.to) }));
+  } else {
+    first = 'Hari'; title = P === 'day' ? '7 Hari Terakhir' : 'per Hari';
+    rows = S.bk.map(b => ({ label: DAYS_S[b.d.getDay()] + ', ' + b.d.getDate() + ' ' + MONTHS_S[b.d.getMonth()], in: b.in, out: b.out, now: b.key === hl }));
+  }
+  /* masuk: +hijau · keluar: −merah · selisih: hitam, bila minus merah dalam kurung */
+  const cc = n => n === 0 ? '–' : fmtCompact(Math.abs(n));
+  const cin = n => n > 0 ? `<td class="pos">+${cc(n)}</td>` : '<td>–</td>';
+  const cout = n => n > 0 ? `<td class="neg">-${cc(n)}</td>` : '<td>–</td>';
+  const sel = n => n < 0 ? `<td class="neg">(${cc(n)})</td>` : `<td>${cc(n)}</td>`;
+  const ti = rows.reduce((s, r) => s + r.in, 0), to = rows.reduce((s, r) => s + r.out, 0);
+  return foldCard('rinci', 'h-rinci', 'Rincian ' + title, 'dalam ' + curName(), `<div class="tblwrap"><table class="tbl"><thead><tr><th scope="col">${first}</th><th scope="col">Masuk</th><th scope="col">Keluar</th><th scope="col">Selisih</th></tr></thead><tbody>${rows.map(r => `<tr class="${r.now ? 'now' : ''}"><td>${esc(r.label)}</td>${cin(r.in)}${cout(r.out)}${sel(r.in - r.out)}</tr>`).join('')}</tbody><tfoot><tr><td>Total</td>${cin(ti)}${cout(to)}${sel(ti - to)}</tr></tfoot></table></div>`);
+}
+function txCard(list) {
+  const body = list.length
+    ? txGroups(list, 30) + (list.length > 30 ? `<button class="btn btn-ghost btn-sm more" data-act="nav" data-v="transaksi">Lihat semua di Transaksi</button>` : '')
+    : '<div class="empty-s">Belum ada transaksi di periode ini.</div>';
+  return foldCard('tx', 'h-tx', 'Transaksi di Periode Ini', list.length + ' catatan', body);
+}
+/* kartu yang bisa diminimize; pilihan diingat di perangkat ini (hanya kenyamanan, aman bila penyimpanan diblokir) */
+const FOLD_KEY = 'catatuang.lipat.v1';
+function foldState() {
+  if (!S.fold) { try { S.fold = JSON.parse(localStorage.getItem(FOLD_KEY)) || {}; } catch (e) { S.fold = {}; } if (typeof S.fold !== 'object') S.fold = {}; }
+  return S.fold;
+}
+function foldCard(k, id, title, sub, body) {
+  const shut = !!foldState()[k];
+  return `<section class="card foldable${shut ? ' shut' : ''}" aria-labelledby="${id}"><div class="card-h"><h2 id="${id}">${esc(title)}</h2><span class="card-r"><span class="sub">${esc(sub)}</span><button type="button" class="fold-btn" data-act="fold" data-k="${k}" data-t="${esc(title)}" aria-expanded="${!shut}" aria-controls="fold-${k}" aria-label="${shut ? 'Buka' : 'Ciutkan'} ${esc(title)}">${ic('chevd', 18)}</button></span></div><div class="fold-body" id="fold-${k}"${shut ? ' hidden' : ''}>${body}</div></section>`;
+}
+
+/* ================= Anggaran bulanan ================= */
+/* Kotak statistik berbingkai: label kecil, nilai, dan keterangan */
+function tileHTML(k, v, s, cls) { return `<div class="tile${cls ? ' ' + cls : ''}"><span class="k">${k}</span><b>${v}</b>${s ? `<small>${s}</small>` : ''}</div>`; }
+/* Estimasi anggaran (atau dana) habis berdasarkan tren pengeluaran periode berjalan */
+function etaTile(bm, ang) {
+  const e = bm.eta, w = ang ? 'anggaran' : 'dana', per = CYCLE.day > 1 ? 'periode' : 'bulan';
+  if (e.over) return tileHTML('Estimasi habis', 'Sudah habis', e.date ? 'terlampaui sejak ' + fmtDM(e.date) : 'sudah terlampaui', 'neg txt');
+  if (e.within) return tileHTML('Estimasi habis', '±' + fmtDM(e.date), 'sekitar ' + e.days + ' hari lagi, ' + (e.slack > 0 ? e.slack + ' hari sebelum ' + per + ' berakhir' : 'tepat di akhir ' + per), 'neg');
+  return tileHTML('Estimasi habis', 'Setelah akhir ' + per, 'cukup sampai akhir ' + per + ', proyeksi total ' + fmtRp(bm.proj) + ' (' + fmtPct(bm.projPct) + ' dari ' + w + ')', 'txt');
+}
+/* Peringatan pada grafik anggaran: kuning mulai 90% terpakai hingga 95%, merah di atas 95% (dan bila melebihi batas) */
+const BUD_WARN = 90, BUD_DANGER = 95;
+const budZone = (used, over) => (over || used > BUD_DANGER ? 'danger' : used >= BUD_WARN ? 'warn' : '');
+function budgetHTML(bm) {
+  if (bm.basis === 'dana' && bm.cap <= 0 && bm.outM <= 0) return '';
+  const ang = bm.basis === 'anggaran', over = bm.outM > bm.cap, zone = bm.cap > 0 || over ? budZone(bm.used, over) : '', flag = zone === 'warn' ? ' · mendekati batas' : zone === 'danger' && !over ? ' · hampir habis' : '', used = Math.min(100, bm.used), w = ang ? 'anggaran' : 'dana', r = n => fmtRp(Math.round(n)), per = CYCLE.day > 1 ? 'periode' : 'bulan';
+  const head = `<div class="bud-head"><span class="bud-name">${ang ? 'Anggaran' : 'Dana tersedia'} ${esc(bm.label)}</span><span class="${over ? 'neg' : zone}">${fmtPct(bm.used)} terpakai${flag}</span></div>
+    <div class="bud-amt"><b>${fmtRp(bm.outM)}</b><span>dari ${fmtRp(bm.cap)}</span></div>
+    <div class="meter ${over ? 'over' : zone}" role="progressbar" aria-label="${ang ? 'Anggaran terpakai' : 'Dana terpakai'}${flag.replace(' · ', ', ')}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(used)}"><i style="width:${used.toFixed(1)}%"></i></div>`;
+  const tiles = [tileHTML(bm.left >= 0 ? 'Sisa' : 'Lewat', fmtRp(Math.abs(bm.left)), bm.left >= 0 ? fmtPct(Math.max(0, 100 - bm.used)) + ' belum terpakai' : 'melebihi ' + w, bm.left < 0 ? 'neg' : '')];
+  if (bm.perDay != null) tiles.push(tileHTML('Jatah per hari', fmtRp(bm.perDay), bm.daysLeft + ' hari lagi'));
+  if (bm.isCur && bm.cap > 0 && bm.eta) tiles.push(etaTile(bm, ang));
+  if (ang && bm.isCur) tiles.push(tileHTML('Saldo bebas', fmtRp(bm.free), 'setelah ' + w + ' dicadangkan', bm.free < 0 ? 'neg' : ''));
+  const notes = [];
+  if (ang && bm.add > 0) notes.push(`Dasar ${fmtRp(bm.base)} + tambahan ${fmtRp(bm.add)}.`);
+  if (ang && bm.isCur) notes.push(`Sisa anggaran ${fmtRp(bm.reserved)} dicadangkan dari saldo pemasukan ${fmtRp(bm.saldo)}. Setoran tabungan dan investasi tidak dihitung sebagai pengeluaran, hanya mengurangi saldo.`);
+  if (!ang) notes.push(`Anggaran belum diatur, jadi saldo pemasukan menjadi dasar: saldo awal periode + pemasukan + penarikan − setoran simpanan. <button type="button" class="bud-link" data-act="nav" data-v="anggaran">Atur anggaran</button>`);
+  if (bm.isCur && bm.cap > 0 && bm.eta && bm.rate > 0) notes.push(`Tren pengeluaran ${r(bm.rate)} per hari (7 hari terakhir ${r(bm.rate7)}, rata-rata ${per} ini ${r(bm.rateAll)}).`);
+  const call = notes.length ? `<div class="bud-callout">${ic('info', 16)}<div>${notes.map(n => `<p>${n}</p>`).join('')}</div></div>` : '';
+  const acts = ang && bm.isCur ? `<div class="bud-acts"><button type="button" class="btn ${bm.ratio >= 0.85 ? 'btn-primary' : 'btn-ghost'} btn-sm" data-act="bud-add-open">${ic('plus', 16)} Tambah anggaran</button>${bm.add > 0 ? '<button type="button" class="btn btn-ghost btn-sm" data-act="bud-add-clear">Hapus tambahan</button>' : ''}</div>` : '';
+  return `<div class="budget">${head}<div class="tiles">${tiles.join('')}</div>${call}${acts}</div>`;
+}
+/* Rata-rata pengeluaran harian, mingguan, dan bulanan (periode) */
+function avgCard() {
+  const am = avgModel(S.tx, new Date()); if (!am.has) return '';
+  const per = CYCLE.day > 1 ? 'periode' : 'bulan', r = n => fmtRp(Math.round(n));
+  const row = (k, s, v) => `<div class="row"><span class="k">${k}<small>${s}</small></span><b>${v}</b></div>`;
+  const mv = am.perMonth != null ? r(am.perMonth) : am.days >= 14 ? '≈ ' + r(am.perMonthEst) : '–', ms = am.perMonth != null ? 'rata-rata ' + am.months + ' ' + per + ' penuh' : am.days >= 14 ? 'perkiraan, belum ada ' + per + ' penuh' : 'belum cukup data';
+  const cmp = am.curDays >= 2 && am.diffPct != null && Math.abs(am.diffPct) >= 1 ? `<p class="avg-note">${CYCLE.day > 1 ? 'Periode' : 'Bulan'} ini sejauh ini ${r(am.curPerDay)} per hari, ${fmtPct(Math.abs(am.diffPct))} ${am.diffPct > 0 ? 'di atas' : 'di bawah'} rata-rata.</p>` : '';
+  return `<section class="card avg" aria-labelledby="h-avg"><div class="card-h"><h2 id="h-avg">Rata-Rata Pengeluaran</h2><span class="sub">sejak ${esc(fmtDM(am.firstDate) + ' ' + am.firstDate.getFullYear())}</span></div><div class="avg-rows">${row('Per hari', 'dari ' + am.days + ' hari', r(am.perDay))}${row('Per minggu', 'per hari × 7', r(am.perWeek))}${row('Per ' + per, ms, mv)}</div>${cmp}<p class="avg-note">${am.days < 7 ? 'Baru ' + am.days + ' hari tercatat, angka makin akurat seiring waktu. ' : ''}Tidak termasuk setoran ke tabungan dan investasi.</p></section>`;
+}
+function bmWithAdd(bm, v) {
+  const adds = Object.assign({}, S.settings && S.settings.budgetAdds); adds[bm.key] = bm.add + v;
+  return budgetModel(S.tx, S.anchor, Object.assign({}, S.settings, { budgetAdds: adds }), new Date());
+}
+function budPrevText(bm, v) {
+  if (v <= 0) return 'Anggaran saat ini ' + fmtRp(bm.budget) + ', saldo bebas ' + fmtRp(bm.free) + '.';
+  const nb = bmWithAdd(bm, v);
+  return 'Anggaran menjadi <b>' + fmtRp(nb.budget) + '</b>. Saldo bebas menjadi <b>' + fmtRp(nb.free) + '</b>.' + (nb.free < 0 ? ' Ini melebihi saldo pemasukan Anda.' : '');
+}
+function budAddCard(bm) {
+  if (!S.budAdd || bm.basis !== 'anggaran' || !bm.isCur) return '';
+  const v = Number(String(S.baVal || '').replace(/\D/g, '')) || 0;
+  return `<section class="card bud-add-card" aria-labelledby="h-ba"><form id="bud-add-form" novalidate><h2 class="t" id="h-ba">Tambah Anggaran ${esc(bm.label)}</h2><p class="desc">Tambahan hanya berlaku untuk bulan ini. Anggaran yang bertambah mengurangi saldo pemasukan yang bebas dipakai.</p>
+    <div class="field"><label for="ba-amt">Jumlah tambahan</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="ba-amt" data-money="ba" inputmode="numeric" autocomplete="off" placeholder="0" value="${esc(S.baVal || '')}"></div></div>
+    <div class="bud-chips">${[100000, 250000, 500000, 1000000].map(n => `<button type="button" class="btn btn-ghost btn-sm" data-act="ba-chip" data-v="${n}">+${dots(n)}</button>`).join('')}</div>
+    <p class="bud-prev" id="ba-prev" role="status">${budPrevText(bm, v)}</p><p class="form-err" id="ba-err" role="alert" hidden></p>
+    <div class="btn-row"><button class="btn btn-primary" type="submit">Simpan tambahan</button><button type="button" class="btn btn-ghost" data-act="bud-add-cancel">Batal</button></div></form></section>`;
+}
+function curBudget() { return budgetModel(S.tx, S.anchor, S.settings, new Date()); }
+function refreshBudget() { if (S.view === 'rekap' || S.view === 'anggaran') VIEWS[S.view].update(); }
+function updateBudPrev() {
+  const i = $('#ba-amt'), p = $('#ba-prev'); if (!i || !p) return;
+  S.baVal = i.value; p.innerHTML = budPrevText(curBudget(), Number(i.value.replace(/\D/g, '')) || 0);
+}
+async function saveBudgetAdd() {
+  const i = $('#ba-amt'), err = $('#ba-err'), v = Math.min(1e12, Number(String(i ? i.value : '').replace(/\D/g, '')) || 0);
+  if (v <= 0) { if (err) { err.textContent = 'Isi jumlah tambahan lebih dari 0.'; err.hidden = false; } return; }
+  const bm = curBudget(), adds = Object.assign({}, S.settings && S.settings.budgetAdds); adds[bm.key] = bm.add + v;
+  try {
+    await S.db.doc('ledger/' + S.me.id).collection('meta').doc('settings').set(Object.assign({}, S.settings, { budgetAdds: adds }));
+    S.budAdd = false; S.baVal = ''; toast('Anggaran ' + bm.label + ' ditambah ' + fmtRp(v)); refreshBudget();
+  } catch (e) { toast(dbErrMsg(e)); }
+}
+async function clearBudgetAdd() {
+  const bm = curBudget(), adds = Object.assign({}, S.settings && S.settings.budgetAdds); delete adds[bm.key];
+  try {
+    await S.db.doc('ledger/' + S.me.id).collection('meta').doc('settings').set(Object.assign({}, S.settings, { budgetAdds: adds }));
+    S.budAdd = false; S.baVal = ''; toast('Tambahan anggaran ' + bm.label + ' dihapus');
+  } catch (e) { toast(dbErrMsg(e)); }
+}
+
+/* ================= Tampilan: Rekap ================= */
+const welcomeHTML = () => { const h = new Date().getHours(); return `<section class="welcome" aria-label="Sambutan"><h2 class="welcome-h">${h < 11 ? 'Selamat pagi' : h < 15 ? 'Selamat siang' : h < 19 ? 'Selamat sore' : 'Selamat malam'}, ${esc(String((me() && me().name) || '').split(' ')[0])}</h2><p class="welcome-s">Semua uang ada di SaKu.</p></section>`; };
+function rekapHTML() {
+  if (!S.txLoaded) return skelHTML();
+  const P = S.period, A = S.anchor, rg = rangeFor(P, A), s = ymd(rg.start), e = ymd(rg.end);
+  const list = S.tx.filter(t => t.date >= s && t.date <= e && !isXfer(t));
+  const tin = sumType(list, 'in'), tout = sumType(list, 'out'), net = tin - tout;
+  const pr = rangeFor(P, shiftAnchor(P, A, -1)), ps = ymd(pr.start), pe = ymd(pr.end);
+  const pout = sumType(S.tx.filter(t => t.date >= ps && t.date <= pe), 'out');
+  const now = startOfDay(new Date()), nx = rangeFor(P, shiftAnchor(P, A, 1));
+  const canNext = nx.start <= now, isCur = rg.start <= now && now <= rg.end;
+  const saldo = kasTotal();
+  S.bk = buildBuckets(P, A);
+  S.cmp = compareModel(S.tx, A, new Date());
+  S.wide = !!(window.matchMedia && window.matchMedia('(min-width: 1000px)').matches);
+  const label = rangeLabel(P, rg, A), prevWord = P === 'day' ? 'kemarin' : P === 'week' ? 'minggu lalu' : CYCLE.day > 1 ? 'periode lalu' : 'bulan lalu';
+  let delta = '';
+  if (pout > 0) { const ch = (tout - pout) / pout * 100; if (Math.abs(ch) >= 0.5) delta = `<p class="delta ${ch > 0 ? 'neg' : 'pos'}">Pengeluaran ${ch > 0 ? 'naik' : 'turun'} ${fmtPct(Math.abs(ch))} dari ${prevWord}</p>`; }
+  const bmx = P === 'month' ? budgetModel(S.tx, A, S.settings, new Date()) : null;
+  const budget = bmx ? budgetHTML(bmx) : '', budAdd = bmx ? budAddCard(bmx) : '';
+  const hello = `${new Date().getHours() < 11 ? 'Selamat pagi' : new Date().getHours() < 15 ? 'Selamat siang' : new Date().getHours() < 19 ? 'Selamat sore' : 'Selamat malam'}, ${esc(String((me() && me().name) || '').split(' ')[0])}`;
+  const head = `<div class="page-head"><div><h1>Rekap</h1></div><div class="seg" role="group" aria-label="Periode rekap">${[['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']].map(p => `<button data-act="period" data-v="${p[0]}" aria-pressed="${P === p[0]}">${p[1]}</button>`).join('')}</div></div>
+    <div class="range"><button class="icon-btn" data-act="prev" aria-label="Periode sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(label)}</span>${isCur ? '' : '<button class="back" data-act="today">Kembali ke sekarang</button>'}</div><button class="icon-btn" data-act="next" aria-label="Periode berikutnya" ${canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div>`;
+  const demo = S.demoCount > 0 ? `<div class="banner" style="margin-bottom:14px">${ic('info', 18)}<span>Sebagian catatan di sini adalah data contoh.</span><button class="btn btn-ghost btn-sm" data-act="demo-del">${S.armed && S.armed.key === 'demo' ? 'Yakin hapus?' : 'Hapus data contoh'}</button></div>` : '';
+  const hero = `<section class="hero" aria-label="Ringkasan saldo"><div><div class="eyebrow">Saldo keseluruhan</div><div class="big">${saldo < 0 ? '-' : ''}<span class="rp">${curSym()}</span>${dots(saldo)}</div></div>
+    <div class="hero-cap">Ringkasan ${esc(label)}</div>
+    <div class="hero-stats"><div class="hstat"><span class="k">${ic('down', 15)} Pemasukan</span><span class="v">${fmtRp(tin)}</span></div><div class="hstat"><span class="k">${ic('up', 15)} Pengeluaran</span><span class="v">${fmtRp(tout)}</span></div><div class="hstat"><span class="k">${ic('scale', 15)} Selisih</span><span class="v ${net < 0 ? 'neg' : net > 0 ? 'pos' : ''}">${net > 0 ? '+' : ''}${fmtRp(net)}</span></div></div>${delta}${budget}</section>`;
+  if (S.tx.length === 0) {
+    return head + hero + `<section class="card" style="margin-top:16px"><div class="empty"><h3>SaKu Masih Kosong</h3><p>Catat pemasukan atau pengeluaran pertama Anda. Foto struk bisa dipakai untuk mengisi daftar barang.</p><div class="acts"><button class="btn btn-primary" data-act="add">${ic('edit', 18)} Catat transaksi</button><button class="btn btn-ghost" data-act="demo-add">Lihat dengan data contoh</button></div></div></section>`;
+  }
+  const trend = `<section class="card" aria-labelledby="h-trend"><div class="card-h"><h2 id="h-trend">${P === 'month' ? 'Arus Kas Harian' : P === 'week' ? 'Arus Kas per Hari' : '7 Hari Terakhir'}</h2><span class="sub">masuk vs keluar</span></div><div class="chart" id="trend"><div class="plot"></div><div class="tip" id="tip" hidden></div></div><div class="legend"><span><i style="background:var(--in-bar)"></i>Pemasukan</span><span><i style="background:var(--out-bar)"></i>Pengeluaran</span></div></section>`;
+  const spend = spendCard(list, tout), income = incomeCard(list, tin), rinci = rinciCard(P), txc = txCard(list), cmp = cmpCard(S.cmp), pot = potMiniCard(), avg = avgCard(), acm = accMiniCard(s, e);
+  const dash = S.wide
+    ? `<div class="dash two"><div class="col">${trend}${cmp}${rinci}${txc}</div><div class="col">${acm}${pot}${avg}${spend}${income}</div></div>`
+    : `<div class="dash">${acm}${pot}${trend}${cmp}${avg}${spend}${income}${rinci}${txc}</div>`;
+  const dl = S.downloads ? `<div class="dl-row"><span class="lbl">Unduh</span><button class="btn btn-ghost btn-sm" data-act="dl-pdf">${ic('file', 16)} Laporan PDF</button><button class="btn btn-ghost btn-sm" data-act="dl-xlsx">${ic('table', 16)} Excel + grafik</button></div>` : '';
+  return head + demo + hero + budAdd + dl + dash;
+}
+VIEWS.rekap = { update() {
+  const hadFocus = !!(document.activeElement && document.activeElement.id === 'ba-amt');
+  $('#view').innerHTML = welcomeHTML() + subnavHTML('rekap') + rekapHTML(); drawTrend(); drawCmp();
+  if (hadFocus) { const i = $('#ba-amt'); if (i && i.focus) i.focus(); }
+} };
+
+/* ================= Tampilan: Isi Kategori (dibuka dari tabel kategori di Rekap) ================= */
+function katHTML() {
+  const C = S.catView; if (!C) return '';
+  const c = catOf(C.id), D = catDetailModel(S.tx, C.id, C.type, C.s, C.e), out = C.type === 'out', wd = out ? 'pengeluaran' : 'pemasukan';
+  const tile = (k, v, s) => `<div class="tile"><span class="k">${k}</span><b>${v}</b>${s ? `<small>${s}</small>` : ''}</div>`;
+  const head = `<div class="page-head cat-head"><div><button type="button" class="back-link" data-act="cat-back">${ic('chevl', 18)} Kembali ke ${C.back === 'insight' ? 'Insight' : 'Rekap'}</button><h1>${esc(c.label)}</h1><p class="hello">${esc(C.label)} · ${out ? 'Pengeluaran' : 'Pemasukan'}</p></div></div>`;
+  if (!D.count) return head + `<section class="card"><div class="empty"><h3>Tidak Ada Catatan</h3><p>Belum ada ${wd} kategori ini pada ${esc(C.label)}.</p></div></section>`;
+  const big = D.biggest, bd = big ? parseYmd(big.date) : null;
+  const sum = `<section class="card kat-sum" style="--c:var(--s${c.slot})"><div class="kat-top"><span class="chip">${ic(c.icon, 26)}</span><div><div class="kat-total">${fmtRp(D.total)}</div><small>${fmtPct(D.share)} dari total ${wd} ${esc(C.label)}</small></div></div>
+    <div class="tiles">${tile('Transaksi', D.count + ' catatan', D.items.length ? D.items.length + ' jenis barang' : 'tanpa daftar barang')}${tile('Rata-rata per transaksi', fmtRp(Math.round(D.avg)))}${tile('Terbesar', fmtRp(Number(big.amount) || 0), fmtDM(bd))}${tile('Porsi', fmtPct(D.share), 'dari ' + fmtRp(D.typeTotal))}</div></section>`;
+  const cc = n => dots(Math.round(n));
+  const itemsCard = D.items.length
+    ? `<section class="card" aria-labelledby="h-kitems"><div class="card-h"><h2 id="h-kitems">Barang yang Dibeli</h2><span class="sub">${D.items.length} jenis</span></div><div class="tblwrap"><table class="tbl"><thead><tr><th scope="col">Barang</th><th scope="col">Jumlah</th><th scope="col">Total</th></tr></thead><tbody>${D.items.map(o => `<tr><td>${esc(o.name)}<small class="tsub">${o.n}× dicatat · terakhir ${esc(fmtDM(parseYmd(o.last)))}</small></td><td>${o.q}</td><td>${o.total > 0 ? cc(o.total) : '–'}</td></tr>`).join('')}</tbody><tfoot><tr><td>Total barang</td><td>${D.items.reduce((a, o) => a + o.q, 0)}</td><td>${cc(D.itemsTotal)}</td></tr></tfoot></table></div>${D.noItems.n ? `<p class="avg-note">${D.noItems.n} transaksi (${fmtRp(D.noItems.amount)}) dicatat tanpa daftar barang.</p>` : ''}</section>`
+    : `<section class="card" aria-labelledby="h-kitems"><div class="card-h"><h2 id="h-kitems">Barang yang Dibeli</h2></div><div class="empty-s">Belum ada daftar barang di kategori ini. Isi bagian Barang yang Dibeli saat mencatat transaksi.</div></section>`;
+  const txs = `<section class="card" aria-labelledby="h-ktx"><div class="card-h"><h2 id="h-ktx">Transaksi di Kategori Ini</h2><span class="sub">${D.count} catatan</span></div>${txGroups(D.rows, 100)}${D.count > 100 ? '<p class="avg-note">Menampilkan 100 catatan terbaru.</p>' : ''}</section>`;
+  return head + `<div class="dash">${sum}${itemsCard}${txs}</div>`;
+}
+VIEWS.kategori = { update() { $('#view').innerHTML = katHTML(); } };
+
+/* ================= Tampilan: Insight (rekap pengeluaran per kategori; rentang dipilih per periode anggaran atau tanggal kustom) ================= */
+function insState() { return S.ins || (S.ins = { mode: 'n', n: 1, anchor: startOfDay(new Date()), cs: '', ce: '' }); }
+function insWindow() {
+  const I = insState();
+  if (I.mode === 'custom' && I.cs && I.ce) return { s: I.cs, e: I.ce, custom: true, cur: I.cs <= ymd(new Date()) && ymd(new Date()) <= I.ce };
+  const a = rangeFor('month', shiftAnchor('month', I.anchor, -(I.n - 1))), b = rangeFor('month', I.anchor), now = startOfDay(new Date());
+  return { s: ymd(a.start), e: ymd(b.end), custom: false, cur: a.start <= now && now <= b.end, a, b, canNext: rangeFor('month', shiftAnchor('month', I.anchor, I.n)).start <= now };
+}
+function insLabel(w) {
+  const I = insState();
+  if (!w.custom && I.n === 1) return rangeLabel('month', w.b, I.anchor);
+  const s = parseYmd(w.s), e = parseYmd(w.e);
+  return s.getFullYear() === e.getFullYear() ? fmtDM(s) + ' – ' + fmtDM(e) + ' ' + e.getFullYear() : fmtDM(s) + ' ' + s.getFullYear() + ' – ' + fmtDM(e) + ' ' + e.getFullYear();
+}
+function insightHTML() {
+  if (!S.txLoaded) return skelHTML();
+  const I = insState(), W = CYCLE.day > 1 ? 'Periode' : 'Bulan', w = insWindow(), label = insLabel(w);
+  const seg = [['1', '1 ' + W], ['3', '3 ' + W], ['6', '6 ' + W], ['custom', 'Kustom']].map(o => `<button data-act="ins-n" data-v="${o[0]}" aria-pressed="${o[0] === 'custom' ? I.mode === 'custom' : (I.mode === 'n' && String(I.n) === o[0])}">${o[1]}</button>`).join('');
+  const head = `<div class="page-head"><div><p class="hello">Rekap Pengeluaran per Kategori</p><h1>Insight</h1></div><div class="seg" role="group" aria-label="Rentang insight">${seg}</div></div>`;
+  const range = w.custom
+    ? `<div class="ins-custom"><label>Dari<input type="date" class="input" id="ins-s" value="${esc(I.cs)}"></label><label>Sampai<input type="date" class="input" id="ins-e" value="${esc(I.ce)}"></label></div>`
+    : `<div class="range"><button class="icon-btn" data-act="ins-prev" aria-label="Rentang sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(label)}</span>${w.cur ? '' : '<button class="back" data-act="ins-today">Kembali ke sekarang</button>'}</div><button class="icon-btn" data-act="ins-next" aria-label="Rentang berikutnya" ${w.canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div>`;
+  const D = insightModel(S.tx, w.s, w.e);
+  let body;
+  if (!D.rows.length) body = `<section class="card"><div class="empty"><h3>Belum Ada Pengeluaran</h3><p>Tidak ada catatan pengeluaran pada ${esc(label)}. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.</p></div></section>`;
+  else {
+    const rows = D.rows.map(r => {
+      const c = catOf(r.id);
+      return `<tr><td>${r.no}</td><td><button type="button" class="cat-lnk" data-act="cat-open" data-id="${esc(r.id)}" data-t="out" data-s="${w.s}" data-e="${w.e}" data-l="${esc(label)}" data-back="insight"><i class="dot" style="background:var(--s${c.slot || 1})"></i><span>${esc(c.label)}</span>${ic('chevr', 15)}</button></td><td>${fmtRp(r.v)}</td><td>${fmtPct(r.pct)}</td></tr>`;
+    }).join('');
+    body = `<section class="card" aria-labelledby="h-ins"><div class="card-h"><h2 id="h-ins">Rekap Pengeluaran per Kategori</h2><span class="sub">${D.rows.length} kategori · ${fmtRp(D.total)}</span></div>
+      <div class="tblwrap ins-wrap"><table class="tbl tbl-ins"><thead><tr><th scope="col">No</th><th scope="col">Kategori</th><th scope="col">${curColHead()}</th><th scope="col">Persentase Pengeluaran terhadap Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td></td><td>Total</td><td>${fmtRp(D.total)}</td><td>${fmtPct(100)}</td></tr></tfoot></table></div>
+      <p class="avg-note">Ketuk nama kategori untuk melihat isinya. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.</p></section>`;
+  }
+  return head + range + body;
+}
+VIEWS.insight = { update() { $('#view').innerHTML = welcomeHTML() + subnavHTML('insight') + insightHTML(); } };
+
+/* ================= Tampilan: Transaksi ================= */
+function catOptions() {
+  const og = (label, groups, list) => groups.map(g => {
+    const cs = list.filter(c => c.group === g.id);
+    return cs.length ? `<optgroup label="${esc(label + ' · ' + g.label)}">${cs.map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  return '<option value="all">Semua kategori</option>' + og('Keluar', GROUPS_OUT, CATS_OUT) + og('Masuk', GROUPS_IN, CATS_IN);
+}
+VIEWS.transaksi = {
+  mount(v) {
+    v.innerHTML = `<div class="page-head"><h1>Transaksi</h1><button class="btn btn-primary hide-m" data-act="add">${ic('edit', 18)} Catat transaksi</button></div>
+      <div class="tools"><div class="search">${ic('search', 18)}<input class="input" id="q" type="search" placeholder="Cari catatan, kategori, atau barang" aria-label="Cari transaksi" autocomplete="off"></div>
+      <div class="tools-row"><div class="seg" role="group" aria-label="Jenis transaksi">${[['all', 'Semua'], ['in', 'Pemasukan'], ['out', 'Pengeluaran']].map(p => `<button data-act="ftype" data-v="${p[0]}" aria-pressed="false">${p[1]}</button>`).join('')}</div>
+      <select class="input" id="fc" aria-label="Kategori">${catOptions()}</select>
+      <select class="input" id="fr" aria-label="Rentang waktu"><option value="all">Semua waktu</option><option value="today">Hari ini</option><option value="7">7 hari terakhir</option><option value="month">Bulan ini</option><option value="last">Bulan lalu</option></select></div></div>
+      <div class="sumline" id="tx-sum"></div><div class="card" id="tx-list"></div>`;
+    $('#q').value = S.filters.q; $('#fc').value = S.filters.cat; $('#fr').value = S.filters.range;
+  },
+  update() {
+    $$('#view [data-act="ftype"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.filters.type)));
+    const fr = $('#fr'); if (fr && fr.options && fr.options.length > 4) { fr.options[3].textContent = CYCLE.day > 1 ? 'Periode ini' : 'Bulan ini'; fr.options[4].textContent = CYCLE.day > 1 ? 'Periode lalu' : 'Bulan lalu'; }
+    if (!S.txLoaded) { $('#tx-list').innerHTML = '<div class="empty-s">Memuat catatan…</div>'; return; }
+    const list = filteredTx(), tin = sumType(list, 'in'), tout = sumType(list, 'out'), xn = xferNet(list), nx = list.filter(isXfer).length;
+    $('#tx-sum').innerHTML = `<span>${list.length} transaksi</span><span>Masuk <b class="pos">${fmtRp(tin)}</b></span><span>Keluar <b>${fmtRp(tout)}</b></span>${nx ? `<span>Simpanan &amp; Hutang <b class="${xn < 0 ? '' : 'pos'}">${xn > 0 ? '+' : xn < 0 ? '-' : ''}${fmtRp(Math.abs(xn))}</b></span>` : ''}`;
+    $('#tx-list').innerHTML = list.length
+      ? txGroups(list, S.shown) + (list.length > S.shown ? '<button class="btn btn-ghost more" data-act="more-tx">Tampilkan lebih banyak</button>' : '')
+      : `<div class="empty"><h3>Tidak Ada Transaksi</h3><p>${S.tx.length ? 'Coba ubah kata kunci atau filter.' : 'Mulai dengan mencatat transaksi pertama.'}</p></div>`;
+  }
+};
+
+/* ================= Tampilan: Simpanan (Tabungan & Investasi) ================= */
+function potCard(o) {
+  const cc = n => n === 0 ? '–' : fmtCompact(n);
+  const rec = S.tx.filter(t => { const p = potOf(t); return p && p.p === o.id; }).slice(0, 6);
+  const table = o.count ? `<div class="pot-sub">${o.months.length} Bulan Terakhir</div><div class="tblwrap"><table class="tbl"><thead><tr><th scope="col">Bulan</th><th scope="col">Setor</th><th scope="col">Tarik</th><th scope="col">${esc(o.hasilLabel)}</th><th scope="col">Saldo</th></tr></thead><tbody>${o.months.map(m => `<tr class="${m.now ? 'now' : ''}"><td>${esc(m.label)}</td><td>${cc(m.setor)}</td><td>${cc(m.tarik)}</td><td>${cc(m.hasil)}</td><td>${fmtCompact(m.saldo)}</td></tr>`).join('')}</tbody></table></div>` : '';
+  const list = rec.length ? `<div class="pot-sub">Catatan Terbaru</div>${rec.map(t => txRow(t, true)).join('')}` : `<div class="empty-s">Belum ada catatan ${esc(o.label.toLowerCase())}. Mulai dengan menekan Setor.</div>`;
+  const stat = (k, v) => `<div><dt>${esc(k)}</dt><dd>${fmtRp(v)}</dd></div>`;
+  return `<section class="card pot" style="--c:var(--s${o.slot})" aria-labelledby="h-pot-${o.id}">
+    <div class="card-h"><h2 id="h-pot-${o.id}"><span class="chip">${ic(o.icon, 18)}</span>${esc(o.label)}</h2><span class="sub">${o.count} catatan</span></div>
+    <div class="pot-bal ${o.saldo < 0 ? 'neg' : ''}">${fmtRp(o.saldo)}</div>
+    <dl class="pot-rows">${stat('Setoran', o.setor)}${stat('Penarikan', o.tarik)}${stat(o.hasilLabel, o.hasil)}</dl>
+    <div class="pot-acts"><button class="btn btn-primary btn-sm" data-act="pot-add" data-cat="${o.cats.setor}">${ic('plus', 16)} Setor</button><button class="btn btn-ghost btn-sm" data-act="pot-add" data-cat="${o.cats.tarik}">Tarik</button><button class="btn btn-ghost btn-sm" data-act="pot-add" data-cat="${o.cats.hasil}">${esc(o.hasilBtn)}</button></div>
+    ${table}${list}</section>`;
+}
+function simpananHTML() {
+  if (!S.txLoaded) return skelHTML();
+  const pm = pocketModel(S.tx, startOfDay(new Date())), kas = kasTotal();
+  const head = `<div class="page-head"><div><p class="hello">Saldo terpisah dari saldo kas</p><h1>Simpanan</h1></div><button class="btn btn-primary hide-m" data-act="add">${ic('edit', 18)} Catat transaksi</button></div>`;
+  const hero = `<section class="hero" aria-label="Ringkasan tabungan dan investasi"><div><div class="eyebrow">Total tabungan &amp; investasi</div><div class="big">${pm.total < 0 ? '-' : ''}<span class="rp">${curSym()}</span>${dots(pm.total)}</div></div>
+    <div class="hero-cap">Tidak termasuk saldo kas</div>
+    <div class="hero-stats"><div class="hstat"><span class="k">${ic('wallet', 15)} Tabungan</span><span class="v">${fmtRp(pm.tabungan.saldo)}</span></div><div class="hstat"><span class="k">${ic('trend', 15)} Investasi</span><span class="v">${fmtRp(pm.investasi.saldo)}</span></div><div class="hstat"><span class="k">${ic('scale', 15)} Saldo kas</span><span class="v ${kas < 0 ? 'neg' : ''}">${fmtRp(kas)}</span></div></div></section>`;
+  const note = '<p class="pot-note">Saldo = setoran − penarikan + bunga atau hasil. Setoran hanya mengurangi saldo kas dan penarikan menambahnya; keduanya bukan pengeluaran atau pemasukan, jadi tidak masuk Rekap maupun anggaran. Bunga dan dividen langsung masuk ke saldo masing-masing dan tidak menambah kas. Nilai pasar investasi tidak dihitung otomatis; catat kenaikannya sebagai hasil.</p>';
+  return head + hero + `<div class="pot-grid">${potCard(pm.tabungan)}${potCard(pm.investasi)}</div>` + note;
+}
+VIEWS.simpanan = { update() { $('#view').innerHTML = subnavHTML('simpanan') + simpananHTML(); } };
+/* Kartu ringkas di Rekap: dua saldo terpisah, ketuk untuk membuka halaman Simpanan */
+function potMiniCard() {
+  const pm = pocketModel(S.tx, startOfDay(new Date()));
+  if (!pm.tabungan.count && !pm.investasi.count) return '';
+  const b = o => `<button type="button" class="potm" style="--c:var(--s${o.slot})" data-act="nav" data-v="simpanan" aria-label="Buka ${esc(o.label)}"><span class="k"><span class="chip">${ic(o.icon, 16)}</span>${esc(o.label)}</span><b>${fmtRp(o.saldo)}</b><small>${o.net === 0 ? 'Belum ada gerakan bulan ini' : (o.net > 0 ? '+' : '-') + fmtCompact(Math.abs(o.net)) + ' bulan ini'}</small></button>`;
+  return `<section class="card" aria-labelledby="h-potm"><div class="card-h"><h2 id="h-potm">Tabungan &amp; Investasi</h2><span class="sub">saldo terpisah</span></div><div class="potmini">${b(pm.tabungan)}${b(pm.investasi)}</div></section>`;
+}
+
+/* ================= Tampilan: Admin ================= */
+function accRow(a) {
+  const self = a.id === S.me.id, on = k => S.armed && S.armed.key === k, rej = a.status === 'rejected', adm = isAdmin();
+  const meta = [a.birth ? 'Lahir ' + fmtBirth(a.birth) : '', a.phone, a.email].filter(Boolean).map(esc).join(' · ');
+  const badge = a.role === 'admin' ? '<span class="badge admin">Administrator</span>' : a.role === 'helper' ? '<span class="badge helper">Admin Pembantu</span>' : '<span class="badge">Pengguna</span>';
+  /* Admin pembantu hanya boleh mengelola akun pengguna biasa, dan tanpa reset sandi, peran, atau hapus */
+  const can = adm || a.role === 'user', id = esc(a.id), btn = (act, txt, cls, extra) => `<button class="btn ${cls || 'btn-ghost'} btn-sm" data-act="${act}" data-id="${id}"${extra || ''}>${txt}</button>`;
+  const roleBtn = (to, ask, txt) => `<button class="btn btn-ghost btn-sm" data-act="acc-role" data-id="${id}" data-to="${to}">${on('role:' + a.id + ':' + to) ? ask : txt}</button>`;
+  const del = adm ? `<button class="btn btn-danger btn-sm ${on('del:' + a.id) ? 'armed' : ''}" data-act="acc-del" data-id="${id}">${on('del:' + a.id) ? 'Yakin hapus akun dan datanya?' : 'Hapus'}</button>` : '';
+  let acts = '';
+  if (rej) acts = (can ? btn('reg-ok', 'Setujui', 'btn-primary') : '') + del;
+  else if (self) acts = `<button class="btn btn-ghost btn-sm" data-act="nav" data-v="akun">${ic('lock', 16)} Ganti sandi saya</button>`;
+  else if (can) {
+    acts = (adm ? btn('acc-reset', on('reset:' + a.id) ? 'Yakin reset sandi?' : 'Reset kata sandi') : '')
+      + (adm ? roleBtn(a.role === 'admin' ? 'user' : 'admin', a.role === 'admin' ? 'Yakin cabut administrator?' : 'Yakin jadikan administrator?', a.role === 'admin' ? 'Cabut Administrator' : 'Jadikan Administrator') : '')
+      + (adm && a.role !== 'admin' ? roleBtn(a.role === 'helper' ? 'user' : 'helper', a.role === 'helper' ? 'Yakin cabut admin pembantu?' : 'Yakin jadikan admin pembantu?', a.role === 'helper' ? 'Cabut Admin Pembantu' : 'Jadikan Admin Pembantu') : '')
+      + btn('acc-toggle', a.active === false ? 'Aktifkan' : 'Nonaktifkan')
+      + del;
+  }
+  return `<div class="acc"><span class="avatar">${esc(initials(a.name))}</span><div class="who"><b>${esc(a.name)}${self ? ' (Anda)' : ''}</b><small>${id}</small>${meta ? '<small class="meta">' + meta + '</small>' : ''}<div class="badges">${badge}${rej ? '<span class="badge off">Ditolak</span>' : a.active === false ? '<span class="badge off">Nonaktif</span>' : ''}${a.isDefault ? '<span class="badge def">Sandi awal</span>' : ''}</div>${rej ? '' : monLineHTML(a)}</div>
+    <div class="acts">${acts}</div></div>`;
+}
+VIEWS.admin = {
+  mount(v) {
+    const adm = isAdmin();
+    v.innerHTML = `<div class="page-head"><div><p class="hello">${adm ? 'Pantau akun, tanpa membuka catatan keuangan' : 'Bantu mengelola akun pengguna, tanpa membuka catatan keuangan'}</p><h1>${adm ? 'Administrator' : 'Admin Pembantu'}</h1></div></div><div class="stack">
+      <section class="card" id="mon-card" aria-labelledby="mon-title"><h2 class="t" id="mon-title">Ringkasan Akun</h2><div id="mon-sum"></div><p class="desc mon-note">Admin hanya melihat jumlah catatan dan waktu aktivitas. Isi transaksi, nominal, dan foto milik pengguna tidak dapat dibuka dari sini.</p></section>
+      <section class="card reg-card" id="reg-card" aria-labelledby="reg-title" hidden><h2 class="t" id="reg-title">Perlu Persetujuan</h2><p class="desc">Periksa data pendaftar. Setelah disetujui, akun aktif dan pendaftar masuk dengan kata sandi yang ia buat sendiri.</p><div id="reg-list"></div></section>
+      ${subMenu('master', 'Master Data Akun', 'Memuat daftar akun…', (adm ? '<p class="desc master-note">Pilih pengguna yang dijadikan administrator atau admin pembantu. Akun administrator mengelola aplikasi dan tidak dipakai mencatat transaksi; catatan lama miliknya tetap tersimpan dan kembali bila perannya dicabut. Admin pembantu tetap memakai semua menu biasa (pemasukan, pengeluaran, dan lainnya) dan mendapat tambahan menu Admin untuk menyetujui pendaftar, membuat akun, serta mengaktifkan atau menonaktifkan pengguna.</p>' : '<p class="desc master-note">Anda bisa menyetujui pendaftar, membuat akun pengguna, serta mengaktifkan atau menonaktifkan pengguna. Reset kata sandi, perubahan peran, dan penghapusan akun hanya bisa dilakukan administrator.</p>') + '<div id="acc-list"></div>')}
+      <section class="card"><h2 class="t">Buat Akun Baru</h2><p class="desc">Nama yang Anda isi menjadi nama untuk masuk. Akun yang dibuat admin memakai kata sandi awal <code>${DEFAULT_PW}</code>, dan pengguna bisa menggantinya di Pengaturan. Kata sandi awal juga dipakai saat admin mereset akun.</p>
+        <form id="acc-form" class="acc-form" novalidate><div class="field"><label for="acc-name">Nama</label><input class="input" id="acc-name" maxlength="40" autocomplete="off" placeholder="mis. Budi Santoso"></div>${adm ? '<div class="field"><label for="acc-role">Peran</label><select class="input" id="acc-role"><option value="user">Pengguna</option><option value="helper">Admin Pembantu</option><option value="admin">Administrator</option></select></div>' : ''}<button class="btn btn-primary" type="submit">${ic('users', 18)} Buat akun</button></form>
+        <p class="uname" id="acc-prev">Nama untuk masuk: <b>—</b></p><p class="form-err" id="acc-err" role="alert" hidden></p></section>
+      ${adm ? `<section class="card"><h2 class="t">Batas Waktu Login</h2><p class="desc">Pengguna otomatis keluar bila tidak ada aktivitas selama waktu ini. Isi dalam menit, antara 1 dan 1440. Bawaannya 20 menit.</p>
+        <form id="sess-form" class="sess-form" novalidate><div class="field"><label for="sess-min">Batas waktu (menit)</label><input class="input" id="sess-min" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="20"></div><button class="btn btn-primary" type="submit">Simpan</button></form>
+        <p class="form-err" id="sess-err" role="alert" hidden></p></section>` : ''}
+      ${adm ? bkVaultCardHTML() : ''}
+      ${adm ? bkAdminCardHTML() : ''}
+      </div>`;
+  },
+  update() {
+    $('#mon-sum').innerHTML = monSummaryHTML(); if (isAdmin()) { bkAdminPaint(); vaultPaint(); vaultLoad(); }
+    const pend = pendingList(); $('#reg-card').hidden = !pend.length;
+    $('#reg-title').textContent = 'Perlu Persetujuan (' + pend.length + ')';
+    const sm = $('#sess-min'); if (sm && document.activeElement !== sm) sm.value = String(cleanMin(S.sessMin));
+    $('#reg-list').innerHTML = pend.map(regRow).join('');
+    const rk = a => (a.role === 'admin' ? 0 : a.role === 'helper' ? 1 : 2);
+    const arr = Object.values(S.accounts).filter(a => a.status !== 'pending').sort((a, b) => (rk(a) === rk(b) ? String(a.name).localeCompare(String(b.name)) : rk(a) - rk(b)));
+    const nAdm = arr.filter(a => a.role === 'admin').length, nHlp = arr.filter(a => a.role === 'helper').length, nOff = arr.filter(a => a.active === false || a.status === 'rejected').length;
+    const mh = $('#sub-hint-master'); if (mh) mh.textContent = arr.length + ' akun · ' + nAdm + ' administrator' + (nHlp ? ' · ' + nHlp + ' admin pembantu' : '') + (nOff ? ' · ' + nOff + ' nonaktif' : '');
+    const shutK = S.accSec || (S.accSec = {});
+    const sec = (k, title, list, always) => (list.length || always) ? `<section class="acc-sec${shutK[k] ? ' shut' : ''}" data-k="${k}"><button type="button" class="acc-sec-h" data-act="acc-sec" data-k="${k}" aria-expanded="${!shutK[k]}"><span class="acc-sec-t">${title}</span><b class="cnt">${list.length}</b><span class="acc-sec-c">${ic('chevl', 14)}</span></button><div class="acc-sec-b">${list.length ? list.map(accRow).join('') : '<div class="empty-s">Belum ada akun.</div>'}</div></section>` : '';
+    const rejL = arr.filter(a => a.status === 'rejected'), offL = arr.filter(a => a.status !== 'rejected' && a.active === false), onL = arr.filter(a => a.status !== 'rejected' && a.active !== false);
+    $('#acc-list').innerHTML = (arr.length ? sec('aktif', 'Aktif', onL, true) + sec('nonaktif', 'Nonaktif', offL) + sec('ditolak', 'Ditolak', rejL) : '<div class="empty-s">Belum ada akun.</div>');
+    paintSub();
+  }
+};
+
+/* ================= Submenu (tertutup secara awal supaya tidak memakan ruang) ================= */
+const SUB_KEEP = { master: 'saku.master.v1' };   /* submenu yang pilihannya diingat di perangkat ini; bawaannya terbuka */
+function subOpen(k) {
+  const st = S.sub || (S.sub = {});
+  if (st[k] === undefined) {
+    if (SUB_KEEP[k]) { let v = '1'; try { v = localStorage.getItem(SUB_KEEP[k]) || '1'; } catch (e) { /* abaikan */ } st[k] = v !== '0'; }
+    else { const m = me(); if (k === 'pw' && m && m.isDefault) st[k] = true; else return false; } /* dibuka otomatis bila masih memakai kata sandi awal, lalu tetap terbuka */
+  }
+  return !!st[k];
+}
+function subMenu(k, title, hint, body) {
+  const on = subOpen(k);
+  return `<section class="card submenu${on ? ' open' : ''}" data-sub="${k}"><h2 class="sub-title"><button type="button" class="sub-h" data-act="sub" data-k="${k}" aria-expanded="${on}" aria-controls="sub-${k}"><span class="sub-tx"><span class="sub-name">${esc(title)}</span><small id="sub-hint-${k}">${esc(hint)}</small></span><span class="sub-chev">${ic('chevd', 20)}</span></button></h2><div class="sub-body" id="sub-${k}"${on ? '' : ' hidden'}>${body}</div></section>`;
+}
+function paintSub() {
+  $$('#view .submenu').forEach(s => {
+    const k = s.dataset.sub, on = subOpen(k), b = s.querySelector('.sub-h'), body = s.querySelector('.sub-body');
+    s.classList.toggle('open', on); if (b) b.setAttribute('aria-expanded', String(on)); if (body) body.hidden = !on;
+  });
+}
+function openSub(k) { (S.sub || (S.sub = {}))[k] = true; paintSub(); }
+
+/* ================= Tampilan: Pengaturan ================= */
+VIEWS.akun = {
+  mount(v) {
+    const adm = isAdmin();
+    const pwField = (id, label, ac) => `<div class="field"><label for="${id}">${label}</label><div class="pw"><input class="input" id="${id}" type="password" autocomplete="${ac}"><button type="button" class="eye" data-act="toggle-pw" data-t="${id}" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div></div>`;
+    v.innerHTML = `<div class="page-head"><h1>Pengaturan</h1></div><div class="stack">
+      <section class="card"><div class="profile"><span class="avatar" id="pf-av"></span><div><b id="pf-name"></b><small id="pf-user"></small></div></div><p class="desc" id="sess-note" style="margin-top:12px"></p><div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" data-act="logout">${ic('logout', 16)} Keluar</button></div></section>
+      ${subMenu('prof', 'Pengaturan Profil', 'Foto, tanggal lahir, dan email', profBodyHTML())}
+      ${lcCardHTML()}
+      ${adm ? '' : `<section class="card"><h2 class="t">Kategori Saya</h2><p class="desc">Buat kategori pemasukan atau pengeluaran sendiri dan pilih ikonnya.</p><button type="button" class="btn btn-primary" data-act="nav" data-v="kategoriku">Tambah Kategori</button></section>`}
+      ${subMenu('pw', 'Ganti Kata Sandi', 'Ubah kata sandi akun Anda', `<div id="pw-note"></div>
+        <form id="pw-form" class="form-grid" novalidate>${pwField('pw-cur', 'Kata sandi saat ini', 'current-password')}${pwField('pw-new', 'Kata sandi baru', 'new-password')}${pwField('pw-new2', 'Ulangi kata sandi baru', 'new-password')}
+        <p class="form-err" id="pw-err" role="alert" hidden></p><p class="form-ok" id="pw-ok" role="status" hidden></p><button class="btn btn-primary" type="submit">Simpan kata sandi</button></form>`)}
+      ${adm ? `<div id="bk-legacy" hidden>${subMenu('bk', 'Cadangan Catatan Lama', bkHint(), bkSubBody(true))}</div>` : subMenu('bk', 'Cadangan Data', bkHint(), bkSubBody())}
+      ${adm ? '' : `<section class="card"><h2 class="t">Pengingat Dana Menipis</h2><p class="desc">Beberapa detik setelah Anda menyimpan transaksi, muncul notifikasi beremoji dengan kata penyemangat bila pengeluaran bulan ini sudah mendekati 70% dari dana atau anggaran Anda.</p><label class="check"><input type="checkbox" id="rem-on" checked> Aktifkan pengingat</label><div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" data-act="rem-test">${ic('bell', 16)} Coba tampilkan</button></div></section>`}
+      ${adm && !extraDataActs().length ? '' : `<section class="card"><h2 class="t">Data</h2><p class="desc" id="data-desc"></p><div class="btn-row" id="data-acts"></div></section>`}</div>`;
+  },
+  update() {
+    const m = me(); if (!m) return;
+    $('#pf-av').textContent = initials(m.name); $('#pf-name').textContent = m.name;
+    $('#sess-note').textContent = 'Keluar otomatis setelah ' + cleanMin(S.sessMin) + ' menit tanpa aktivitas.';
+    $('#pf-user').textContent = 'Nama masuk: ' + m.id + ' · ' + roleName(m.role);
+    const ph = $('#sub-hint-pw'); if (ph) ph.textContent = m.isDefault ? 'Anda masih memakai kata sandi awal' : 'Ubah kata sandi akun Anda';
+    paintProfile(); paintAvatars();
+    $('#pw-note').innerHTML = pwGateHTML() + (m.isDefault ? `<div class="banner" style="margin-bottom:14px">${ic('lock', 18)}<span>Anda masih memakai kata sandi awal. Ganti sekarang agar akun lebih aman.</span></div>` : '');
+    if (isAdmin()) {
+      const lg = $('#bk-legacy'); if (lg) lg.hidden = !S.tx.length; paintBk();
+      const dd = $('#data-desc'); if (dd) dd.textContent = 'Akun administrator tidak dipakai untuk mencatat transaksi.' + dataNote();
+      const da = $('#data-acts'); if (da) da.innerHTML = extraDataActs().join('');
+      paintSub(); return;
+    }
+    const b = $('#bud'), bud = Number(S.settings && S.settings.budget) || 0;
+    if (b && document.activeElement !== b) b.value = bud ? dots(bud) : '';
+    const bd = $('#bud-day'); if (bd && document.activeElement !== bd) bd.value = CYCLE.day > 1 ? String(CYCLE.day) : ''; updateDayNote();
+    const bh = $('#sub-hint-bud'); if (bh) bh.textContent = (bud ? 'Batas ' + fmtRp(bud) : 'Belum diatur') + ' · periode ' + (CYCLE.day > 1 ? 'mulai tanggal ' + CYCLE.day : 'awal bulan');
+    paintBk();
+    $('#data-desc').textContent = S.tx.length + ' transaksi tersimpan di akun ini. Laporan PDF mengikuti periode yang sedang dibuka di Rekap, sedangkan Excel memuat seluruh catatan dengan 8 grafik.' + dataNote();
+    const ro = $('#rem-on'); if (ro && document.activeElement !== ro) ro.checked = !(S.settings && S.settings.reminder === false);
+    const acts = [];
+    if (S.downloads && S.tx.length) acts.push(`<button class="btn btn-ghost" data-act="dl-pdf">${ic('file', 18)} Laporan PDF</button><button class="btn btn-ghost" data-act="dl-xlsx">${ic('table', 18)} Excel + grafik</button><button class="btn btn-ghost" data-act="csv">${ic('download', 18)} Transaksi (CSV)</button>`);
+    if (S.demoCount > 0) acts.push(`<button class="btn btn-danger ${S.armed && S.armed.key === 'demo' ? 'armed' : ''}" data-act="demo-del">${S.armed && S.armed.key === 'demo' ? 'Yakin hapus ' + S.demoCount + ' data contoh?' : 'Hapus data contoh (' + S.demoCount + ')'}</button>`);
+    else acts.push('<button class="btn btn-ghost" data-act="demo-add">Isi data contoh</button>');
+    extraDataActs().forEach(h => acts.push(h));
+    $('#data-acts').innerHTML = acts.join('');
+    paintSub();
+  }
+};
+
+/* ================= Lembar catat transaksi ================= */
+function itemsSum(F) { return F.items.reduce((s, i) => s + (Number(i.q) || 0) * (Number(i.p) || 0), 0); }
+function intOf(v, max) {
+  const n = typeof v === 'number' ? v : Number(String(v == null ? '' : v).replace(/[^\d]/g, ''));
+  return isFinite(n) ? Math.min(max, Math.max(0, Math.round(n))) : 0;
+}
+function sheetHTML() {
+  return `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title" novalidate>
+    <div class="sheet-h"><h2 id="sh-title">Catat Transaksi</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="tgl" role="group" aria-label="Jenis transaksi"><button type="button" class="out" data-act="f-type" data-t="out" aria-pressed="true">${ic('up', 18)} Pengeluaran</button><button type="button" class="in" data-act="f-type" data-t="in" aria-pressed="false">${ic('down', 18)} Pemasukan</button></div>
+      <div class="field"><label for="f-amt">Jumlah</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="f-amt" data-money="amt" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+      <div class="row2" id="f-accrow" hidden><div class="field" id="f-accbox"><label for="f-acc" id="f-acc-l">Dibayar dari</label><select class="input" id="f-acc" required></select></div><div class="field" id="f-tobox" hidden><label for="f-to">Masuk ke</label><select class="input" id="f-to"></select></div></div>
+      <p class="cat-hint acc-note" id="f-accnote" role="status" hidden></p>
+      <div class="field"><span class="lbl" id="cat-l">Kategori</span><div class="cat-find"><input class="input" type="search" id="f-catq" placeholder="Cari kategori…" autocomplete="off" aria-label="Cari kategori"></div><div class="cats" id="f-cats" role="radiogroup" aria-labelledby="cat-l"></div><button type="button" class="btn btn-ghost btn-sm cat-new" data-act="ck-new">${ic('plus', 16)} Tambah Kategori</button><p class="cat-hint" id="f-hint" role="status" hidden></p></div>
+      <div class="row2"><div class="field"><label for="f-date">Tanggal</label><input class="input" type="date" id="f-date"></div><div class="field"><label for="f-note">Catatan atau nama toko</label><input class="input" id="f-note" maxlength="80" autocomplete="off" placeholder="mis. Alfamart"></div></div>
+      <div class="field" id="f-refbox" hidden><label for="f-ref">Bayar tagihan</label><select class="input" id="f-ref"></select><p class="cat-hint" id="f-refhint"></p></div>
+      <section class="buy" id="f-buy"><div class="buy-h"><h3>Barang yang Dibeli</h3><span class="muted" style="font-size:12.5px">opsional</span></div>
+        <div class="photo-row"><label class="btn btn-ghost btn-sm" for="f-cam">${ic('camera', 16)} Kamera</label><input type="file" id="f-cam" accept="image/*" capture="environment" hidden><label class="btn btn-ghost btn-sm" for="f-gal">${ic('image', 16)} Galeri</label><input type="file" id="f-gal" accept="image/*" hidden></div>
+        <div id="f-photo" style="display:grid;gap:10px"></div>
+        <div class="items" id="f-items"></div>
+        <div><button type="button" class="btn btn-ghost btn-sm" data-act="f-additem">${ic('bag', 16)} Tambah barang</button></div>
+        <div class="itotal" id="f-itotal"></div></section>
+      <p class="form-err" id="f-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="f-del" data-act="f-del" hidden>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="f-save">Simpan</button></div>
+  </form></div>`;
+}
+function openSheet(tx, preset) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  closeSheet(true);
+  S.lastFocus = document.activeElement; disarm();
+  const F = S.form = {
+    id: tx ? tx.id : null, type: tx && tx.type === 'in' ? 'in' : 'out', amount: tx ? Number(tx.amount) || 0 : 0, amountTouched: !!tx,
+    cat: tx ? tx.cat : 'makan', catTouched: !!tx, date: tx && isYmd(tx.date) ? tx.date : ymd(new Date()), note: tx ? tx.note || '' : '',
+    items: tx && Array.isArray(tx.items) ? tx.items.map(i => ({ n: String(i.n || ''), q: Number(i.q) || 1, p: Number(i.p) || 0 })) : [],
+    photoId: tx ? tx.photo || null : null, photo: null, photoData: null, photoErr: false, removePhoto: false,
+    acc: tx ? (tx.acc || '') : payDefaultId(), to: tx ? (tx.to || '') : '', q: '', demo: !!(tx && tx.demo), ref: tx && tx.ref ? { k: tx.ref.k, id: tx.ref.id, p: tx.ref.p } : null, createdAt: tx ? tx.createdAt : null, scanning: false, scanMsg: '', ctl: null, saving: false
+  };
+  if (!tx && preset && CATS[preset.cat]) { F.type = CATS[preset.cat].type; F.cat = preset.cat; F.catTouched = true; }
+  if (!CATS[F.cat] || CATS[F.cat].type !== F.type) F.cat = F.type === 'out' ? 'lain' : 'lain_in';
+  const root = document.createElement('div'); root.id = 'sheet-root'; root.innerHTML = sheetHTML(); document.body.appendChild(root);
+  document.body.style.overflow = 'hidden';
+  $('#f-amt').value = F.amount ? dots(F.amount) : ''; $('#f-date').value = F.date; $('#f-note').value = F.note;
+  paintAll();
+  if (F.photoId) loadExistingPhoto();
+  if (!tx) setTimeout(() => { const a = $('#f-amt'); if (a) a.focus(); }, 60);
+}
+function closeSheet(silent) {
+  const r = $('#sheet-root'); if (!r) return;
+  if (S.form && S.form.ctl) { try { S.form.ctl.abort(); } catch (e) { /* abaikan */ } }
+  r.remove(); S.form = null; S.cf = null; S.pay = null; S.hf = null; S.tf = null; S.rf = null; document.body.style.overflow = '';
+  if (!silent && S.lastFocus && S.lastFocus.focus) { try { S.lastFocus.focus(); } catch (e) { /* abaikan */ } }
+}
+function paintAll() { paintType(); paintCats(); paintAcc(); paintRef(); paintPhoto(); paintItems(); paintTotal(); }
+function paintType() {
+  const F = S.form;
+  $$('#sheet-root [data-act="f-type"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === F.type)));
+  $('#f-buy').hidden = F.type !== 'out';
+  $('#sh-title').textContent = F.id ? 'Ubah Transaksi' : 'Catat Transaksi';
+  $('#f-del').hidden = !F.id; paintDel();
+}
+function paintDel() {
+  const b = $('#f-del'); if (!b) return;
+  const on = !!(S.armed && S.armed.key === 'tx');
+  b.classList.toggle('armed', on); b.innerHTML = on ? 'Yakin hapus?' : ic('trash', 18) + ' Hapus';
+}
+function paintCats() {
+  const F = S.form, groups = F.type === 'out' ? GROUPS_OUT : GROUPS_IN, list = F.type === 'out' ? CATS_OUT : CATS_IN, q = String(F.q || '').trim().toLowerCase();
+  $('#f-cats').innerHTML = (q && !list.some(c => (c.label + ' ' + groupLabel(c.group, F.type)).toLowerCase().indexOf(q) >= 0) ? '<p class="cat-none">Tidak ada kategori yang cocok. Coba kata lain atau tekan Tambah Kategori.</p>' : '') + groups.map(g => {
+    const cs = list.filter(c => c.group === g.id && (!q || (c.label + ' ' + g.label).toLowerCase().indexOf(q) >= 0)); if (!cs.length) return '';
+    return `<div><div class="cg-t">${esc(g.label)}</div><div class="cg-l">${cs.map(c => `<button type="button" role="radio" class="cat" style="--c:var(--s${c.slot})" aria-checked="${c.id === F.cat}" data-act="f-cat" data-id="${c.id}"><span class="chip">${ic(c.icon, 15)}</span>${esc(c.label)}</button>`).join('')}</div></div>`;
+  }).join('');
+  const sel = $('#f-cats .cat[aria-checked="true"]');
+  if (sel && sel.scrollIntoView && !q) sel.scrollIntoView({ block: 'nearest' });
+  paintHint();
+}
+/* petunjuk untuk kategori simpanan: bukan pengeluaran/pemasukan, hanya menggeser saldo */
+function paintHint() {
+  const h = $('#f-hint'), F = S.form; if (!h || !F) return;
+  const p = potOf({ cat: F.cat, type: F.type }), o = p && POCKETS.filter(x => x.id === p.p)[0], ax = F.type === 'out' && ACC_XFER[F.cat];
+  if (ax && !accTargets(F).length) { h.hidden = false; h.textContent = F.cat === 'topup_ewallet' ? 'Belum ada e-wallet. Dicatat sebagai pengeluaran biasa. Tambahkan e-wallet di Pengaturan Rekening agar saldo berpindah.' : 'Butuh minimal dua rekening agar saldo bisa berpindah. Dicatat sebagai pengeluaran biasa.'; return; }
+  if (ax) { h.hidden = false; h.textContent = F.cat === 'topup_ewallet' ? 'Bukan pengeluaran. Saldo rekening asal berkurang dan saldo e-wallet bertambah; saldo total tetap.' : 'Bukan pengeluaran. Saldo berpindah antar rekening; saldo total tetap.'; return; }
+  h.hidden = !p;
+  if (p) h.textContent = p.k === 'setor' ? 'Bukan pengeluaran. Saldo kas berkurang dan saldo ' + o.label + ' bertambah.' : p.k === 'tarik' ? 'Bukan pemasukan. Saldo kas bertambah dan saldo ' + o.label + ' berkurang.' : 'Langsung masuk ke saldo ' + o.label + '. Tidak menambah saldo kas dan bukan pemasukan.';
+}
+/* "Bayar tagihan": menautkan transaksi ke cicilan/hutang. Pilihan = tagihan yang belum dibayar sesuai jenis transaksi */
+function refOptions(F) {
+  const M = (S.plan && S.txLoaded) ? dueNow() : { all: [] }, tk = ymd(new Date());
+  const list = M.all.filter(x => x.type === F.type);
+  const out = list.map(x => ({ key: x.key, label: x.title + ' · ' + (x.p ? ymLabel(x.p, true) : '') + ' · ' + (x.est ? '≈ ' : '') + fmtRp(x.amount) + (x.st === 'telat' || x.st === 'hariini' ? ' (' + lateText(x.due, tk) + ')' : ''), it: x }));
+  if (F.ref && F.ref.id && !out.some(o => o.key === F.ref.k + ':' + F.ref.id + ':' + (F.ref.p || ''))) {
+    const col = (S.plan && S.plan[F.ref.k]) || [], rec = col.filter(x => x.id === F.ref.id)[0];
+    out.unshift({ key: F.ref.k + ':' + F.ref.id + ':' + (F.ref.p || ''), label: 'Tertaut: ' + (rec ? (rec.name || rec.who || '') : 'tagihan yang sudah dihapus') + (F.ref.p ? ' · ' + ymLabel(F.ref.p, true) : ''), it: null });
+  }
+  return out;
+}
+function paintRef() {
+  const F = S.form, box = $('#f-refbox'); if (!F || !box) return;
+  const opts = refOptions(F); box.hidden = !opts.length; if (!opts.length) return;
+  const sel = $('#f-ref'), cur = F.ref && F.ref.id ? F.ref.k + ':' + F.ref.id + ':' + (F.ref.p || '') : '';
+  sel.innerHTML = '<option value="">Bukan pembayaran tagihan</option>' + opts.map(o => `<option value="${esc(o.key)}"${o.key === cur ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
+  $('#f-refhint').textContent = cur ? 'Transaksi ini dihitung sebagai pembayaran tagihan tersebut.' : '';
+  $('#f-refhint').hidden = !cur;
+}
+function pickRef(key) {
+  const F = S.form; if (!F) return;
+  const o = refOptions(F).filter(x => x.key === key)[0];
+  if (!key || !o) { F.ref = null; paintRef(); return; }
+  if (!o.it) { paintRef(); return; }
+  const it = o.it; F.ref = { k: it.k, id: it.id, p: it.p };
+  F.cat = it.cat; F.catTouched = true; F.amount = Math.round(it.amount) || 0; F.amountTouched = true; $('#f-amt').value = F.amount ? dots(F.amount) : '';
+  const n = $('#f-note'); if (n && !n.value.trim()) n.value = (it.title + (it.seq ? ' · ke-' + it.seq : '')).slice(0, 80);
+  paintCats(); paintRef();
+}
+function paintPhoto() {
+  const F = S.form, box = $('#f-photo'); if (!box) return;
+  const src = F.photo ? F.photo.dataUrl : (F.removePhoto ? null : F.photoData);
+  const has = !!src || (!!F.photoId && !F.removePhoto);
+  let html = '';
+  if (has) html += `<div class="thumb">${src ? `<img src="${esc(src)}" alt="Foto barang yang dibeli">` : (F.photoErr ? '<span>Foto tidak bisa dimuat</span>' : '<span>Memuat foto…</span>')}<button type="button" class="rm" data-act="f-photo-rm" aria-label="Hapus foto">${ic('trash', 16)}</button></div>`;
+  if (src && S.canImages) html += `<div class="scan">${F.scanning ? '<span class="scan-msg">Membaca foto…</span><button type="button" class="btn btn-ghost btn-sm" data-act="f-scan-stop">Batal</button>' : `<button type="button" class="btn btn-ghost btn-sm" data-act="f-scan">${ic('sparkle', 16)} Baca barang dari foto</button>`}</div>`;
+  if (F.scanMsg) html += `<p class="scan-msg" role="status">${esc(F.scanMsg)}</p>`;
+  box.innerHTML = html;
+}
+function paintItems() {
+  const F = S.form, box = $('#f-items'); if (!box) return;
+  box.innerHTML = F.items.length
+    ? '<div class="items-head"><span>Barang</span><span>Jml</span><span>Harga satuan</span><span></span></div>' + F.items.map((it, i) => `<div class="item"><input class="input" data-i="${i}" data-k="n" value="${esc(it.n)}" placeholder="Nama barang" maxlength="60" aria-label="Nama barang ${i + 1}"><input class="input q" data-i="${i}" data-k="q" value="${it.q}" inputmode="numeric" aria-label="Jumlah barang ${i + 1}"><input class="input p" data-i="${i}" data-k="p" data-money="item" value="${it.p ? dots(it.p) : ''}" inputmode="numeric" placeholder="0" aria-label="Harga satuan barang ${i + 1}"><button type="button" class="rm" data-act="f-item-rm" data-i="${i}" aria-label="Hapus barang ${i + 1}">${ic('x', 16)}</button></div>`).join('')
+    : '<p class="muted" style="font-size:13.5px">Belum ada barang. Tambahkan satu per satu, atau ambil foto struk lalu baca otomatis.</p>';
+}
+function paintTotal() {
+  const F = S.form, sum = itemsSum(F), t = $('#f-itotal');
+  if (t) t.innerHTML = F.items.length ? `<span>Total dari barang</span><b>${fmtRp(sum)}</b>` : '';
+  if (!F.amountTouched && sum > 0) { F.amount = sum; const a = $('#f-amt'); if (a) a.value = dots(sum); }
+}
+/* Kolom uang di lembar rencana mendaftarkan penangannya di sini: MONEY_HOOKS['kunci'] = (angka, elemen) => {...} */
+const MONEY_HOOKS = {};
+function onMoney(el) {
+  const raw = el.value, pos = el.selectionStart == null ? raw.length : el.selectionStart;
+  const before = raw.slice(0, pos).replace(/\D/g, '').length;
+  const digits = raw.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 12);
+  const f = digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  el.value = f;
+  let c = 0, seen = 0;
+  while (c < f.length && seen < before) { if (/\d/.test(f[c])) seen++; c++; }
+  try { el.setSelectionRange(c, c); } catch (e) { /* abaikan */ }
+  const v = digits ? Number(digits) : 0, F = S.form, k = el.dataset.money;
+  if (k === 'cf-amt') { if (S.cf) S.cf.amount = v; return; }
+  if (k === 'pay-amt') { if (S.pay) S.pay.amount = v; return; }
+  if (MONEY_HOOKS[k]) { MONEY_HOOKS[k](v, el); return; }
+  if (k === 'hf-amt') { if (S.hf) { S.hf.amount = v; hfHints(); } return; }
+  if (k === 'hf-inst') { hfHints(); return; }
+  if (!F) return;
+  if (k === 'amt') { F.amount = v; F.amountTouched = v > 0; if (v === 0) paintTotal(); }
+  else if (k === 'item') { const it = F.items[Number(el.dataset.i)]; if (it) it.p = v; paintTotal(); }
+}
+async function loadExistingPhoto() {
+  const F = S.form, id = F.photoId; if (!id) return;
+  try {
+    const snap = await S.db.doc('ledger/' + S.me.id).collection('photos').doc(id).get();
+    const d = snap.exists ? snap.data() : null;
+    const url = d && typeof d.data === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(d.data) ? d.data : null;
+    if (S.form === F) { F.photoData = url; if (!url) { F.photoId = null; } paintPhoto(); }
+  } catch (e) { if (S.form === F) { F.photoErr = true; paintPhoto(); } }
+}
+async function handlePhoto(file) {
+  const F = S.form; if (!F) return;
+  if (!/^image\//.test(file.type || '')) { F.scanMsg = 'Pilih file gambar (JPG, PNG, atau WebP).'; paintPhoto(); return; }
+  F.scanMsg = 'Memproses foto…'; paintPhoto();
+  try {
+    const r = await compressImage(file);
+    if (S.form !== F) return;
+    F.photo = r; F.removePhoto = false; F.scanMsg = '';
+  } catch (e) { F.scanMsg = 'Foto tidak bisa dibuka. Coba foto lain.'; }
+  paintPhoto();
+}
+function scanErr(e) {
+  const c = e && e.code;
+  if (c === 'not_granted') return 'Izin membaca foto ditolak. Anda tetap bisa mengisi barang secara manual.';
+  if (c === 'rate_limited') return 'Terlalu sering membaca foto. Coba lagi nanti.';
+  if (c === 'image_rejected') return 'Foto tidak bisa dibaca. Coba foto lain yang lebih jelas.';
+  if (c === 'invalid_json' || c === 'empty_completion' || c === 'refused') return 'Foto belum bisa dibaca. Coba foto yang lebih jelas, atau isi barang manual.';
+  if (c === 'sampling_disabled' || c === 'images_unavailable') return 'Baca foto otomatis belum tersedia di akun ini. Isi barang secara manual.';
+  return 'Gagal membaca foto. Coba lagi nanti.';
+}
+function applyScan(o) {
+  const F = S.form;
+  if (!o || typeof o !== 'object') { F.scanMsg = 'Foto belum bisa dibaca. Coba foto yang lebih jelas.'; return; }
+  const items = (Array.isArray(o.barang) ? o.barang : []).slice(0, 40).map(x => ({ n: String((x && x.nama) || '').trim().slice(0, 60), q: intOf(x && x.jumlah, 999) || 1, p: intOf(x && x.harga, 1e9) })).filter(x => x.n);
+  if (items.length) F.items = items;
+  const noteEl = $('#f-note');
+  if (o.toko && noteEl && !noteEl.value.trim()) { F.note = String(o.toko).slice(0, 80); noteEl.value = F.note; }
+  if (typeof o.tanggal === 'string' && isYmd(o.tanggal) && o.tanggal <= ymd(addDays(new Date(), 1)) && o.tanggal >= ymd(addDays(new Date(), -400))) { F.date = o.tanggal; $('#f-date').value = F.date; }
+  const c = CATS[o.kategori];
+  if (c && c.type === 'out' && !F.catTouched) F.cat = c.id;
+  const total = intOf(o.total, 1e10);
+  if (!F.amountTouched && itemsSum(F) <= 0 && total > 0) { F.amount = total; $('#f-amt').value = dots(total); }
+  F.scanMsg = items.length ? items.length + ' barang terbaca. Periksa lagi nama dan harganya sebelum menyimpan.' : 'Tidak ada barang yang terbaca dari foto ini.';
+}
+async function scanPhoto() {
+  const F = S.form; if (!F || F.scanning || !S.sample) return;
+  const blob = F.photo ? F.photo.blob : (F.photoData ? dataUrlToBlob(F.photoData) : null); if (!blob) return;
+  F.scanning = true; F.scanMsg = ''; F.ctl = new AbortController(); paintPhoto();
+  const prompt = 'Kamu membantu mencatat pengeluaran. Foto terlampir adalah struk belanja atau barang yang dibeli di Indonesia (mata uang Rupiah).\nHari ini: ' + ymd(new Date()) + '.\n' +
+    'Balas HANYA dengan satu objek JSON, tanpa teks lain, berbentuk:\n{"toko": teks atau null, "tanggal": "YYYY-MM-DD" atau null, "kategori": id kategori, "barang": [{"nama": teks, "jumlah": angka, "harga": angka}], "total": angka atau null}\n' +
+    'Aturan:\n- "harga" adalah harga SATUAN dalam Rupiah, bilangan bulat tanpa titik atau koma. Jika struk hanya menulis total per baris, bagi dengan jumlah.\n- "total" adalah total belanja yang tertulis di struk, bila ada.\n- Tulis hanya barang yang benar-benar terlihat. Jangan mengarang. Maksimal 30 barang.\n- Jika harga tidak terlihat, isi harga 0.\n- "tanggal" hanya jika tercetak di struk, ubah ke format YYYY-MM-DD.\n- "kategori" harus salah satu id berikut (id=nama): ' + CATS_OUT.map(c => c.id + '=' + c.label).join('; ') + '.';
+  try {
+    const o = await S.sample.json(prompt, { images: blob, modelTier: 'default', signal: F.ctl.signal, cache: false });
+    if (S.form !== F) return;
+    applyScan(o);
+  } catch (e) {
+    if (S.form !== F) return;
+    if (!(e && e.code === 'cancelled')) F.scanMsg = scanErr(e);
+  }
+  F.scanning = false; F.ctl = null; paintAll();
+}
+async function saveForm() {
+  const F = S.form; if (!F || F.saving) return;
+  const err = $('#f-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); };
+  err.hidden = true;
+  F.note = $('#f-note').value; F.date = $('#f-date').value;
+  if (!(F.amount > 0)) return fail('Isi jumlah uang lebih dari nol.');
+  if (!isYmd(F.date)) return fail('Pilih tanggal yang valid.');
+  if (!CATS[F.cat] || CATS[F.cat].type !== F.type) return fail('Pilih salah satu kategori.');
+  if (accRequired(F) && !F.acc) return fail('Pilih rekening pembayaran terlebih dulu.');
+  if (accShort(F)) return fail('Saldo ' + accLabel(F.acc) + ' kurang. Saldo sekarang ' + saldoTxt(accAvail(F, F.acc)) + ', jumlah ' + fmtRp(F.amount) + '.');
+  const axk = F.type === 'out' && ACC_XFER[F.cat] && accTargets(F).length ? ACC_XFER[F.cat] : null;   // tanpa rekening tujuan, dicatat sebagai pengeluaran biasa (seperti dulu)
+  if (axk) {
+    const tt = accById(F.to);
+    if (!tt || (axk === 'ewallet' && tt.kind !== 'ewallet')) return fail(axk === 'ewallet' ? 'Pilih e-wallet tujuan.' : 'Pilih rekening tujuan.');
+    if (F.to === (F.acc || '')) return fail('Rekening asal dan tujuan tidak boleh sama.');
+  }
+  const btn = $('#f-save'); F.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  const base = S.db.doc('ledger/' + S.me.id); let newPhoto = null;
+  try {
+    const now = new Date().toISOString(), isOut = F.type === 'out', oldId = F.photoId;
+    const items = isOut ? F.items.map(i => ({ n: String(i.n || '').trim().slice(0, 60), q: i.q > 0 ? Math.round(i.q) : 1, p: Math.round(i.p) || 0 })).filter(i => i.n || i.p > 0).map(i => ({ n: i.n || 'Barang', q: i.q, p: i.p })) : [];
+    let photoId = oldId;
+    if (!isOut || F.removePhoto) photoId = null;
+    if (isOut && F.photo) { const pr = base.collection('photos').doc(); await pr.set({ data: F.photo.dataUrl, createdAt: now }); newPhoto = pr; photoId = pr.id; }
+    const data = { type: F.type, amount: Math.round(F.amount), cat: F.cat, date: F.date, note: F.note.trim().slice(0, 80), items, photo: photoId || null, createdAt: F.createdAt || now, updatedAt: now };
+    if (F.demo) data.demo = true;
+    if (F.ref && F.ref.id) data.ref = F.ref;
+    if (F.acc && accById(F.acc)) data.acc = F.acc;
+    if (axk && F.to) data.to = F.to;
+    await (F.id ? base.collection('tx').doc(F.id) : base.collection('tx').doc()).set(data);
+    if (oldId && oldId !== photoId) { try { await base.collection('photos').doc(oldId).delete(); } catch (e) { /* abaikan */ } }
+    const edit = !!F.id, nowD = new Date(); closeSheet(); toast(edit ? 'Transaksi diperbarui' : 'Transaksi tersimpan');
+    if (F.date >= ymd(new Date(nowD.getFullYear(), nowD.getMonth(), 1))) scheduleReminder();
+  } catch (e) {
+    if (newPhoto) { try { await newPhoto.delete(); } catch (x) { /* abaikan */ } }
+    F.saving = false; btn.disabled = false; btn.textContent = 'Simpan'; fail(dbErrMsg(e));
+  }
+}
+async function deleteTx() {
+  const F = S.form; if (!F || !F.id) return;
+  if (!arm('tx')) { paintDel(); return; }
+  disarm();
+  const err = $('#f-err'), base = S.db.doc('ledger/' + S.me.id);
+  try {
+    await base.collection('tx').doc(F.id).delete();
+    if (F.photoId) { try { await base.collection('photos').doc(F.photoId).delete(); } catch (e) { /* abaikan */ } }
+    closeSheet(); toast('Transaksi dihapus');
+  } catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; paintDel(); }
+}
+
+/* ================= Aksi & event ================= */
+const ACT = {
+  nav(el) {
+    moreSet(false);
+    if (el.dataset.sub) (S.sub || (S.sub = {}))[el.dataset.sub] = true;
+    const v = el.dataset.v, g = GROUP_OF(v);
+    S.view = LEAF[v] ? v : (g ? g.def : v); renderView(); window.scrollTo(0, 0);
+  },
+  'cat-open'(el) {
+    let s, e, label;
+    if (el.dataset.s && el.dataset.e) { s = el.dataset.s; e = el.dataset.e; label = el.dataset.l || ''; }
+    else { const P = S.period, A = S.anchor, rg = rangeFor(P, A); s = ymd(rg.start); e = ymd(rg.end); label = rangeLabel(P, rg, A); }
+    S.catView = { id: el.dataset.id, type: el.dataset.t === 'in' ? 'in' : 'out', s, e, label, back: el.dataset.back === 'insight' ? 'insight' : 'rekap', scroll: window.scrollY || 0 };
+    S.view = 'kategori'; renderView(); window.scrollTo(0, 0);
+  },
+  'cat-back'() { const c = S.catView, y = c ? c.scroll : 0; S.view = (c && c.back) || 'rekap'; renderView(); window.scrollTo(0, y || 0); },
+  'ins-n'(el) {
+    const I = insState(), v = el.dataset.v;
+    if (v === 'custom') { if (I.mode !== 'custom') { const w = insWindow(); I.cs = w.s; I.ce = w.e; } I.mode = 'custom'; }
+    else { I.mode = 'n'; I.n = Number(v) || 1; }
+    VIEWS.insight.update();
+  },
+  'ins-prev'() { const I = insState(); I.anchor = shiftAnchor('month', I.anchor, -I.n); VIEWS.insight.update(); },
+  'ins-next'() { const I = insState(); I.anchor = shiftAnchor('month', I.anchor, I.n); VIEWS.insight.update(); },
+  'ins-today'() { const I = insState(); I.anchor = startOfDay(new Date()); VIEWS.insight.update(); },
+  sub(el) { const st = S.sub || (S.sub = {}), k = el.dataset.k; st[k] = !subOpen(k); if (SUB_KEEP[k]) { try { localStorage.setItem(SUB_KEEP[k], st[k] ? '1' : '0'); } catch (e) { /* abaikan */ } } paintSub(); },
+  add() { if (!isAdmin()) openSheet(null); },
+  'bk-dl'() { bkDownload(!!($('#bk-photos') && $('#bk-photos').checked)); },
+  'bk-pick'() { const i = $('#bk-file'); if (i) i.click(); },
+  'vt-run'() { vaultBackup(); },
+  'vt-pick'() { const i = $('#vt-file'); if (i) i.click(); },
+  'vt-key-pick'() { const i = $('#vt-key'); if (i) i.click(); },
+  'vt-restore'() { vaultRestore(); },
+  'vt-clear'() { const v = vtState(); v.file = null; v.key = null; v.note = null; disarm(); vaultPaint(); },
+  'vt-keygen'() { vaultKeygen(); },
+  'vt-keydl'() { const v = vtState(); if (v.fresh) vaultSaveKey(v.fresh).catch(() => { toast('Berkas belum tersimpan'); }); },
+  'vt-enable'() { vaultEnable(); },
+  'vt-retry'() { vaultLoad(true); },
+  'bk-merge'() { bkRestore('merge'); },
+  'bk-replace'() { if (!arm('bk-replace')) { paintBk(); return; } disarm(); bkRestore('replace'); },
+  'bk-cancel'() { S.bkPrev = null; S.bkNote = null; disarm(); paintBk(); },
+  'bk-pop-go'() { bkHidePopup(); bkDownload(true); },
+  'bk-pop-x'() { bkHidePopup(); },
+  'pot-add'(el) { openSheet(null, { cat: el.dataset.cat }); },
+  'bud-add-open'() { S.budAdd = true; S.baVal = ''; refreshBudget(); const i = $('#ba-amt'); if (i && i.focus) i.focus(); const c = document.querySelector && document.querySelector('.bud-add-card'); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'center', behavior: 'smooth' }); },
+  'bud-add-cancel'() { S.budAdd = false; S.baVal = ''; refreshBudget(); },
+  'bud-add-clear'() { clearBudgetAdd(); },
+  'fold'(el) {
+    const k = el.dataset.k, st = foldState(); st[k] = !st[k];
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify(st)); } catch (e) { /* abaikan */ }
+    const sec = el.closest && el.closest('.foldable'), b = sec && sec.querySelector('.fold-body');
+    if (sec) sec.classList.toggle('shut', !!st[k]);
+    if (b) b.hidden = !!st[k];
+    el.setAttribute('aria-expanded', String(!st[k])); el.setAttribute('aria-label', (st[k] ? 'Buka ' : 'Ciutkan ') + (el.dataset.t || ''));
+  },
+  'bud-day'(el) { const i = $('#bud-day'); if (!i) return; i.value = el.dataset.v === '1' ? '' : el.dataset.v; updateDayNote(); },
+  'ba-chip'(el) { const i = $('#ba-amt'); if (!i) return; const cur = Number(String(i.value).replace(/\D/g, '')) || 0; i.value = dots(cur + Number(el.dataset.v)); updateBudPrev(); if (i.focus) i.focus(); },
+  'side-toggle'() { sideSet(!sideMin()); },
+  /* klik judul menu: buka halamannya; bila menu itu sudah aktif, lipat/buka submenunya */
+  'acc-sec'(el) { const k = el.dataset.k, st = S.accSec || (S.accSec = {}); st[k] = !st[k]; const b = el.closest('.acc-sec'); if (b) b.classList.toggle('shut', !!st[k]); el.setAttribute('aria-expanded', String(!st[k])); },
+  more() { moreSet(!(document.body && document.body.classList && document.body.classList.contains('more-open'))); },
+  'more-close'() { moreSet(false); },
+  'nav-g'(el) { const g = el.dataset.v, was = leafGroup(S.view) === g, box = $('.nav-g[data-g="' + g + '"]'); ACT.nav(el); if (box) navFoldSet(g, was ? !box.classList.contains('shut') : false); },
+  'nav-fold'(el) { const g = el.dataset.g; navFoldSet(g, !$('.nav-g[data-g="' + g + '"]').classList.contains('shut')); },
+  logout() { logout(); },
+  'toggle-pw'(el) { const i = document.getElementById(el.dataset.t); if (!i) return; i.type = i.type === 'password' ? 'text' : 'password'; el.innerHTML = ic(i.type === 'password' ? 'eye' : 'eyeoff', 20); },
+  'setup-admin'() { setupAdmin(); },
+  'auth-tab'(el) { S.authTab = el.dataset.v === 'daftar' ? 'daftar' : 'masuk'; if (S.authTab === 'masuk') S.regDone = null; const e1 = $('#r-err'), e2 = $('#l-err'); if (e1) e1.hidden = true; if (e2) e2.hidden = true; updateLogin(); },
+  'reg-back'() { S.authTab = 'masuk'; S.regDone = null; updateLogin(); },
+  'pwp-go'() { hidePwPrompt(); (S.sub || (S.sub = {})).pw = true; S.view = 'akun'; renderView(); window.scrollTo(0, 0); setTimeout(() => { const i = $('#pw-cur'); if (i && i.focus) i.focus(); }, 80); },
+  'pwp-skip'() { hidePwPrompt(); },
+  'pwp-bd'(el, e) { if (e && e.target === el) hidePwPrompt(); },
+  'reg-ok'(el) { approveReg(el.dataset.id); },
+  'reg-no'(el) { rejectReg(el.dataset.id); },
+  period(el) { S.period = el.dataset.v; S.anchor = startOfDay(new Date()); VIEWS.rekap.update(); enterAnim('enter-soft'); },
+  prev() { S.anchor = shiftAnchor(S.period, S.anchor, -1); VIEWS.rekap.update(); enterAnim('enter-soft'); },
+  next() { S.anchor = shiftAnchor(S.period, S.anchor, 1); VIEWS.rekap.update(); enterAnim('enter-soft'); },
+  today() { S.anchor = startOfDay(new Date()); VIEWS.rekap.update(); enterAnim('enter-soft'); },
+  'toggle-all'(el) { S.showAll[el.dataset.k] = !S.showAll[el.dataset.k]; VIEWS.rekap.update(); },
+  'tx-open'(el) { const t = S.tx.find(x => x.id === el.dataset.id); if (t) openSheet(t); },
+  ftype(el) { S.filters.type = el.dataset.v; S.shown = 60; VIEWS.transaksi.update(); },
+  'more-tx'() { S.shown += 60; VIEWS.transaksi.update(); },
+  'acc-reset'(el) {
+    const id = el.dataset.id, a = S.accounts[id]; if (!a || id === S.me.id || !isAdmin()) return;
+    if (!arm('reset:' + id)) { VIEWS.admin.update(); return; }
+    disarm();
+    resetRemote(a).then(() => toast('Kata sandi ' + a.name + ' direset ke kata sandi awal (' + DEFAULT_PW + ')'), e => toast(dbErrMsg(e)));
+    VIEWS.admin.update();
+  },
+  'acc-role'(el) {
+    const id = el.dataset.id, a = S.accounts[id]; if (!a || id === S.me.id || !isAdmin()) return;
+    const to = el.dataset.to === 'admin' ? 'admin' : el.dataset.to === 'helper' ? 'helper' : 'user', was = a.role;
+    if (was === to) return;
+    if (!arm('role:' + id + ':' + to)) { VIEWS.admin.update(); return; }
+    disarm();
+    roleRemote(a, to).then(() => toast(to === 'admin' ? a.name + ' kini administrator' : to === 'helper' ? a.name + ' kini admin pembantu' : (was === 'helper' ? 'Peran admin pembantu ' : 'Peran administrator ') + a.name + ' dicabut'), e => toast(dbErrMsg(e)));
+    VIEWS.admin.update();
+  },
+  'acc-toggle'(el) {
+    const id = el.dataset.id, a = S.accounts[id]; if (!a || id === S.me.id || (!isAdmin() && a.role !== 'user')) return;
+    toggleRemote(a).then(() => toast(a.active === false ? a.name + ' diaktifkan' : a.name + ' dinonaktifkan'), e => toast(dbErrMsg(e)));
+  },
+  async 'acc-del'(el) {
+    const id = el.dataset.id, a = S.accounts[id]; if (!a || id === S.me.id || !isAdmin()) return;
+    if (!arm('del:' + id)) { VIEWS.admin.update(); return; }
+    disarm(); toast('Menghapus akun ' + a.name + '…');
+    try { await deleteRemote(a); toast('Akun ' + a.name + ' dihapus'); } catch (e) { toast(dbErrMsg(e)); }
+  },
+  csv() { exportCsv(); },
+  'dl-pdf'() { exportPdf(); },
+  'dl-xlsx'() { exportXlsx(); },
+  'rem-close'() { hideReminder(); },
+  'rem-test'() { showReminder(fundStatus(new Date()) || sampleStatus()); },
+  'demo-add'() { addDemo(); },
+  'demo-del'() { if (!arm('demo')) { renderView(); return; } disarm(); delDemo(); },
+  'sheet-bd'() { closeSheet(); },
+  'sheet-close'() { closeSheet(); },
+  'f-type'(el) {
+    const F = S.form; if (!F || F.type === el.dataset.t) return;
+    F.type = el.dataset.t; F.cat = F.type === 'out' ? 'makan' : 'gaji'; F.catTouched = false; F.ref = null; paintType(); paintCats(); paintAcc(); paintRef();
+  },
+  'f-cat'(el) {
+    const F = S.form; F.cat = el.dataset.id; F.catTouched = true;
+    $$('#f-cats .cat').forEach(b => b.setAttribute('aria-checked', String(b.dataset.id === F.cat))); paintHint(); paintAcc();
+  },
+  'f-additem'() { const F = S.form; F.items.push({ n: '', q: 1, p: 0 }); paintItems(); paintTotal(); const ins = $$('#f-items [data-k="n"]'); if (ins.length) ins[ins.length - 1].focus(); },
+  'f-item-rm'(el) { const F = S.form; F.items.splice(Number(el.dataset.i), 1); paintItems(); paintTotal(); },
+  'f-photo-rm'() { const F = S.form; F.photo = null; F.removePhoto = !!F.photoId; if (F.removePhoto) F.photoData = null; F.scanMsg = ''; paintPhoto(); },
+  'f-scan'() { scanPhoto(); },
+  'f-scan-stop'() { const F = S.form; if (F && F.ctl) F.ctl.abort(); },
+  'f-del'() { deleteTx(); }
+};
+document.addEventListener('click', e => {
+  const tgt = e.target, hit = tgt.closest ? tgt.closest('.hit') : null, hit2 = tgt.closest ? tgt.closest('.hit2') : null;
+  if (hit) { showTip(hit); return; }
+  if (hit2) { showTip2(hit2); return; }
+  const el = tgt.closest ? tgt.closest('[data-act]') : null;
+  if (!el) { hideTip(); return; }
+  const a = el.dataset.act;
+  if (a === 'sheet-bd' && tgt !== el) return;
+  hideTip();
+  if (ACT[a]) ACT[a](el, e);
+});
+document.addEventListener('mouseover', e => { const h = e.target.closest ? e.target.closest('.hit') : null, h2 = e.target.closest ? e.target.closest('.hit2') : null; if (h) showTip(h); else if (h2) showTip2(h2); });
+document.addEventListener('mouseout', e => { if (e.target.closest && (e.target.closest('.hit') || e.target.closest('.hit2'))) hideTip(); });
+document.addEventListener('submit', e => {
+  e.preventDefault();
+  const id = e.target.id;
+  if (id === 'login-form') doLogin();
+  else if (id === 'reg-form') registerAccount();
+  else if (id === 'setup-form') submitSetup();
+  else if (id === 'sheet') saveForm();
+  else if (id === 'acc-form') createAccount();
+  else if (id === 'pw-form') changePw();
+  else if (id === 'pp-birth-form') saveBirth();
+  else if (id === 'pp-email-form') saveEmail();
+  else if (id === 'bud-form') saveBudget();
+  else if (id === 'bud-add-form') saveBudgetAdd();
+  else if (id === 'sess-form') saveSessMin();
+  else if (id === 'bkc-form') bkAdminSave();
+});
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || !el.dataset) return;
+  if (el.dataset.money) { onMoney(el); if (el.id === 'ba-amt') updateBudPrev(); return; }
+  if (el.id === 'bud-day') { const v = el.value.replace(/\D/g, '').slice(0, 2); if (v !== el.value) el.value = v; updateDayNote(); return; }
+  if (el.id === 'bkc-sec') { const v = el.value.replace(/\D/g, '').slice(0, 3); if (v !== el.value) el.value = v; return; }
+  if (el.id === 'sess-min') { const v = el.value.replace(/\D/g, '').slice(0, 4); if (v !== el.value) el.value = v; return; }
+  if (el.id === 'q') { S.filters.q = el.value; S.shown = 60; VIEWS.transaksi.update(); return; }
+  if (el.id === 'r-user') { const v = el.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20); if (v !== el.value) el.value = v; return; }
+  if (el.id === 'acc-name') { $('#acc-prev').innerHTML = 'Nama untuk masuk: <b>' + esc(slug(el.value) || '—') + '</b>'; return; }
+  const F = S.form;
+  if (F && el.dataset.k && el.dataset.i != null) {
+    const it = F.items[Number(el.dataset.i)]; if (!it) return;
+    if (el.dataset.k === 'n') it.n = el.value;
+    else if (el.dataset.k === 'q') { const d = el.value.replace(/\D/g, '').slice(0, 3); if (d !== el.value) el.value = d; it.q = Number(d) || 0; }
+    paintTotal();
+  }
+});
+document.addEventListener('change', e => {
+  const el = e.target; if (!el) return;
+  if (el.id === 'fc') { S.filters.cat = el.value; S.shown = 60; VIEWS.transaksi.update(); }
+  else if (el.id === 'fr') { S.filters.range = el.value; S.shown = 60; VIEWS.transaksi.update(); }
+  else if (el.id === 'ins-s' || el.id === 'ins-e') {
+    const I = insState(), a = ($('#ins-s') || {}).value, b = ($('#ins-e') || {}).value;
+    if (a && b) { I.cs = a <= b ? a : b; I.ce = a <= b ? b : a; VIEWS.insight.update(); }
+  }
+  else if (el.id === 'f-ref') pickRef(el.value);
+  else if (el.id === 'rem-on') saveReminderSetting(el.checked);
+  else if (el.id === 'lc-cur') saveCurrency(el.value);
+  else if (el.id === 'bk-file' && el.files && el.files[0]) { const f = el.files[0]; el.value = ''; bkLoadFile(f); }
+  else if (el.id === 'vt-file' && el.files && el.files[0]) { const f = el.files[0]; el.value = ''; vaultLoadFile(f); }
+  else if (el.id === 'vt-key' && el.files && el.files[0]) { const f = el.files[0]; el.value = ''; vaultLoadKey(f); }
+  else if (el.dataset && el.dataset.vtId) { vtState().sel[el.dataset.vtId] = el.checked; disarm(); vaultPaint(); }
+  else if (el.name === 'vt-mode') { vtState().mode = el.value === 'replace' ? 'replace' : 'merge'; disarm(); vaultPaint(); }
+  else if ((el.id === 'f-cam' || el.id === 'f-gal') && el.files && el.files[0]) { const file = el.files[0]; el.value = ''; handlePhoto(file); }
+});
+['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(t => document.addEventListener(t, markActive, { passive: true, capture: true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { idleCheck(); bkTick(); } });
+setInterval(idleCheck, 10000);
+setInterval(bkTick, 60000);
+document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if ($('#duepop')) dueHidePopup(); else if ($('#pwp')) hidePwPrompt(); else if (S.form || S.cf || S.pay || S.hf || S.tf || S.rf) closeSheet(); });
+let rsT = null;
+window.addEventListener('resize', () => {
+  clearTimeout(rsT);
+  rsT = setTimeout(() => {
+    if (S.phase !== 'app' || S.view !== 'rekap' || !S.txLoaded) return;
+    const w = !!(window.matchMedia && window.matchMedia('(min-width: 1000px)').matches);
+    if (w !== S.wide) VIEWS.rekap.update(); else { drawTrend(); drawCmp(); }
+  }, 160);
+});
+/* ================= Menu Tagihan: Jatuh Tempo, Cicilan, Hutang ================= */
+const dueNow = () => dueModel(S.plan, S.tx, new Date());
+function dueCount() { try { return dueNow().must.length; } catch (e) { return 0; } }
+function planReady() { return !!(S.txLoaded && S.planGot && PLAN_COLS.every(c => S.planGot[c])); }
+function planChanged() { paintBadge(); dueMaybePopup(); }
+const planBase = () => S.db.doc('ledger/' + S.me.id);
+const dueDateText = ds => { const d = parseYmd(ds); return fmtDM(d) + ' ' + d.getFullYear(); };
+const planSlot = n => 'var(--s' + (Number(n) >= 0 ? Number(n) : 0) + ')';
+
+/* ---------- Satu baris tagihan (dipakai di pop-up dan halaman Jatuh Tempo) ---------- */
+function dueItemHTML(it, tk) {
+  const cls = it.st === 'telat' ? 'late' : it.st === 'hariini' ? 'today' : 'soon', who = it.type === 'in' ? 'Terima' : 'Sudah Bayar';
+  return `<li class="due-i ${cls}"><span class="chip" style="--c:${planSlot(it.slot)}">${ic(it.icon, 18)}</span>
+    <div class="due-t"><b>${esc(it.title)}</b><small>${esc(it.sub)}</small><small class="due-when">${esc(dueDateText(it.due))} · ${esc(lateText(it.due, tk))}</small></div>
+    <div class="due-r"><b>${it.est ? '≈ ' : ''}${fmtRp(it.amount)}</b><button type="button" class="btn btn-primary btn-sm" data-act="due-pay" data-key="${esc(it.key)}">${who}</button></div></li>`;
+}
+const dueFind = key => dueNow().all.filter(x => x.key === key)[0] || null;
+
+/* ---------- Pop-up harian: semua tagihan yang sudah/lewat jatuh tempo, sekali sehari sampai dibayar ---------- */
+const DUE_LS = 'saku.due.';
+function dueShownToday(tk) { if (S.dueDay === tk) return true; try { return localStorage.getItem(DUE_LS + S.me.id) === tk; } catch (e) { return false; } }
+function dueMarkShown(tk) { S.dueDay = tk; try { localStorage.setItem(DUE_LS + S.me.id, tk); } catch (e) { /* abaikan */ } }
+function dueHidePopup() { const p = $('#duepop'); if (p && p.remove) p.remove(); }
+/* Dicek sekali per hari: saat aplikasi dibuka (data sudah termuat) dan bila tanggal berganti saat aplikasi terbuka.
+   Perubahan data di hari yang sama (mis. baru menambah cicilan) tidak memunculkannya lagi. */
+function dueMaybePopup() {
+  if (S.phase !== 'app' || isAdmin() || !planReady()) return;
+  const tk = ymd(new Date()); if (S.dueChecked === tk) return;
+  if ($('#duepop') || $('#pwp') || $('#sheet-root') || S.form) return;
+  S.dueChecked = tk;
+  if (S.view === 'jatuh' || dueShownToday(tk)) return;
+  const M = dueNow(); if (!M.must.length) return;
+  dueMarkShown(tk); dueShowPopup(M, tk);
+}
+function dueShowPopup(M, tk) {
+  dueHidePopup();
+  const list = M.must.slice(0, 5), more = M.must.length - list.length, outs = M.must.filter(x => x.type !== 'in'), total = outs.reduce((s, x) => s + x.amount, 0);
+  const bd = document.createElement('div'); bd.id = 'duepop'; bd.className = 'backdrop pwp-bd'; bd.setAttribute('data-act', 'due-bd');
+  bd.innerHTML = `<div class="pwp duepop" role="dialog" aria-modal="true" aria-labelledby="dp-t" aria-describedby="dp-d"><div class="done-ic">${ic('bell', 26)}</div>
+    <h2 id="dp-t">${M.must.length === 1 ? '1 Tagihan Jatuh Tempo' : M.must.length + ' Tagihan Jatuh Tempo'}</h2>
+    <p id="dp-d">${total > 0 ? 'Yang perlu dibayar ' + fmtRp(total) + '. ' : ''}Tekan tombol di tiap tagihan bila sudah dibayar, lalu otomatis tercatat di transaksi.</p>
+    <ul class="due-list">${list.map(it => dueItemHTML(it, tk)).join('')}</ul>${more > 0 ? `<p class="pwp-s">+ ${more} tagihan lainnya ada di menu Jatuh Tempo.</p>` : ''}
+    <div class="pwp-a"><button type="button" class="btn btn-primary" id="dp-go" data-act="due-go">Buka Jatuh Tempo</button><button type="button" class="btn btn-ghost" data-act="due-x">Nanti Saja</button></div></div>`;
+  document.body.appendChild(bd);
+  const g = $('#dp-go'); if (g && g.focus) g.focus();
+}
+setInterval(() => { try { dueMaybePopup(); } catch (e) { /* abaikan */ } }, 30000);
+
+/* ---------- Lembar "Sudah Bayar" ---------- */
+function openPay(it) {
+  if (!it) return;
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  dueHidePopup(); closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  S.pay = { k: it.k, id: it.id, p: it.p, due: it.due, type: it.type === 'in' ? 'in' : 'out', cat: it.cat, title: it.title, sub: it.sub, icon: it.icon, slot: it.slot, est: !!it.est, amount: Math.round(it.amount) || 0, date: ymd(new Date()), note: (it.note || (it.title + (it.seq ? ' · ke-' + it.seq : ''))).slice(0, 80), max: Math.round(it.max) || 0, head: it.head || '', btn: it.btn || '', amtLabel: it.amtLabel || '', toast: it.toast || '', onSaved: it.onSaved || null, saving: false };
+  const P = S.pay, c = CATS[P.cat], pot = c && potOf({ cat: P.cat, type: P.type });
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="payform" role="dialog" aria-modal="true" aria-labelledby="pay-t" novalidate>
+    <div class="sheet-h"><h2 id="pay-t">${esc(P.head || (P.type === 'in' ? 'Konfirmasi Penerimaan' : 'Konfirmasi Pembayaran'))}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="pay-sum"><span class="chip" style="--c:${planSlot(P.slot)}">${ic(P.icon, 18)}</span><div><b>${esc(P.title)}</b><small>${esc(P.sub)}${P.due ? ' · jatuh tempo ' + esc(dueDateText(P.due)) : ''}</small></div></div>
+      <div class="field"><label for="pay-amt">${esc(P.amtLabel || (P.type === 'in' ? 'Jumlah diterima' : 'Jumlah dibayar'))}</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="pay-amt" data-money="pay-amt" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+        ${P.est ? '<p class="cat-hint">Cicilan floating: angka ini perkiraan. Sesuaikan dengan tagihan bulan ini sebelum menyimpan.</p>' : ''}</div>
+      <div class="row2"><div class="field"><label for="pay-date">Tanggal</label><input class="input" type="date" id="pay-date"></div><div class="field"><label for="pay-note">Catatan</label><input class="input" id="pay-note" maxlength="80" autocomplete="off"></div></div>
+      <p class="cat-hint">Dicatat di Transaksi sebagai “${esc(c ? c.label : '')}”${pot ? '. Hanya menggeser saldo, bukan ' + (P.type === 'in' ? 'pemasukan' : 'pengeluaran') + '.' : ' (' + (P.type === 'in' ? 'pemasukan' : 'pengeluaran') + ').'}</p>
+      <p class="form-err" id="pay-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="submit" class="btn btn-primary grow" id="pay-save">${ic('check', 18)} ${esc(P.btn || (P.type === 'in' ? 'Sudah Dibayar' : 'Sudah Bayar'))}</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#pay-amt').value = P.amount ? dots(P.amount) : ''; $('#pay-date').value = P.date; $('#pay-note').value = P.note;
+  setTimeout(() => { const a = $('#pay-amt'); if (a && a.focus) { a.focus(); if (a.select) a.select(); } }, 60);
+}
+async function savePay() {
+  const P = S.pay; if (!P || P.saving) return;
+  const err = $('#pay-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); };
+  err.hidden = true; P.date = $('#pay-date').value; P.note = $('#pay-note').value;
+  if (!(P.amount > 0)) return fail('Isi jumlah uang lebih dari nol.');
+  if (P.max > 0 && P.amount > P.max) return fail('Jumlah melebihi sisa ' + fmtRp(P.max) + '.');
+  if (!isYmd(P.date)) return fail('Pilih tanggal yang valid.');
+  const btn = $('#pay-save'); P.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try {
+    const now = new Date().toISOString();
+    await planBase().collection('tx').doc().set({ type: P.type, amount: Math.round(P.amount), cat: P.cat, date: P.date, note: String(P.note || '').trim().slice(0, 80), items: [], photo: null, createdAt: now, updatedAt: now, ref: P.p ? { k: P.k, id: P.id, p: P.p } : { k: P.k, id: P.id } });
+    const nowD = new Date(), thisMonth = P.date >= ymd(new Date(nowD.getFullYear(), nowD.getMonth(), 1));
+    const cb = P.onSaved; closeSheet(); toast(P.toast || (P.type === 'in' ? 'Penerimaan dicatat' : 'Pembayaran dicatat')); if (cb) { try { cb(); } catch (e) { /* abaikan */ } }
+    if (thisMonth && P.type === 'out') scheduleReminder();
+  } catch (e) { P.saving = false; btn.disabled = false; btn.innerHTML = ic('check', 18) + ' ' + esc(P.btn || (P.type === 'in' ? 'Sudah Dibayar' : 'Sudah Bayar')); fail(dbErrMsg(e)); }
+}
+
+/* ---------- Halaman Jatuh Tempo ---------- */
+function dueSection(title, items, tk, cls) {
+  if (!items.length) return '';
+  return `<section class="card due-sec ${cls}" aria-label="${esc(title)}"><div class="card-h"><h2>${esc(title)}</h2><span class="sub">${items.length} tagihan</span></div><ul class="due-list">${items.map(it => dueItemHTML(it, tk)).join('')}</ul></section>`;
+}
+VIEWS.jatuh = {
+  update() {
+    const v = $('#view'), head = subnavHTML('jatuh') + '<div class="page-head"><div><p class="hello">Cicilan dan hutang yang perlu dibayar</p><h1>Jatuh Tempo</h1></div></div>';
+    if (!planReady()) { v.innerHTML = head + skelHTML(); return; }
+    const M = dueNow(), tk = ymd(new Date()), outs = M.must.filter(x => x.type !== 'in'), total = outs.reduce((s, x) => s + x.amount, 0);
+    const any = M.late.length + M.today.length + M.soon.length > 0;
+    const sum = M.must.length ? `<div class="tiles due-sum">${tileHTML('Perlu dibayar sekarang', fmtRp(total), M.must.length + ' tagihan' + (M.late.length ? ', ' + M.late.length + ' terlambat' : ''), M.late.length ? 'neg' : '')}${tileHTML('7 hari ke depan', fmtRp(M.soon.filter(x => x.type !== 'in').reduce((s, x) => s + x.amount, 0)), M.soon.length + ' tagihan')}</div>` : '';
+    const total0 = (S.plan.cicilan || []).length + (S.plan.hutang || []).length;
+    const empty = any ? '' : `<section class="card"><div class="empty"><h3>${total0 ? 'Tidak ada tagihan dalam 7 hari ke depan' : 'Belum ada tagihan'}</h3><p>${total0 ? 'Semua cicilan dan hutang Anda aman untuk sementara.' : 'Tambahkan cicilan atau hutang, lalu jatuh temponya akan muncul di sini dan diingatkan setiap hari.'}</p><div class="acts"><button type="button" class="btn btn-primary" data-act="nav" data-v="cicilan">${ic('plus', 18)} Tambah Cicilan</button></div></div></section>`;
+    v.innerHTML = head + sum + dueSection('Terlambat', M.late, tk, 'late') + dueSection('Hari Ini', M.today, tk, 'today') + dueSection('7 Hari ke Depan', M.soon, tk, 'soon') + empty;
+  }
+};
+
+/* ---------- Cicilan: halaman daftar ---------- */
+const CST = { bayar: ['ok', 'Dibayar'], lalu: ['lalu', 'Sebelum SaKu'], telat: ['late', 'Telat'], hariini: ['today', 'Hari ini'], belum: ['soon', 'Belum'] };
+function cicSched(M, tk) {
+  const mode = S.cexp && S.cexp[M.c.id], all = mode === 'all' || M.rows.length <= 18;
+  let from = 0, to = M.rows.length;
+  if (!all) { const at = Math.max(0, M.rows.findIndex(r => r.st !== 'bayar' && r.st !== 'lalu')); from = Math.max(0, at - 3); to = Math.min(M.rows.length, from + 14); }
+  const rows = M.rows.slice(from, to).map(r => {
+    const t = CST[r.st], pay = r.st === 'bayar' ? `<button type="button" class="lnk" data-act="tx-open" data-id="${esc(r.ids[0] || '')}">${esc(fmtDM(parseYmd(r.date)))}</button>` : (r.st === 'telat' || r.st === 'hariini' || r.st === 'belum') ? `<button type="button" class="btn btn-ghost btn-sm" data-act="cic-pay" data-c="${esc(M.c.id)}" data-p="${esc(r.p)}">Bayar</button>` : '';
+    return `<tr class="st-${r.st}"><td><b>${r.i}. ${esc(ymLabel(r.p, true))}</b><span class="tsub">tempo ${esc(fmtDM(parseYmd(r.due)))}</span></td><td>${M.c.mode === 'float' && r.st !== 'bayar' ? '≈ ' : ''}${fmtRp(r.amount)}</td><td class="stc"><span class="stp ${t[0]}">${t[1]}</span>${pay}</td></tr>`;
+  }).join('');
+  const more = all ? (M.rows.length > 18 ? `<button type="button" class="btn btn-ghost btn-sm" data-act="cic-sched" data-id="${esc(M.c.id)}" data-m="win">Ringkas jadwal</button>` : '') : `<button type="button" class="btn btn-ghost btn-sm" data-act="cic-sched" data-id="${esc(M.c.id)}" data-m="all">Tampilkan semua ${M.rows.length} bulan</button>`;
+  return `<div class="tblwrap sched"><table class="tbl"><thead><tr><th>Cicilan ke · Bulan</th><th>Jumlah</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>${more ? `<div class="btn-row" style="margin-top:10px">${more}</div>` : ''}`;
+}
+function cicCard(M, tk) {
+  const c = M.c, K = M.kind, nx = M.next, open = !!(S.cexp && S.cexp[c.id] && S.cexp[c.id] !== 'off');
+  const st = M.finished ? '<span class="stp ok">Lunas</span>' : nx && nx.st === 'telat' ? '<span class="stp late">Telat</span>' : nx && nx.st === 'hariini' ? '<span class="stp today">Hari ini</span>' : '';
+  const nextLine = M.finished ? `Cicilan lunas. Terima kasih sudah disiplin.` : nx ? `Jatuh tempo berikutnya <b>${esc(dueDateText(nx.due))}</b> · ${esc(lateText(nx.due, tk))}` : '';
+  const sisa = M.finished ? '–' : fmtRp(M.left);
+  return `<section class="card cic ${M.finished ? 'done' : ''}" aria-label="${esc(c.name)}">
+    <div class="cic-h"><span class="chip" style="--c:${planSlot(K.slot)}">${ic(K.icon, 20)}</span><div class="cic-n"><b>${esc(c.name)}</b><small>${esc(K.label)}${c.lender ? ' · ' + esc(c.lender) : ''} · ${esc(CMODE[c.mode] || '')}</small></div>${st}</div>
+    <div class="cic-amt"><b>${c.mode === 'float' ? '≈ ' : ''}${fmtRp(c.amount)}</b><span>per bulan, tiap tanggal ${c.day >= 31 ? 'akhir bulan' : c.day}</span></div>
+    <div class="pbar" role="progressbar" aria-label="Cicilan terbayar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(M.pct)}"><i style="width:${M.pct.toFixed(1)}%"></i></div>
+    <div class="cic-facts"><div><span>Terbayar</span><b>${M.paidN} dari ${M.n} bulan</b></div><div><span>Sisa tagihan</span><b>${sisa}</b></div><div><span>Selesai</span><b>${esc(ymLabel(M.rows[M.rows.length - 1].p, true))}</b></div></div>
+    ${nextLine ? `<p class="cic-next ${nx && nx.st === 'telat' ? 'late' : ''}">${nextLine}</p>` : ''}
+    <div class="btn-row cic-acts">${nx ? `<button type="button" class="btn btn-primary btn-sm" data-act="cic-pay" data-c="${esc(c.id)}" data-p="${esc(nx.p)}">${ic('check', 16)} Sudah Bayar</button>` : ''}<button type="button" class="btn btn-ghost btn-sm" data-act="cic-sched" data-id="${esc(c.id)}" data-m="${open ? 'off' : 'win'}" aria-expanded="${open}">${ic('chevd', 16)} Jadwal</button><button type="button" class="btn btn-ghost btn-sm" data-act="cf-open" data-id="${esc(c.id)}">${ic('edit', 16)} Ubah</button></div>
+    ${open ? cicSched(M, tk) : ''}</section>`;
+}
+VIEWS.cicilan = {
+  update() {
+    const v = $('#view'), head = subnavHTML('cicilan') + `<div class="page-head"><div><p class="hello">KPR, mobil, HP, dan cicilan lain</p><h1>Cicilan</h1></div><button type="button" class="btn btn-primary" data-act="cf-open">${ic('plus', 18)} Tambah</button></div>`;
+    if (!planReady()) { v.innerHTML = head + skelHTML(); return; }
+    const tk = ymd(new Date()), refs = refIndex(S.tx), ms = (S.plan.cicilan || []).map(c => cicilanModel(c, refs, tk));
+    if (!ms.length) { v.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada cicilan</h3><p>Catat cicilan KPR, mobil, HP, atau cicilan lain. SaKu mengingatkan setiap jatuh tempo dan menghitung sisa tagihannya.</p><div class="acts"><button type="button" class="btn btn-primary" data-act="cf-open">${ic('plus', 18)} Tambah Cicilan</button></div></div></section>`; return; }
+    const act = ms.filter(m => !m.finished).sort((a, b) => (a.next ? a.next.due : '9') < (b.next ? b.next.due : '9') ? -1 : 1), fin = ms.filter(m => m.finished), ym = tk.slice(0, 7);
+    const cur = act.map(m => m.rows.filter(r => r.p === ym)[0]).filter(Boolean), curTotal = cur.reduce((s, r) => s + r.amount, 0), curPaid = cur.filter(r => r.st === 'bayar' || r.st === 'lalu').length;
+    const left = act.reduce((s, m) => s + m.left, 0), lastDue = act.reduce((s, m) => (m.last > s ? m.last : s), '');
+    const sum = act.length ? `<div class="tiles tiles-fill cic-sum">${tileHTML('Cicilan bulan ini', fmtRp(curTotal), cur.length ? curPaid + ' dari ' + cur.length + ' sudah dibayar' : 'tidak ada yang jatuh tempo')}${tileHTML('Sisa seluruh cicilan', fmtRp(left), act.length + ' cicilan aktif')}${lastDue ? tileHTML('Lunas semua', ymLabel(lastDue.slice(0, 7)), 'cicilan terakhir selesai') : ''}</div>` : '';
+    v.innerHTML = head + sum + act.map(m => cicCard(m, tk)).join('') + (fin.length ? `<h2 class="sec-t">Sudah Lunas</h2>` + fin.map(m => cicCard(m, tk)).join('') : '');
+  }
+};
+
+/* ---------- Cicilan: form tambah/ubah ---------- */
+function cfDefault() {
+  const n = new Date(), s = ymNow(), e = ymAdd(s, 11);
+  return { id: null, name: '', kind: 'kpr', mode: 'flat', lender: '', amount: 0, sm: Number(s.slice(5)), sy: Number(s.slice(0, 4)), em: Number(e.slice(5)), ey: Number(e.slice(0, 4)), day: n.getDate(), done0: 0, note: '', remind: true, createdAt: null, saving: false };
+}
+function cfFrom(c) {
+  return { id: c.id, name: c.name, kind: c.kind, mode: c.mode, lender: c.lender || '', amount: Number(c.amount) || 0, sm: Number(c.start.slice(5, 7)), sy: Number(c.start.slice(0, 4)), em: Number(c.end.slice(5, 7)), ey: Number(c.end.slice(0, 4)), day: Number(c.day) || 1, done0: Number(c.done0) || 0, note: c.note || '', remind: c.remind !== false, createdAt: c.createdAt || null, saving: false };
+}
+function cfMonthSel(id, m, y) {
+  const y0 = new Date().getFullYear(), lo = Math.min(y0 - 15, y), hi = Math.max(y0 + 45, y), yrs = [];
+  for (let k = lo; k <= hi; k++) yrs.push(k);
+  return `<div class="mrow"><select class="input" id="${id}m" aria-label="Bulan">${MONTHS.map((n, i) => `<option value="${i + 1}"${i + 1 === m ? ' selected' : ''}>${n}</option>`).join('')}</select><select class="input" id="${id}y" aria-label="Tahun">${yrs.map(k => `<option value="${k}"${k === y ? ' selected' : ''}>${k}</option>`).join('')}</select></div>`;
+}
+function cfOpen(id) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const cur = id ? (S.plan.cicilan || []).filter(x => x.id === id)[0] : null; if (id && !cur) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const C = S.cf = cur ? cfFrom(cur) : cfDefault();
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="cform" role="dialog" aria-modal="true" aria-labelledby="cf-t" novalidate>
+    <div class="sheet-h"><h2 id="cf-t">${C.id ? 'Ubah Cicilan' : 'Tambah Cicilan'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="field"><label for="cf-name">Nama cicilan</label><input class="input" id="cf-name" maxlength="60" autocomplete="off" placeholder="mis. KPR Rumah, Motor Vario"></div>
+      <div class="field"><span class="lbl" id="cf-kl">Jenis cicilan</span><div class="cg-l" id="cf-kinds" role="radiogroup" aria-labelledby="cf-kl"></div></div>
+      <div class="field"><span class="lbl" id="cf-ml">Konsep cicilan</span><div class="seg" id="cf-modes" role="group" aria-labelledby="cf-ml"></div><p class="cat-hint" id="cf-mhint"></p></div>
+      <div class="field"><label for="cf-lender">Pemberi cicilan <span class="muted">(opsional)</span></label><input class="input" id="cf-lender" maxlength="60" autocomplete="off" placeholder="mis. BTN, Adira, Kredivo"></div>
+      <div class="field"><label for="cf-amt">Cicilan per bulan</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="cf-amt" data-money="cf-amt" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+      <div class="row2"><div class="field"><span class="lbl">Bulan mulai</span>${cfMonthSel('cf-s', C.sm, C.sy)}</div><div class="field"><span class="lbl">Bulan selesai</span>${cfMonthSel('cf-e', C.em, C.ey)}</div></div>
+      <p class="cat-hint" id="cf-tenor" role="status"></p>
+      <div class="row2"><div class="field"><label for="cf-day">Tanggal jatuh tempo</label><input class="input" id="cf-day" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="25"><small class="hint">Isi 31 untuk akhir bulan.</small></div>
+        <div class="field"><label for="cf-done">Sudah dibayar (bulan)</label><input class="input" id="cf-done" inputmode="numeric" maxlength="3" autocomplete="off" placeholder="0"><small class="hint">Cicilan sebelum Anda memakai SaKu.</small></div></div>
+      <div class="field"><label for="cf-note">Catatan <span class="muted">(opsional)</span></label><input class="input" id="cf-note" maxlength="120" autocomplete="off"></div>
+      <label class="check"><input type="checkbox" id="cf-remind"> Ingatkan saat jatuh tempo</label>
+      <p class="form-err" id="cf-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="cf-del" data-act="cf-del" ${C.id ? '' : 'hidden'}>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="cf-save">Simpan</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#cf-name').value = C.name; $('#cf-lender').value = C.lender; $('#cf-amt').value = C.amount ? dots(C.amount) : ''; $('#cf-day').value = String(C.day);
+  $('#cf-done').value = C.done0 ? String(C.done0) : ''; $('#cf-note').value = C.note; $('#cf-remind').checked = C.remind;
+  cfPaint(); cfTenor();
+  if (!C.id) setTimeout(() => { const a = $('#cf-name'); if (a && a.focus) a.focus(); }, 60);
+}
+function cfPaint() {
+  const C = S.cf; if (!C) return;
+  $('#cf-kinds').innerHTML = CKS.map(k => `<button type="button" role="radio" class="cat" style="--c:${planSlot(k.slot)}" aria-checked="${k.id === C.kind}" data-act="cf-kind" data-id="${k.id}"><span class="chip">${ic(k.icon, 15)}</span>${esc(k.short)}</button>`).join('');
+  $('#cf-modes').innerHTML = ['flat', 'float'].map(m => `<button type="button" data-act="cf-mode" data-v="${m}" aria-pressed="${m === C.mode}">${CMODE[m]}</button>`).join('');
+  $('#cf-mhint').textContent = C.mode === 'flat' ? 'Flat: nominal cicilan sama setiap bulan sampai lunas.' : 'Floating: nominal bisa berubah mengikuti suku bunga. Angka di sini perkiraan; saat menekan “Sudah Bayar” Anda bisa menyesuaikannya dengan tagihan sebenarnya.';
+}
+function cfRead() {
+  const C = S.cf, g = id => { const e = $('#' + id); return e ? e.value : ''; };
+  C.name = g('cf-name'); C.lender = g('cf-lender'); C.note = g('cf-note'); C.remind = !!($('#cf-remind') && $('#cf-remind').checked);
+  C.sm = Number(g('cf-sm')) || C.sm; C.sy = Number(g('cf-sy')) || C.sy; C.em = Number(g('cf-em')) || C.em; C.ey = Number(g('cf-ey')) || C.ey;
+  C.day = Number(g('cf-day').replace(/\D/g, '')) || 0; C.done0 = Number(g('cf-done').replace(/\D/g, '')) || 0;
+  return C;
+}
+function cfTenor() {
+  const C = S.cf, el = $('#cf-tenor'); if (!C || !el) return; cfRead();
+  const n = (C.ey * 12 + C.em) - (C.sy * 12 + C.sm) + 1;
+  if (n < 1) { el.textContent = 'Bulan selesai harus sama dengan atau setelah bulan mulai.'; return; }
+  const y = Math.floor(n / 12), m = n % 12;
+  el.textContent = 'Tenor ' + n + ' bulan' + (y ? ' (' + y + ' tahun' + (m ? ' ' + m + ' bulan' : '') + ')' : '') + (C.amount > 0 ? ', total ' + fmtRp(n * C.amount) + '.' : '.');
+}
+async function saveCicilan() {
+  const C = S.cf; if (!C || C.saving) return; cfRead();
+  const err = $('#cf-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); };
+  err.hidden = true;
+  if (!(C.day >= 1 && C.day <= 31)) return fail('Isi tanggal jatuh tempo antara 1 sampai 31.');
+  const now = new Date().toISOString(), start = C.sy + '-' + pad(C.sm), end = C.ey + '-' + pad(C.em), n = ymN(end) - ymN(start) + 1;
+  if (n >= 1 && C.done0 > n) return fail('Jumlah bulan yang sudah dibayar melebihi tenor (' + n + ' bulan).');
+  const r = planClean('cicilan', { name: C.name, kind: C.kind, mode: C.mode, lender: C.lender, amount: C.amount, start, end, day: C.day, done0: C.done0, note: C.note, remind: C.remind, createdAt: C.createdAt || now, updatedAt: now }, now);
+  if (r.err) return fail(r.err);
+  const btn = $('#cf-save'); C.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try {
+    const col = planBase().collection('cicilan'); await (C.id ? col.doc(C.id) : col.doc()).set(r.ok);
+    const edit = !!C.id; closeSheet(); toast(edit ? 'Cicilan diperbarui' : 'Cicilan ditambahkan');
+  } catch (e) { C.saving = false; btn.disabled = false; btn.textContent = 'Simpan'; fail(dbErrMsg(e)); }
+}
+async function deleteCicilan() {
+  const C = S.cf; if (!C || !C.id) return;
+  const b = $('#cf-del'), on = !!(S.armed && S.armed.key === 'cf-del');
+  if (!on) { arm('cf-del'); if (b) { b.classList.add('armed'); b.textContent = 'Yakin hapus? Catatan pembayaran tetap ada.'; } return; }
+  disarm(); const err = $('#cf-err');
+  try { await planBase().collection('cicilan').doc(C.id).delete(); closeSheet(); toast('Cicilan dihapus'); }
+  catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+
+/* ---------- Aksi ---------- */
+Object.assign(ACT, {
+  'due-pay'(el) { openPay(dueFind(el.dataset.key)); },
+  'due-go'() { dueHidePopup(); S.view = 'jatuh'; renderView(); window.scrollTo(0, 0); },
+  'due-x'() { dueHidePopup(); },
+  'due-bd'(el, e) { if (e && e.target === el) dueHidePopup(); },
+  'cic-pay'(el) {
+    const c = (S.plan.cicilan || []).filter(x => x.id === el.dataset.c)[0]; if (!c) return;
+    const M = cicilanModel(c, refIndex(S.tx), ymd(new Date())), r = M.rows.filter(x => x.p === el.dataset.p)[0];
+    if (r) openPay(cicilanItem(M, r));
+  },
+  'cic-sched'(el) { const st = S.cexp || (S.cexp = {}); st[el.dataset.id] = el.dataset.m; VIEWS.cicilan.update(); },
+  'cf-open'(el) { cfOpen(el.dataset.id || null); },
+  'cf-kind'(el) { const C = S.cf; if (!C) return; cfRead(); C.kind = el.dataset.id; cfPaint(); },
+  'cf-mode'(el) { const C = S.cf; if (!C) return; cfRead(); C.mode = el.dataset.v === 'float' ? 'float' : 'flat'; cfPaint(); },
+  'cf-del'() { deleteCicilan(); }
+});
+document.addEventListener('change', e => { const el = e.target; if (el && el.id && /^cf-[se][my]$/.test(el.id)) cfTenor(); });
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || !el.id) return;
+  if (el.id === 'cf-day') { const v = el.value.replace(/\D/g, '').slice(0, 2); if (v !== el.value) el.value = v; }
+  else if (el.id === 'cf-done') { const v = el.value.replace(/\D/g, '').slice(0, 3); if (v !== el.value) el.value = v; }
+  if (el.id === 'cf-amt') cfTenor();
+});
+document.addEventListener('submit', e => { const id = e.target && e.target.id; if (id === 'cform') saveCicilan(); else if (id === 'payform') savePay(); });
+/* ================= Menu Tagihan: Hutang & Memberi Hutang ================= */
+/* Hutang dan piutang hanya menggeser saldo (kantong Hutang/Piutang), bukan pemasukan atau pengeluaran.
+   Uang pinjaman dicatat sebagai transaksi bertautan (ref.k = 'hutang'); tiap pembayaran juga transaksi bertautan. */
+const HFREQ = { once: 'Sekali bayar (lunas sekaligus)', day: 'Cicil tiap bulan, di tanggal yang sama', monthend: 'Cicil tiap akhir bulan' };
+const HFIL = [['all', 'Semua'], ['hutang', 'Hutang Saya'], ['piutang', 'Memberi Hutang']];
+const hutModels = tk => { const refs = refIndex(S.tx); return (S.plan.hutang || []).map(h => hutangModel(h, refs, tk)); };
+const hutFind = id => (S.plan.hutang || []).filter(x => x.id === id)[0] || null;
+const hutDisType = dir => (dir === 'piutang' ? 'out' : 'in');
+function hutFreqText(h) {
+  if (h.freq === 'once' || !(h.inst > 0)) return 'Sekali bayar';
+  return 'Cicil ' + fmtRp(h.inst) + (h.freq === 'monthend' ? ' tiap akhir bulan' : ' tiap tanggal ' + (h.day >= 31 ? 'akhir bulan' : h.day));
+}
+
+/* ---------- Halaman daftar ---------- */
+function hutSched(M) {
+  const mode = S.hexp && S.hexp[M.h.id], all = mode === 'all' || M.rows.length <= 18, D = M.D;
+  let from = 0, to = M.rows.length;
+  if (!all) { const at = Math.max(0, M.rows.findIndex(r => r.st !== 'bayar')); from = Math.max(0, at - 3); to = Math.min(M.rows.length, from + 14); }
+  const rows = M.rows.slice(from, to).map(r => {
+    const t = r.st === 'bayar' ? ['ok', D.payType === 'in' ? 'Diterima' : 'Dibayar'] : CST[r.st];
+    return `<tr class="st-${r.st}"><td><b>${r.i}. ${esc(ymLabel(r.p, true))}</b><span class="tsub">tempo ${esc(fmtDM(parseYmd(r.due)))}</span></td><td>${fmtRp(r.need)}${r.part ? `<span class="tsub">sudah ${fmtRp(r.got)}</span>` : ''}</td><td class="stc"><span class="stp ${t[0]}">${t[1]}</span></td></tr>`;
+  }).join('');
+  const more = all ? (M.rows.length > 18 ? `<button type="button" class="btn btn-ghost btn-sm" data-act="hut-det" data-id="${esc(M.h.id)}" data-m="win">Ringkas jadwal</button>` : '') : `<button type="button" class="btn btn-ghost btn-sm" data-act="hut-det" data-id="${esc(M.h.id)}" data-m="all">Tampilkan semua ${M.rows.length} cicilan</button>`;
+  return `<div class="tblwrap sched"><table class="tbl"><thead><tr><th>Cicilan ke · Bulan</th><th>Jumlah</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>${more ? `<div class="btn-row" style="margin-top:10px">${more}</div>` : ''}`;
+}
+function hutDetail(M) {
+  const D = M.D, pays = M.txs.slice().reverse(), dis = M.dis[0];
+  const list = pays.length ? `<ul class="hut-pays" aria-label="Riwayat">${pays.map(t => `<li><button type="button" class="lnk" data-act="tx-open" data-id="${esc(t.id)}">${esc(dueDateText(t.date))}</button><b>${fmtRp(t.amount)}</b></li>`).join('')}</ul>` : `<p class="cat-hint">Belum ada ${D.payType === 'in' ? 'penerimaan' : 'pembayaran'} yang dicatat.</p>`;
+  const first = dis ? `<p class="cat-hint">Uang pinjaman tercatat ${fmtRp(M.disAmt)} pada ${esc(dueDateText(dis.date))}.</p>` : `<p class="cat-hint">Uang pinjaman belum dicatat di Transaksi. Buka “Ubah” untuk mencatatnya.</p>`;
+  return `<div class="hut-det"><h3 class="sec-s">${D.payType === 'in' ? 'Penerimaan' : 'Pembayaran'}</h3>${list}${first}${M.cnt > 1 ? '<h3 class="sec-s">Jadwal cicilan</h3>' + hutSched(M) : ''}</div>`;
+}
+function hutCard(M, tk) {
+  const h = M.h, D = M.D, nx = M.next, state = S.hexp && S.hexp[h.id], open = !!(state && state !== 'off'), slot = h.dir === 'hutang' ? 8 : 3;
+  const st = M.closed && M.left > 0 ? '<span class="stp lalu">Ditutup</span>' : M.lunas ? '<span class="stp ok">Lunas</span>' : nx && nx.st === 'telat' ? '<span class="stp late">Telat</span>' : nx && nx.st === 'hariini' ? '<span class="stp today">Hari ini</span>' : '';
+  const nextLine = M.lunas ? (M.closed && M.left > 0 ? `Catatan ditutup. Sisa ${fmtRp(M.left)} dianggap selesai.` : h.dir === 'hutang' ? 'Hutang lunas. Terima kasih sudah disiplin.' : 'Sudah dikembalikan seluruhnya.') : nx ? `Jatuh tempo berikutnya <b>${esc(dueDateText(nx.due))}</b> · ${esc(lateText(nx.due, tk))} · ${fmtRp(M.nextAmt)}` : '';
+  const verb = D.payType === 'in' ? 'Diterima' : 'Terbayar';
+  return `<section class="card cic ${M.lunas ? 'done' : ''}" aria-label="${esc(h.who)}">
+    <div class="cic-h"><span class="chip" style="--c:${planSlot(slot)}">${ic(D.icon, 20)}</span><div class="cic-n"><b>${esc(h.who)}</b><small>${h.dir === 'hutang' ? 'Hutang saya' : 'Memberi hutang'}${h.freq !== 'once' && h.inst > 0 ? ' · dicicil' : ''}${h.group && (S.plan.ramean || []).some(x => x.id === h.group) ? ' · Jajan Ramean: ' + esc((S.plan.ramean || []).filter(x => x.id === h.group)[0].name) : ''}</small></div>${st}</div>
+    <div class="cic-amt"><b>${fmtRp(M.lunas ? h.amount : M.left)}</b><span>${M.lunas ? 'nominal pinjaman' : 'sisa dari ' + fmtRp(h.amount)}</span></div>
+    <div class="pbar" role="progressbar" aria-label="${verb}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(M.pct)}"><i style="width:${M.pct.toFixed(1)}%"></i></div>
+    <div class="cic-facts"><div><span>${verb}</span><b>${fmtRp(M.paid)}</b></div><div><span>Tanggal pinjam</span><b>${esc(dueDateText(h.date))}</b></div><div><span>Pembayaran</span><b>${esc(hutFreqText(h))}</b></div></div>
+    ${nextLine ? `<p class="cic-next ${nx && nx.st === 'telat' ? 'late' : ''}">${nextLine}</p>` : ''}
+    ${h.note ? `<p class="cic-next">${esc(h.note)}</p>` : ''}
+    <div class="btn-row cic-acts">${nx ? `<button type="button" class="btn btn-primary btn-sm" data-act="hut-pay" data-id="${esc(h.id)}">${ic('check', 16)} ${D.done}</button>` : ''}${nx && M.nextAmt < M.left ? `<button type="button" class="btn btn-ghost btn-sm" data-act="hut-all" data-id="${esc(h.id)}">${h.dir === 'hutang' ? 'Lunasi' : 'Terima Sisa'}</button>` : ''}<button type="button" class="btn btn-ghost btn-sm" data-act="hut-det" data-id="${esc(h.id)}" data-m="${open ? 'off' : 'win'}" aria-expanded="${open}">${ic('chevd', 16)} Rincian</button><button type="button" class="btn btn-ghost btn-sm" data-act="hf-open" data-id="${esc(h.id)}">${ic('edit', 16)} Ubah</button></div>
+    ${open ? hutDetail(M) : ''}</section>`;
+}
+VIEWS.hutang = {
+  update() {
+    const v = $('#view'), fil = S.hfil || 'all', head = subnavHTML('hutang') + `<div class="page-head"><div><p class="hello">Hutang saya dan uang yang dipinjam orang</p><h1>Hutang</h1></div><button type="button" class="btn btn-primary" data-act="hf-open" data-dir="${fil === 'piutang' ? 'piutang' : 'hutang'}">${ic('plus', 18)} Tambah</button></div>`;
+    if (!planReady()) { v.innerHTML = head + skelHTML(); return; }
+    const tk = ymd(new Date()), ms = hutModels(tk);
+    if (!ms.length) {
+      v.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada catatan hutang</h3><p>Catat hutang Anda ke orang lain, atau uang yang Anda pinjamkan. SaKu mengingatkan saat jatuh tempo dan menghitung sisanya. Hutang tidak dihitung sebagai pemasukan atau pengeluaran, hanya menggeser saldo.</p><div class="acts"><button type="button" class="btn btn-primary" data-act="hf-open" data-dir="hutang">${ic('plus', 18)} Saya Berhutang</button><button type="button" class="btn btn-ghost" data-act="hf-open" data-dir="piutang">${ic('plus', 18)} Memberi Hutang</button></div></div></section>`;
+      return;
+    }
+    const act = ms.filter(m => !m.lunas).sort((a, b) => ((a.next ? a.next.due : '9') < (b.next ? b.next.due : '9') ? -1 : 1)), fin = ms.filter(m => m.lunas);
+    const sumOf = d => act.filter(m => m.h.dir === d).reduce((s, m) => s + m.left, 0), cnt = d => act.filter(m => m.h.dir === d).length;
+    const near = act.filter(m => m.next)[0], nearLine = near ? (near.h.dir === 'hutang' ? 'bayar ke ' : 'terima dari ') + near.h.who : 'tidak ada tagihan';
+    const tiles = `<div class="tiles tiles-fill cic-sum">${tileHTML('Hutang saya', fmtRp(sumOf('hutang')), cnt('hutang') + ' catatan aktif')}${tileHTML('Dipinjam orang', fmtRp(sumOf('piutang')), cnt('piutang') + ' catatan aktif')}${tileHTML('Jatuh tempo terdekat', near ? fmtDM(parseYmd(near.next.due)) : '–', nearLine)}</div>`;
+    const tabs = `<div class="hut-fil"><div class="seg" role="group" aria-label="Tampilkan">${HFIL.map(f => `<button type="button" data-act="hut-fil" data-v="${f[0]}" aria-pressed="${f[0] === fil}">${f[1]}</button>`).join('')}</div></div>`;
+    const ok = m => fil === 'all' || m.h.dir === fil, a = act.filter(ok), f = fin.filter(ok);
+    const none = !a.length && !f.length ? `<section class="card"><div class="empty"><h3>Tidak ada catatan di sini</h3><p>${fil === 'piutang' ? 'Belum ada uang yang Anda pinjamkan.' : 'Belum ada hutang yang tercatat.'}</p><div class="acts"><button type="button" class="btn btn-primary" data-act="hf-open" data-dir="${fil === 'piutang' ? 'piutang' : 'hutang'}">${ic('plus', 18)} Tambah</button></div></div></section>` : '';
+    v.innerHTML = head + tiles + tabs + a.map(m => hutCard(m, tk)).join('') + (f.length ? '<h2 class="sec-t">Sudah Lunas</h2>' + f.map(m => hutCard(m, tk)).join('') : '') + none;
+  }
+};
+
+/* ---------- Bayar / Terima ---------- */
+function hutPay(id, all) {
+  const h = hutFind(id); if (!h) return;
+  const M = hutangModel(h, refIndex(S.tx), ymd(new Date())); if (!M.next) return;
+  const it = hutangItem(M, M.next);
+  if (all) { it.amount = M.left; it.seq = ''; it.note = (h.dir === 'hutang' ? 'Pelunasan hutang ke ' : 'Pelunasan dari ') + h.who; }
+  openPay(it);
+}
+
+/* ---------- Form tambah/ubah ---------- */
+function hfDefault(dir) {
+  const n = new Date(), tk = ymd(n);
+  return { id: null, dir: dir === 'piutang' ? 'piutang' : 'hutang', who: '', amount: 0, date: tk, first: dueOn(ymAdd(tk.slice(0, 7), 1), n.getDate()), freq: 'once', inst: 0, note: '', remind: true, closed: false, record: true, hasDis: false, group: '', createdAt: null, saving: false };
+}
+function hfFrom(h) {
+  const M = hutangModel(h, refIndex(S.tx), ymd(new Date()));
+  return { id: h.id, dir: h.dir, who: h.who, amount: Number(h.amount) || 0, date: h.date, first: h.first, freq: h.freq || 'once', inst: Number(h.inst) || 0, note: h.note || '', remind: h.remind !== false, closed: h.closed === true, record: false, hasDis: M.dis.length > 0, disAmt: M.disAmt, disDate: M.dis[0] ? M.dis[0].date : '', group: h.group || '', createdAt: h.createdAt || null, saving: false };
+}
+function hfOpen(id, dir) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const cur = id ? hutFind(id) : null; if (id && !cur) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const H = S.hf = cur ? hfFrom(cur) : hfDefault(dir);
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="hform" role="dialog" aria-modal="true" aria-labelledby="hf-t" novalidate>
+    <div class="sheet-h"><h2 id="hf-t">${H.id ? 'Ubah Hutang' : 'Tambah Hutang'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="field"><span class="lbl" id="hf-dl">Jenis</span><div class="seg" id="hf-dirs" role="group" aria-labelledby="hf-dl"></div></div>
+      <div class="field"><label for="hf-who" id="hf-wl">Berhutang ke</label><input class="input" id="hf-who" maxlength="60" autocomplete="off"></div>
+      <div class="field"><label for="hf-amt">Nominal pinjaman</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="hf-amt" data-money="hf-amt" inputmode="numeric" autocomplete="off" placeholder="0"></div><small class="hint">Bila sebagian sudah dibayar sebelum memakai SaKu, isi sisanya saja.</small></div>
+      <div class="row2"><div class="field"><label for="hf-date">Tanggal pinjam</label><input class="input" type="date" id="hf-date"></div><div class="field"><label for="hf-first" id="hf-fl">Jatuh tempo</label><input class="input" type="date" id="hf-first"></div></div>
+      <div class="field"><label for="hf-freq">Cara membayar</label><select class="input" id="hf-freq">${Object.keys(HFREQ).map(k => `<option value="${k}">${HFREQ[k]}</option>`).join('')}</select></div>
+      <div class="field" id="hf-instbox" hidden><label for="hf-inst">Cicilan per bulan</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="hf-inst" data-money="hf-inst" inputmode="numeric" autocomplete="off" placeholder="0"></div><small class="hint" id="hf-ihint"></small></div>
+      <div class="field"><label for="hf-note">Catatan <span class="muted">(opsional)</span></label><input class="input" id="hf-note" maxlength="120" autocomplete="off" placeholder="mis. untuk modal usaha"></div>
+      <label class="check"><input type="checkbox" id="hf-remind"> Ingatkan saat jatuh tempo</label>
+      <div id="hf-recbox"></div>
+      ${H.id ? '<label class="check"><input type="checkbox" id="hf-closed"> Tandai sudah lunas / ditutup</label>' : ''}
+      <p class="form-err" id="hf-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="hf-del" data-act="hf-del" ${H.id ? '' : 'hidden'}>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="hf-save">Simpan</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#hf-who').value = H.who; $('#hf-amt').value = H.amount ? dots(H.amount) : ''; $('#hf-date').value = H.date; $('#hf-first').value = H.first; $('#hf-freq').value = H.freq;
+  $('#hf-inst').value = H.inst ? dots(H.inst) : ''; $('#hf-note').value = H.note; $('#hf-remind').checked = H.remind; if ($('#hf-closed')) $('#hf-closed').checked = H.closed;
+  hfPaint();
+  if (!H.id) setTimeout(() => { const a = $('#hf-who'); if (a && a.focus) a.focus(); }, 60);
+}
+function hfRead() {
+  const H = S.hf, g = id => { const e = $('#' + id); return e ? e.value : ''; };
+  if (!$('#hf-who')) return H;
+  H.who = g('hf-who'); H.note = g('hf-note'); H.date = g('hf-date'); H.first = g('hf-first'); H.freq = HFREQ[g('hf-freq')] ? g('hf-freq') : 'once';
+  H.remind = !!$('#hf-remind').checked; H.closed = !!($('#hf-closed') && $('#hf-closed').checked);
+  const rc = $('#hf-record'); if (rc) H.record = !!rc.checked;
+  return H;
+}
+/* teks dan bagian formulir yang berubah menurut jenis, cara membayar, dan nominal */
+function hfPaint() {
+  const H = S.hf; if (!H || !$('#hf-dirs')) return;
+  const D = HUT[H.dir];
+  $('#hf-dirs').innerHTML = ['hutang', 'piutang'].map(k => `<button type="button" data-act="hf-dir" data-v="${k}" aria-pressed="${H.dir === k}"${H.id ? ' disabled' : ''}>${k === 'hutang' ? 'Saya Berhutang' : 'Memberi Hutang'}</button>`).join('');
+  $('#hf-wl').textContent = H.dir === 'hutang' ? 'Berhutang ke' : 'Dihutang oleh';
+  $('#hf-who').placeholder = H.dir === 'hutang' ? 'mis. Budi, Koperasi Kantor' : 'mis. Ani, Rekan kerja';
+  $('#hf-fl').textContent = H.freq === 'once' ? 'Jatuh tempo' : 'Jatuh tempo pertama';
+  $('#hf-instbox').hidden = H.freq === 'once';
+  const rb = $('#hf-recbox');
+  if (H.hasDis) rb.innerHTML = `<p class="cat-hint">Uang pinjaman sudah tercatat di Transaksi (${fmtRp(H.disAmt)}, ${esc(dueDateText(H.disDate))}). Ubah di sana bila perlu.</p>`;
+  else if (!rb.firstChild || rb.dataset.dir !== H.dir) {
+    const on = rb.firstChild ? !!$('#hf-record').checked : H.record;
+    rb.dataset.dir = H.dir;
+    rb.innerHTML = `<label class="check"><input type="checkbox" id="hf-record"${on ? ' checked' : ''}> Catat uang pinjaman ke Transaksi</label><p class="cat-hint">Dicatat sebagai “${esc(CATS[D.disCat].label)}” pada tanggal pinjam. Hanya menggeser saldo, bukan ${H.dir === 'hutang' ? 'pemasukan' : 'pengeluaran'}. Matikan bila uangnya sudah tercatat atau terjadi sebelum Anda memakai SaKu.</p>`;
+  }
+  hfHints();
+}
+function hfHints() {
+  const H = S.hf, el = $('#hf-ihint'); if (!H || !el) return;
+  const inst = Number(String(($('#hf-inst') || {}).value || '').replace(/\D/g, '')) || 0;
+  el.textContent = H.amount > 0 && inst > 0 ? (inst > H.amount ? 'Cicilan tidak boleh melebihi nominal pinjaman.' : 'Lunas dalam ' + Math.ceil(H.amount / inst) + ' kali bayar.') : 'Berapa yang dibayar tiap bulan. Bayar lebih besar atau melunasi lebih awal tetap bisa.';
+}
+async function saveHutang() {
+  const H = S.hf; if (!H || H.saving) return; hfRead();
+  const err = $('#hf-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); };
+  err.hidden = true;
+  const inst = H.freq === 'once' ? 0 : (Number(String($('#hf-inst').value).replace(/\D/g, '')) || 0);
+  if (!isYmd(H.date)) return fail('Pilih tanggal pinjam yang valid.');
+  if (!isYmd(H.first)) return fail('Pilih tanggal jatuh tempo yang valid.');
+  if (H.first < H.date) return fail('Jatuh tempo tidak boleh sebelum tanggal pinjam.');
+  if (H.freq !== 'once') {
+    if (!(inst >= 1)) return fail('Isi cicilan per bulan.');
+    if (inst > H.amount) return fail('Cicilan per bulan tidak boleh melebihi nominal pinjaman.');
+    if (Math.ceil(H.amount / inst) > 600) return fail('Cicilan terlalu kecil: jumlah cicilan melebihi 600 kali.');
+  }
+  const now = new Date().toISOString(), day = H.freq === 'day' ? Number(H.first.slice(8, 10)) : 31;
+  const r = planClean('hutang', { dir: H.dir, who: H.who, amount: H.amount, date: H.date, first: H.first, freq: H.freq, day, inst, note: H.note, remind: H.remind, closed: H.closed, group: H.group, createdAt: H.createdAt || now, updatedAt: now }, now);
+  if (r.err) return fail(r.err);
+  const btn = $('#hf-save'); H.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  const edit = !!H.id, D = HUT[H.dir], doRec = !!H.record && !H.hasDis;
+  try {
+    const col = planBase().collection('hutang'), ref = H.id ? col.doc(H.id) : col.doc(); await ref.set(r.ok);
+    if (doRec) {
+      try { await planBase().collection('tx').doc().set({ type: hutDisType(H.dir), amount: r.ok.amount, cat: D.disCat, date: r.ok.date, note: ((H.dir === 'hutang' ? 'Pinjam dari ' : 'Pinjamkan ke ') + r.ok.who).slice(0, 80), items: [], photo: null, createdAt: now, updatedAt: now, ref: { k: 'hutang', id: ref.id } }); }
+      catch (e) { closeSheet(); toast('Hutang tersimpan, tetapi uang pinjaman belum tercatat di Transaksi. Buka “Ubah” untuk mencoba lagi.'); return; }
+    }
+    closeSheet(); toast(edit ? 'Hutang diperbarui' : 'Hutang ditambahkan');
+  } catch (e) { H.saving = false; btn.disabled = false; btn.textContent = 'Simpan'; fail(dbErrMsg(e)); }
+}
+async function deleteHutang() {
+  const H = S.hf; if (!H || !H.id) return;
+  const b = $('#hf-del'), on = !!(S.armed && S.armed.key === 'hf-del');
+  if (!on) { arm('hf-del'); if (b) { b.classList.add('armed'); b.textContent = 'Yakin hapus? Transaksi terkait tetap ada.'; } return; }
+  disarm(); const err = $('#hf-err');
+  try { await planBase().collection('hutang').doc(H.id).delete(); closeSheet(); toast('Catatan hutang dihapus'); }
+  catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+
+/* ---------- Aksi ---------- */
+Object.assign(ACT, {
+  'hut-fil'(el) { S.hfil = el.dataset.v; VIEWS.hutang.update(); },
+  'hut-pay'(el) { hutPay(el.dataset.id, false); },
+  'hut-all'(el) { hutPay(el.dataset.id, true); },
+  'hut-det'(el) { const st = S.hexp || (S.hexp = {}); st[el.dataset.id] = el.dataset.m; VIEWS.hutang.update(); },
+  'hf-open'(el) { hfOpen(el.dataset.id || null, el.dataset.dir || 'hutang'); },
+  'hf-dir'(el) { const H = S.hf; if (!H) return; hfRead(); H.dir = el.dataset.v === 'piutang' ? 'piutang' : 'hutang'; hfPaint(); },
+  'hf-del'() { deleteHutang(); }
+});
+document.addEventListener('change', e => { const el = e.target; if (el && el.id === 'hf-freq' && S.hf) { hfRead(); hfPaint(); } });
+document.addEventListener('input', e => { const el = e.target; if (el && el.id === 'hf-inst' && S.hf) hfHints(); });
+document.addEventListener('submit', e => { if (e.target && e.target.id === 'hform') saveHutang(); });
+/* ================= Menu Rencana: Target keuangan ================= */
+/* Kemajuan target dihitung dari transaksi Setor/Tarik/Hasil simpanan yang bertautan ke target itu (ref.k = 'target'),
+   ditambah "sudah terkumpul" awal. Uang tetap tercatat di saldo Tabungan atau Investasi (halaman Simpanan). */
+const tgFind = id => (S.plan.target || []).filter(x => x.id === id)[0] || null;
+function tgAvgOut() { try { const a = avgModel(S.tx, new Date()); return a && a.has ? (a.perMonth != null ? a.perMonth : a.perMonthEst) || 0 : 0; } catch (e) { return 0; } }
+function tgModels(tk) { const refs = refIndex(S.tx), avg = tgAvgOut(); return (S.plan.target || []).map(g => targetModel(g, refs, tk, avg)); }
+const TST = { tercapai: ['ok', 'Tercapai'], ditutup: ['lalu', 'Ditutup'], lewat: ['late', 'Lewat tenggat'], tertinggal: ['today', 'Tertinggal'], sesuai: ['ok', 'Sesuai rencana'], jalan: null };
+
+/* ---------- Halaman daftar ---------- */
+function tgDetail(M) {
+  const g = M.g, list = M.txs.slice().reverse(), lbl = t => { const p = potOf(t); return p.k === 'setor' ? 'Setor' : p.k === 'tarik' ? 'Tarik' : (M.pocket && M.pocket.hasilLabel) || 'Hasil'; };
+  const rows = list.length ? `<ul class="hut-pays" aria-label="Riwayat">${list.map(t => `<li><span><button type="button" class="lnk" data-act="tx-open" data-id="${esc(t.id)}">${esc(dueDateText(t.date))}</button> <small>${esc(lbl(t))}</small></span><b>${potOf(t).k === 'tarik' ? '-' : '+'}${fmtRp(t.amount)}</b></li>`).join('')}</ul>` : '<p class="cat-hint">Belum ada setoran. Tekan Setor untuk mulai menabung ke target ini.</p>';
+  return `<div class="hut-det"><h3 class="sec-s">Riwayat setoran</h3>${rows}${M.base > 0 ? `<p class="cat-hint">Uang awal yang sudah terkumpul: ${fmtRp(M.base)} (tidak dicatat sebagai transaksi).</p>` : ''}${g.note ? `<p class="cat-hint">${esc(g.note)}</p>` : ''}</div>`;
+}
+function tgNote(M, avg) {
+  const g = M.g, out = [];
+  if (M.reached) return ['Target tercapai. Selamat!'];
+  if (M.closed) return ['Target ini ditutup.'];
+  if (g.kind === 'darurat' && M.byMonths) out.push(M.goalKnown ? 'Target ' + g.months + ' bulan pengeluaran, sekitar ' + fmtRp(avg) + ' per bulan.' : 'Nominal belum bisa dihitung karena belum ada catatan pengeluaran. Catat pengeluaran dulu, atau ubah target ke nominal.');
+  if (M.equiv !== null && g.kind === 'darurat') out.push('Dana terkumpul setara ' + (Math.round(M.equiv * 10) / 10).toLocaleString(LANG === 'en' ? 'en-US' : 'id-ID') + ' bulan pengeluaran.');
+  if (M.overdue) out.push('Tenggat sudah lewat. Sisa ' + fmtRp(M.left) + '.');
+  else if (M.status === 'tertinggal') out.push('Tertinggal dari rencana: seharusnya sudah terkumpul ' + fmtRp(M.expected) + '.');
+  if (!M.overdue && M.needMonthly > 0 && !(g.monthly > 0)) out.push('Setor ' + fmtRp(M.needMonthly) + ' per bulan agar tercapai ' + dueDateText(g.deadline) + '.');
+  if (g.monthly > 0 && M.etaYm) out.push('Dengan ' + fmtRp(g.monthly) + ' per bulan, perkiraan tercapai ' + ymLabel(M.etaYm) + (M.etaOk === false ? ' (setelah tenggat)' : '') + '.');
+  if (M.planMonthly > 0 && !M.overdue) out.push('Bulan ini: ' + fmtRp(Math.max(0, M.month)) + ' dari ' + fmtRp(M.planMonthly) + '.');
+  return out;
+}
+function tgCard(M, avg) {
+  const g = M.g, K = M.K, open = !!(S.texp && S.texp[g.id]), st = TST[M.status], notes = tgNote(M, avg);
+  const goalTxt = M.goalKnown ? 'dari ' + fmtRp(M.goal) : 'nominal target belum diketahui';
+  return `<section class="card cic ${M.done ? 'done' : ''}" aria-label="${esc(g.name)}">
+    <div class="cic-h"><span class="chip" style="--c:${planSlot(K.slot)}">${ic(K.icon, 20)}</span><div class="cic-n"><b>${esc(g.name)}</b><small>${esc(K.label)} · ${g.pocket === 'investasi' ? 'Investasi' : 'Tabungan'}</small></div>${st ? `<span class="stp ${st[0]}">${st[1]}</span>` : ''}</div>
+    <div class="cic-amt"><b>${fmtRp(M.saved)}</b><span>${goalTxt}</span></div>
+    <div class="pbar" role="progressbar" aria-label="Kemajuan target" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(M.pct)}"><i style="width:${M.pct.toFixed(1)}%"></i></div>
+    <div class="cic-facts"><div><span>Sisa</span><b>${M.done ? '–' : M.goalKnown ? fmtRp(M.left) : '–'}</b></div><div><span>Tenggat</span><b>${g.deadline ? esc(dueDateText(g.deadline)) : 'Tanpa tenggat'}</b></div><div><span>Setor per bulan</span><b>${M.planMonthly > 0 ? fmtRp(M.planMonthly) : '–'}</b></div></div>
+    ${notes.map((x, i) => `<p class="cic-next ${i === 0 && (M.overdue || M.status === 'tertinggal') ? 'late' : ''}">${esc(x)}</p>`).join('')}
+    <div class="btn-row cic-acts">${M.closed || M.reached ? '' : `<button type="button" class="btn btn-primary btn-sm" data-act="tg-add" data-id="${esc(g.id)}">${ic('plus', 16)} Setor</button>`}${M.saved > 0 ? `<button type="button" class="btn btn-ghost btn-sm" data-act="tg-out" data-id="${esc(g.id)}">Tarik</button>` : ''}<button type="button" class="btn btn-ghost btn-sm" data-act="tg-det" data-id="${esc(g.id)}" aria-expanded="${open}">${ic('chevd', 16)} Rincian</button><button type="button" class="btn btn-ghost btn-sm" data-act="tf-open" data-id="${esc(g.id)}">${ic('edit', 16)} Ubah</button></div>
+    ${open ? tgDetail(M) : ''}</section>`;
+}
+VIEWS.target = {
+  update() {
+    const v = $('#view'), head = subnavHTML('target') + `<div class="page-head"><div><p class="hello">Dana darurat, tabungan, investasi, dan impian lain</p><h1>Target</h1></div><button type="button" class="btn btn-primary" data-act="tf-open">${ic('plus', 18)} Tambah</button></div>`;
+    if (!planReady()) { v.innerHTML = head + skelHTML(); return; }
+    const tk = ymd(new Date()), ms = tgModels(tk), avg = tgAvgOut();
+    if (!ms.length) {
+      v.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada target</h3><p>Tetapkan tujuan keuangan Anda: dana darurat, tabungan, investasi, atau impian lain. SaKu menghitung berapa yang perlu disetor tiap bulan dan memantau kemajuannya.</p><div class="acts"><button type="button" class="btn btn-primary" data-act="tf-open" data-kind="darurat">${ic('plus', 18)} Dana Darurat</button><button type="button" class="btn btn-ghost" data-act="tf-open" data-kind="tabungan">Tabungan</button><button type="button" class="btn btn-ghost" data-act="tf-open" data-kind="investasi">Investasi</button></div></div></section>`;
+      S.tgSeen = {}; ms.forEach(m => { S.tgSeen[m.g.id] = m.reached; });
+      return;
+    }
+    /* kabar baik: target yang baru tercapai saat halaman ini terbuka */
+    const seen = S.tgSeen || (S.tgSeen = null);
+    if (seen) ms.forEach(m => { if (m.reached && seen[m.g.id] === false) toast('Target “' + m.g.name + '” tercapai. Selamat!'); });
+    S.tgSeen = {}; ms.forEach(m => { S.tgSeen[m.g.id] = m.reached; });
+    const act = ms.filter(m => !m.done).sort((a, b) => ((a.g.deadline || '9') < (b.g.deadline || '9') ? -1 : (a.g.deadline || '9') > (b.g.deadline || '9') ? 1 : b.pct - a.pct)), fin = ms.filter(m => m.done);
+    const goalSum = act.reduce((s, m) => s + m.goal, 0), savedSum = act.reduce((s, m) => s + m.saved, 0), monthSum = act.reduce((s, m) => s + Math.max(0, m.month), 0), planSum = act.reduce((s, m) => s + m.planMonthly, 0);
+    const tiles = act.length ? `<div class="tiles tiles-fill cic-sum">${tileHTML('Target aktif', String(act.length), goalSum > 0 ? 'senilai ' + fmtRp(goalSum) : 'belum ada nominal')}${tileHTML('Terkumpul', fmtRp(savedSum), goalSum > 0 ? Math.round(Math.min(100, savedSum / goalSum * 100)) + '% dari seluruh target' : 'dari target aktif')}${tileHTML('Setor bulan ini', fmtRp(monthSum), planSum > 0 ? 'rencana ' + fmtRp(planSum) : 'belum ada rencana bulanan')}</div>` : '';
+    v.innerHTML = head + tiles + act.map(m => tgCard(m, avg)).join('') + (fin.length ? '<h2 class="sec-t">Sudah Tercapai / Ditutup</h2>' + fin.map(m => tgCard(m, avg)).join('') : '');
+  }
+};
+
+/* ---------- Setor / Tarik ---------- */
+function tgPay(id, tarik) {
+  const g = tgFind(id); if (!g) return;
+  const M = targetModel(g, refIndex(S.tx), ymd(new Date()), tgAvgOut()), P = M.pocket || POCKETS[0];
+  openPay({ k: 'target', id, p: '', due: '', type: tarik ? 'in' : 'out', cat: tarik ? P.cats.tarik : P.cats.setor, title: g.name, sub: M.K.label + ' · ' + P.label, icon: M.K.icon, slot: M.K.slot, amount: tarik ? 0 : (M.planMonthly > 0 ? Math.min(M.planMonthly, M.goalKnown && M.left > 0 ? M.left : M.planMonthly) : 0), seq: '', note: (tarik ? 'Tarik dari ' : 'Setor ke ') + g.name, head: tarik ? 'Tarik dari Target' : 'Setor ke Target', btn: tarik ? 'Tarik' : 'Setor', amtLabel: tarik ? 'Jumlah ditarik' : 'Jumlah disetor', toast: tarik ? 'Penarikan dicatat' : 'Setoran dicatat', max: tarik ? M.saved : 0 });
+}
+
+/* ---------- Form tambah/ubah ---------- */
+function tfDefault(kind) {
+  const k = TK[kind] ? kind : 'tabungan';
+  return { id: null, name: '', kind: k, mode: k === 'darurat' ? 'bulan' : 'nominal', goal: 0, months: 6, deadline: '', start: ymd(new Date()), monthly: 0, pocket: k === 'investasi' ? 'investasi' : 'tabungan', base: 0, note: '', closed: false, createdAt: null, saving: false };
+}
+function tfFrom(g) {
+  return { id: g.id, name: g.name, kind: g.kind, mode: !(g.goal > 0) && g.months > 0 ? 'bulan' : 'nominal', goal: Number(g.goal) || 0, months: Number(g.months) || 6, deadline: g.deadline || '', start: g.start || '', monthly: Number(g.monthly) || 0, pocket: g.pocket === 'investasi' ? 'investasi' : 'tabungan', base: Number(g.base) || 0, note: g.note || '', closed: g.closed === true, createdAt: g.createdAt || null, saving: false };
+}
+function tfOpen(id, kind) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const cur = id ? tgFind(id) : null; if (id && !cur) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const T = S.tf = cur ? tfFrom(cur) : tfDefault(kind);
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="tform" role="dialog" aria-modal="true" aria-labelledby="tf-t" novalidate>
+    <div class="sheet-h"><h2 id="tf-t">${T.id ? 'Ubah Target' : 'Tambah Target'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="field"><label for="tf-name">Nama target</label><input class="input" id="tf-name" maxlength="60" autocomplete="off"></div>
+      <div class="field"><span class="lbl" id="tf-kl">Jenis target</span><div class="cg-l" id="tf-kinds" role="radiogroup" aria-labelledby="tf-kl"></div></div>
+      <div class="field" id="tf-modebox"><span class="lbl" id="tf-ml">Target dihitung dari</span><div class="seg" id="tf-modes" role="group" aria-labelledby="tf-ml"></div></div>
+      <div class="field" id="tf-goalbox"><label for="tf-goal">Nominal target</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="tf-goal" data-money="tf-goal" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+      <div class="field" id="tf-monbox"><label for="tf-months">Berapa bulan pengeluaran</label><input class="input" id="tf-months" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="6"><small class="hint" id="tf-mhint"></small></div>
+      <div class="row2"><div class="field"><label for="tf-start">Mulai</label><input class="input" type="date" id="tf-start"></div><div class="field"><label for="tf-deadline">Tenggat <span class="muted">(opsional)</span></label><input class="input" type="date" id="tf-deadline"></div></div>
+      <div class="field"><label for="tf-monthly">Rencana setor per bulan <span class="muted">(opsional)</span></label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="tf-monthly" data-money="tf-monthly" inputmode="numeric" autocomplete="off" placeholder="0"></div><small class="hint" id="tf-nhint"></small></div>
+      <div class="field"><span class="lbl" id="tf-pl">Disimpan di</span><div class="seg" id="tf-pockets" role="group" aria-labelledby="tf-pl"></div><small class="hint">Setoran dicatat sebagai Setor Tabungan atau Setor Investasi. Hanya menggeser saldo, bukan pengeluaran.</small></div>
+      <div class="field"><label for="tf-base">Sudah terkumpul <span class="muted">(opsional)</span></label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="tf-base" data-money="tf-base" inputmode="numeric" autocomplete="off" placeholder="0"></div><small class="hint">Uang yang sudah ada untuk target ini sebelum memakai SaKu. Tidak dicatat sebagai transaksi.</small></div>
+      <div class="field"><label for="tf-note">Catatan <span class="muted">(opsional)</span></label><input class="input" id="tf-note" maxlength="120" autocomplete="off"></div>
+      ${T.id ? '<label class="check"><input type="checkbox" id="tf-closed"> Tandai selesai / ditutup</label>' : ''}
+      <p class="form-err" id="tf-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="tf-del" data-act="tf-del" ${T.id ? '' : 'hidden'}>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="tf-save">Simpan</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#tf-name').value = T.name || ''; $('#tf-goal').value = T.goal ? dots(T.goal) : ''; $('#tf-months').value = String(T.months || ''); $('#tf-start').value = T.start; $('#tf-deadline').value = T.deadline;
+  $('#tf-monthly').value = T.monthly ? dots(T.monthly) : ''; $('#tf-base').value = T.base ? dots(T.base) : ''; $('#tf-note').value = T.note; if ($('#tf-closed')) $('#tf-closed').checked = T.closed;
+  if (!T.id && T.kind === 'darurat') $('#tf-name').placeholder = 'mis. Dana darurat 6 bulan'; else $('#tf-name').placeholder = 'mis. Tabungan nikah, DP rumah';
+  tfPaint();
+  if (!T.id) setTimeout(() => { const a = $('#tf-name'); if (a && a.focus) a.focus(); }, 60);
+}
+function tfRead() {
+  const T = S.tf, g = id => { const e = $('#' + id); return e ? e.value : ''; };
+  if (!$('#tf-name')) return T;
+  T.name = g('tf-name'); T.note = g('tf-note'); T.start = g('tf-start'); T.deadline = g('tf-deadline');
+  T.months = Number(g('tf-months').replace(/\D/g, '')) || 0; T.closed = !!($('#tf-closed') && $('#tf-closed').checked);
+  return T;
+}
+function tfPaint() {
+  const T = S.tf; if (!T || !$('#tf-kinds')) return;
+  $('#tf-kinds').innerHTML = TKS.map(k => `<button type="button" role="radio" class="cat" style="--c:${planSlot(k.slot)}" aria-checked="${k.id === T.kind}" data-act="tf-kind" data-id="${k.id}"><span class="chip">${ic(k.icon, 15)}</span>${esc(k.label)}</button>`).join('');
+  const dar = T.kind === 'darurat', mon = dar && T.mode === 'bulan';
+  $('#tf-modebox').hidden = !dar; $('#tf-goalbox').hidden = mon; $('#tf-monbox').hidden = !mon;
+  $('#tf-modes').innerHTML = [['bulan', 'Bulan pengeluaran'], ['nominal', 'Nominal']].map(m => `<button type="button" data-act="tf-mode" data-v="${m[0]}" aria-pressed="${(mon ? 'bulan' : 'nominal') === m[0]}">${m[1]}</button>`).join('');
+  $('#tf-pockets').innerHTML = [['tabungan', 'Tabungan'], ['investasi', 'Investasi']].map(m => `<button type="button" data-act="tf-pocket" data-v="${m[0]}" aria-pressed="${T.pocket === m[0]}">${m[1]}</button>`).join('');
+  tfHints();
+}
+function tfHints() {
+  const T = S.tf; if (!T || !$('#tf-nhint')) return; tfRead();
+  const avg = tgAvgOut(), mh = $('#tf-mhint');
+  if (mh) mh.textContent = avg > 0 ? 'Rata-rata pengeluaran Anda ' + fmtRp(avg) + ' per bulan' + (T.months > 0 ? ', jadi targetnya sekitar ' + fmtRp(Math.round(avg * T.months)) + '.' : '.') : 'Belum ada catatan pengeluaran, jadi nominalnya baru bisa dihitung setelah Anda mencatat pengeluaran.';
+  const mon = T.kind === 'darurat' && T.mode === 'bulan', goal = mon ? Math.round(avg * T.months) : T.goal, left = Math.max(0, goal - T.base);
+  let txt = 'Kosongkan agar dihitung otomatis dari tenggat.';
+  if (T.deadline && isYmd(T.deadline) && goal > 0) { const days = dayDiff(startOfDay(new Date()), parseYmd(T.deadline)); if (days > 0) txt = left > 0 ? 'Agar tepat waktu, perlu sekitar ' + fmtRp(Math.ceil(left / Math.max(1, Math.ceil(days / 30.4375)))) + ' per bulan.' : 'Nominal sudah terpenuhi oleh uang yang terkumpul.'; else txt = 'Tenggat sudah lewat.'; }
+  $('#tf-nhint').textContent = txt;
+}
+async function saveTarget() {
+  const T = S.tf; if (!T || T.saving) return; tfRead();
+  const err = $('#tf-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); };
+  err.hidden = true;
+  const mon = T.kind === 'darurat' && T.mode === 'bulan';
+  if (mon && !(T.months >= 1 && T.months <= 60)) return fail('Isi jumlah bulan pengeluaran antara 1 sampai 60.');
+  if (!mon && !(T.goal > 0)) return fail('Isi nominal target.');
+  if (T.start && !isYmd(T.start)) return fail('Tanggal mulai tidak valid.');
+  if (T.deadline && !isYmd(T.deadline)) return fail('Tanggal tenggat tidak valid.');
+  if (T.start && T.deadline && T.deadline < T.start) return fail('Tenggat tidak boleh sebelum tanggal mulai.');
+  const now = new Date().toISOString();
+  const r = planClean('target', { name: T.name, kind: T.kind, goal: mon ? 0 : T.goal, months: mon ? T.months : 0, deadline: T.deadline, start: T.start, monthly: T.monthly, pocket: T.pocket, base: T.base, note: T.note, closed: T.closed, createdAt: T.createdAt || now, updatedAt: now }, now);
+  if (r.err) return fail(r.err);
+  const btn = $('#tf-save'); T.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try {
+    const col = planBase().collection('target'); await (T.id ? col.doc(T.id) : col.doc()).set(r.ok);
+    const edit = !!T.id; closeSheet(); toast(edit ? 'Target diperbarui' : 'Target ditambahkan');
+  } catch (e) { T.saving = false; btn.disabled = false; btn.textContent = 'Simpan'; fail(dbErrMsg(e)); }
+}
+async function deleteTarget() {
+  const T = S.tf; if (!T || !T.id) return;
+  const b = $('#tf-del'), on = !!(S.armed && S.armed.key === 'tf-del');
+  if (!on) { arm('tf-del'); if (b) { b.classList.add('armed'); b.textContent = 'Yakin hapus? Setoran tetap ada di Simpanan.'; } return; }
+  disarm(); const err = $('#tf-err');
+  try { await planBase().collection('target').doc(T.id).delete(); closeSheet(); toast('Target dihapus'); }
+  catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+
+/* ---------- Aksi ---------- */
+MONEY_HOOKS['tf-goal'] = v => { if (S.tf) { S.tf.goal = v; tfHints(); } };
+MONEY_HOOKS['tf-monthly'] = v => { if (S.tf) { S.tf.monthly = v; tfHints(); } };
+MONEY_HOOKS['tf-base'] = v => { if (S.tf) { S.tf.base = v; tfHints(); } };
+Object.assign(ACT, {
+  'tg-add'(el) { tgPay(el.dataset.id, false); },
+  'tg-out'(el) { tgPay(el.dataset.id, true); },
+  'tg-det'(el) { const st = S.texp || (S.texp = {}); st[el.dataset.id] = !st[el.dataset.id]; VIEWS.target.update(); },
+  'tf-open'(el) { tfOpen(el.dataset.id || null, el.dataset.kind || 'tabungan'); },
+  'tf-kind'(el) { const T = S.tf; if (!T) return; tfRead(); const was = T.kind; T.kind = el.dataset.id; if (!T.id) { if (!T.pocketTouched) T.pocket = T.kind === 'investasi' ? 'investasi' : 'tabungan'; if (T.kind === 'darurat' && was !== 'darurat') T.mode = 'bulan'; else if (T.kind !== 'darurat') T.mode = 'nominal'; } else if (T.kind !== 'darurat') T.mode = 'nominal'; tfPaint(); },
+  'tf-mode'(el) { const T = S.tf; if (!T) return; tfRead(); T.mode = el.dataset.v === 'nominal' ? 'nominal' : 'bulan'; tfPaint(); },
+  'tf-pocket'(el) { const T = S.tf; if (!T) return; tfRead(); T.pocket = el.dataset.v === 'investasi' ? 'investasi' : 'tabungan'; T.pocketTouched = true; tfPaint(); },
+  'tf-del'() { deleteTarget(); }
+});
+document.addEventListener('input', e => { const el = e.target; if (!el || !S.tf) return; if (el.id === 'tf-months') { const v = el.value.replace(/\D/g, '').slice(0, 2); if (v !== el.value) el.value = v; tfHints(); } });
+document.addEventListener('change', e => { const el = e.target; if (el && S.tf && (el.id === 'tf-deadline' || el.id === 'tf-start')) tfHints(); });
+document.addEventListener('submit', e => { if (e.target && e.target.id === 'tform') saveTarget(); });
+/* ================= Menu Rencana: Jajan Ramean (patungan makan / jajan bareng teman) =================
+   Satu acara = total tagihan + peserta + siapa yang membayar. Dibagi rata atau per item; pajak/servis, ongkir, dan diskon
+   dibagi sebanding. "Catat ke SaKu" mencatat bagian Anda sebagai pengeluaran dan sisanya sebagai Memberi Hutang
+   (bila Anda yang membayar) atau Hutang (bila teman yang membayar), sehingga penagihan ikut di menu Hutang. */
+const rmFind = id => (S.plan.ramean || []).filter(x => x.id === id)[0] || null;
+const rmMe = () => { const a = me(); return (a && a.name) ? String(a.name) : 'Saya'; };
+const rmName = (M, i) => (i === 0 ? rmMe() : M.people[i]);
+const rmOutCats = () => CATS_OUT.filter(c => !POCKET_OF[c.id] && !DEBT_OF[c.id]);
+/* hutang yang dibuat dari acara ini, per peserta */
+function rmDebts(r, M) {
+  const map = {}, rec = M.rec; if (!rec) return map;
+  const refs = refIndex(S.tx), tk = ymd(new Date());
+  Object.keys(rec.h || {}).forEach(i => { const h = (S.plan.hutang || []).filter(x => x.id === rec.h[i])[0]; if (h) map[i] = hutangModel(h, refs, tk); });
+  return map;
+}
+function rmText(r, M) {
+  const who = i => rmName(M, i), L = [r.name + (r.date ? ' · ' + dueDateText(r.date) : '')];
+  L.push('Total ' + fmtRp(M.total) + ', dibayar ' + who(M.payer) + '.');
+  if (M.mode === 'item') (r.data.items || []).filter(it => it.a > 0).forEach(it => L.push('- ' + (it.n || 'Item') + ' ' + fmtRp(it.a) + (it.w && it.w.length ? ' (' + it.w.map(who).join(', ') + ')' : '')));
+  if (M.taxAmt) L.push('Pajak/servis ' + r.data.tax + '%: ' + fmtRp(M.taxAmt));
+  if (M.ship) L.push('Ongkir: ' + fmtRp(M.ship));
+  if (M.disc) L.push('Diskon: -' + fmtRp(M.disc));
+  L.push('', 'Bagian masing-masing:');
+  M.people.forEach((p, i) => L.push('- ' + who(i) + ': ' + fmtRp(M.shares[i]) + (i === M.payer ? ' (membayar)' : '')));
+  if (M.owed > 0) L.push('', 'Mohon transfer ke ' + who(M.payer) + '. Terima kasih!');
+  return L.join('\n');
+}
+async function rmCopy(text) {
+  try { await navigator.clipboard.writeText(text); toast('Rincian disalin. Tempel di WhatsApp atau obrolan.'); return; } catch (e) { /* lanjut ke cadangan */ }
+  try { const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); toast(ok ? 'Rincian disalin. Tempel di WhatsApp atau obrolan.' : 'Tidak bisa menyalin otomatis. Tekan lama pada rincian untuk menyalin.'); }
+  catch (e) { toast('Tidak bisa menyalin otomatis.'); }
+}
+
+/* ---------- Halaman daftar ---------- */
+function rmCard(r, tk) {
+  const M = rameanModel(r), debts = rmDebts(r, M), rec = M.rec;
+  const open = M.people.map((_, i) => debts[i]).filter(m => m && !m.lunas), settled = rec && !open.length;
+  const st = rec ? (settled ? '<span class="stp ok">Lunas semua</span>' : '<span class="stp today">' + open.length + ' belum lunas</span>') : '<span class="stp lalu">Belum dicatat</span>';
+  const rows = M.people.map((p, i) => {
+    const d = debts[i]; let tail = '';
+    if (i === M.payer) tail = '<span class="stp ok">Membayar</span>';
+    else if (rec && d) tail = d.lunas ? '<span class="stp ok">Lunas</span>' : `<span class="rm-left">sisa ${fmtRp(d.left)}</span><button type="button" class="btn btn-ghost btn-sm" data-act="hut-pay" data-id="${esc(d.h.id)}">${d.h.dir === 'piutang' ? 'Terima' : 'Bayar'}</button>`;
+    else if (rec && !d && i !== 0 && M.payer === 0) tail = '<span class="rm-left">tidak ada tagihan</span>';
+    return `<li class="rm-p${i === 0 ? ' me' : ''}"><span class="rm-av" aria-hidden="true">${esc((rmName(M, i)[0] || '?').toUpperCase())}</span><span class="rm-n"><b>${esc(rmName(M, i))}</b>${i === 0 ? '<small>Anda</small>' : ''}</span><span class="rm-s">${fmtRp(M.shares[i])}</span>${tail ? `<span class="rm-t">${tail}</span>` : ''}</li>`;
+  }).join('');
+  const bud = M.budget > 0 ? `<div class="pbar ${M.over > 0 ? 'over' : ''}" role="progressbar" aria-label="Anggaran acara" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, M.pct))}"><i style="width:${Math.min(100, M.pct).toFixed(1)}%"></i></div><p class="cic-next ${M.over > 0 ? 'late' : ''}">${M.over > 0 ? 'Melebihi anggaran ' + fmtRp(M.over) : 'Anggaran ' + fmtRp(M.budget) + ', sisa ' + fmtRp(-M.over)}.</p>` : '';
+  return `<section class="card cic" aria-label="${esc(r.name)}">
+    <div class="cic-h"><span class="chip" style="--c:${planSlot(1)}">${ic('users', 20)}</span><div class="cic-n"><b>${esc(r.name)}</b><small>${r.date ? esc(dueDateText(r.date)) + ' · ' : ''}${M.n} peserta · dibayar ${esc(rmName(M, M.payer))}</small></div>${st}</div>
+    <div class="cic-amt"><b>${fmtRp(M.total)}</b><span>total · rata-rata ${fmtRp(Math.round(M.avg))} per orang</span></div>
+    ${bud}
+    <ul class="rm-rows" aria-label="Bagian tiap peserta">${rows}</ul>
+    ${r.note ? `<p class="cic-next">${esc(r.note)}</p>` : ''}
+    <div class="btn-row cic-acts">${!rec && M.ready && M.n >= 2 ? `<button type="button" class="btn btn-primary btn-sm" data-act="rm-rec" data-id="${esc(r.id)}">${ic('check', 16)} Catat ke SaKu</button>` : ''}<button type="button" class="btn btn-ghost btn-sm" data-act="rm-copy" data-id="${esc(r.id)}">${ic('copy', 16)} Salin Rincian</button><button type="button" class="btn btn-ghost btn-sm" data-act="rf-open" data-id="${esc(r.id)}">${ic('edit', 16)} Ubah</button></div></section>`;
+}
+VIEWS.ramean = {
+  update() {
+    const v = $('#view'), head = subnavHTML('ramean') + `<div class="page-head"><div><p class="hello">Patungan makan dan jajan bareng teman</p><h1>Jajan Ramean</h1></div><button type="button" class="btn btn-primary" data-act="rf-open">${ic('plus', 18)} Acara Baru</button></div>`;
+    if (!planReady()) { v.innerHTML = head + skelHTML(); return; }
+    const tk = ymd(new Date()), list = (S.plan.ramean || []).slice().sort((a, b) => ((b.date || '') + (b.createdAt || '')) < ((a.date || '') + (a.createdAt || '')) ? -1 : 1);
+    if (!list.length) {
+      v.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada acara</h3><p>Makan siang bareng teman kantor atau jajan ramai-ramai? Masukkan tagihan dan pesertanya, SaKu membagi bagian tiap orang (rata atau per item, lengkap dengan pajak, ongkir, dan diskon). Bagian teman yang Anda talangi otomatis jadi catatan Memberi Hutang.</p><div class="acts"><button type="button" class="btn btn-primary" data-act="rf-open">${ic('plus', 18)} Buat Acara</button></div></div></section>`;
+      return;
+    }
+    const ym = tk.slice(0, 7), month = list.filter(r => String(r.date || '').slice(0, 7) === ym), minM = month.reduce((s, r) => s + rameanModel(r).mine, 0);
+    let owed = 0, owers = 0, anyDebt = false; const refs = refIndex(S.tx);
+    (S.plan.hutang || []).forEach(h => { if (h.group && h.dir === 'piutang' && rmFind(h.group)) { anyDebt = true; const m = hutangModel(h, refs, tk); if (!m.lunas) { owed += m.left; owers++; } } });
+    const tiles = `<div class="tiles tiles-fill cic-sum">${tileHTML('Acara bulan ini', String(month.length), 'dari ' + list.length + ' acara')}${tileHTML('Bagian Anda bulan ini', fmtRp(minM), 'pengeluaran jajan ramean')}${tileHTML('Belum dikembalikan teman', fmtRp(owed), owers ? owers + ' orang' : anyDebt ? 'semua sudah lunas' : 'belum ada tagihan')}</div>`;
+    v.innerHTML = head + tiles + list.map(r => rmCard(r, tk)).join('');
+  }
+};
+
+/* ---------- Form acara ---------- */
+function rfDefault() { return { id: null, name: '', date: ymd(new Date()), budget: 0, note: '', people: ['Saya'], payer: 0, mode: 'equal', total: 0, items: [], tax: 0, ship: 0, disc: 0, cat: 'makan', rec: null, locked: false, createdAt: null, saving: false }; }
+function rfFrom(r) {
+  const D = r.data || {};
+  return { id: r.id, name: r.name, date: r.date || '', budget: Number(r.budget) || 0, note: r.note || '', people: (D.people && D.people.length ? D.people : ['Saya']).slice(), payer: D.payer || 0, mode: D.mode === 'item' ? 'item' : 'equal', total: D.total || 0, items: (D.items || []).map(it => ({ n: it.n, a: it.a, w: (it.w || []).slice() })), tax: D.tax || 0, ship: D.ship || 0, disc: D.disc || 0, cat: D.cat || 'makan', rec: D.rec || null, locked: !!(D.rec && D.rec.done), createdAt: r.createdAt || null, saving: false };
+}
+const rfData = R => ({ people: R.people, payer: R.payer, mode: R.mode, total: R.total, items: R.items, tax: R.tax, ship: R.ship, disc: R.disc, cat: R.cat, rec: R.rec });
+function rfOpen(id) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const cur = id ? rmFind(id) : null; if (id && !cur) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const R = S.rf = cur ? rfFrom(cur) : rfDefault();
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="rform" role="dialog" aria-modal="true" aria-labelledby="rf-t" novalidate>
+    <div class="sheet-h"><h2 id="rf-t">${R.id ? 'Ubah Acara' : 'Acara Baru'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="field"><label for="rf-name">Nama acara</label><input class="input" id="rf-name" maxlength="60" autocomplete="off" placeholder="mis. Makan siang Jumat, Jajan sore kantor"></div>
+      <div class="row2"><div class="field"><label for="rf-date">Tanggal</label><input class="input" type="date" id="rf-date"></div><div class="field"><label for="rf-budget">Anggaran acara <span class="muted">(opsional)</span></label><div class="amt-wrap sm"><span class="rp">${curSym()}</span><input id="rf-budget" data-money="rf-budget" inputmode="numeric" autocomplete="off" placeholder="0"></div></div></div>
+      ${R.locked ? '<p class="banner">Acara ini sudah dicatat ke Transaksi dan Hutang, jadi peserta dan tagihan dikunci. Untuk mengubahnya, hapus acara dan buat ulang (hapus juga catatan terkait bila perlu).</p>' : ''}
+      <fieldset class="rf-split" id="rf-split"${R.locked ? ' disabled' : ''}>
+        <div class="field"><span class="lbl" id="rf-pl">Peserta</span><div class="rf-chips" id="rf-people" aria-labelledby="rf-pl"></div>
+          <div class="rf-add"><input class="input" id="rf-pname" maxlength="60" autocomplete="off" placeholder="Nama teman (pisahkan dengan koma)" aria-label="Nama teman"><button type="button" class="btn btn-ghost btn-sm" data-act="rf-padd">${ic('plus', 16)} Tambah</button></div></div>
+        <div class="field"><label for="rf-payer">Dibayar oleh</label><select class="input" id="rf-payer"></select></div>
+        <div class="field"><span class="lbl" id="rf-ml">Cara bagi</span><div class="seg" id="rf-modes" role="group" aria-labelledby="rf-ml"></div></div>
+        <div class="field" id="rf-eqbox"><label for="rf-total">Total tagihan</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="rf-total" data-money="rf-total" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+        <div id="rf-itbox"><span class="lbl">Item pesanan</span><div id="rf-items"></div><button type="button" class="btn btn-ghost btn-sm" data-act="rf-iadd">${ic('plus', 16)} Tambah item</button><small class="hint">Pilih siapa saja yang ikut membayar tiap item. Bila tidak dipilih khusus, item dibagi ke semua peserta.</small></div>
+        <div class="field"><span class="lbl">Biaya tambahan <span class="muted">(opsional)</span></span><div class="rf-row3"><div><label for="rf-tax">Pajak &amp; servis</label><div class="amt-wrap sm"><input id="rf-tax" inputmode="numeric" maxlength="3" autocomplete="off" placeholder="0" aria-label="Pajak dan servis, persen"><span class="rp">%</span></div></div><div><label for="rf-ship">Ongkir</label><div class="amt-wrap sm"><span class="rp">${curSym()}</span><input id="rf-ship" data-money="rf-ship" inputmode="numeric" autocomplete="off" placeholder="0"></div></div><div><label for="rf-disc">Diskon</label><div class="amt-wrap sm"><span class="rp">${curSym()}</span><input id="rf-disc" data-money="rf-disc" inputmode="numeric" autocomplete="off" placeholder="0"></div></div></div><small class="hint">Dibagi sebanding dengan nilai pesanan tiap orang.</small></div>
+      </fieldset>
+      <div id="rf-res" class="rf-res" role="status" aria-live="polite"></div>
+      ${R.locked ? '' : '<div class="field"><label for="rf-cat">Kategori bagian Anda</label><select class="input" id="rf-cat">' + rmOutCats().map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join('') + '</select><small class="hint">Dipakai saat acara dicatat ke Transaksi.</small></div>'}
+      <div class="field"><label for="rf-note">Catatan <span class="muted">(opsional)</span></label><input class="input" id="rf-note" maxlength="120" autocomplete="off"></div>
+      <p class="form-err" id="rf-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="rf-del" data-act="rf-del" ${R.id ? '' : 'hidden'}>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="rf-save">Simpan</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#rf-name').value = R.name; $('#rf-date').value = R.date; $('#rf-budget').value = R.budget ? dots(R.budget) : ''; $('#rf-total').value = R.total ? dots(R.total) : '';
+  $('#rf-tax').value = R.tax ? String(R.tax) : ''; $('#rf-ship').value = R.ship ? dots(R.ship) : ''; $('#rf-disc').value = R.disc ? dots(R.disc) : ''; $('#rf-note').value = R.note;
+  const cs = $('#rf-cat'); if (cs) cs.value = rmOutCats().some(c => c.id === R.cat) ? R.cat : 'makan';
+  rfPaint(); rfItems(); rfResult();
+  if (!R.id) setTimeout(() => { const a = $('#rf-name'); if (a && a.focus) a.focus(); }, 60);
+}
+function rfRead() {
+  const R = S.rf; if (!R || !$('#rf-name')) return R;
+  R.name = $('#rf-name').value; R.date = $('#rf-date').value; R.note = $('#rf-note').value; R.tax = Math.min(100, Number($('#rf-tax').value.replace(/\D/g, '')) || 0);
+  const cs = $('#rf-cat'); if (cs) R.cat = cs.value; const pe = $('#rf-payer'); if (pe && !R.locked) R.payer = Number(pe.value) || 0;
+  return R;
+}
+function rfPaint() {
+  const R = S.rf; if (!R || !$('#rf-people')) return;
+  $('#rf-people').innerHTML = R.people.map((p, i) => `<span class="rf-chip-p${i === 0 ? ' me' : ''}"><span>${esc(i === 0 ? rmMe() + ' (Anda)' : p)}</span>${i === 0 ? '' : `<button type="button" data-act="rf-prm" data-i="${i}" aria-label="Hapus ${esc(p)}">${ic('x', 14)}</button>`}</span>`).join('');
+  $('#rf-payer').innerHTML = R.people.map((p, i) => `<option value="${i}"${i === R.payer ? ' selected' : ''}>${esc(i === 0 ? rmMe() + ' (Anda)' : p)}</option>`).join('');
+  $('#rf-modes').innerHTML = [['equal', 'Sama rata'], ['item', 'Per item']].map(m => `<button type="button" data-act="rf-mode" data-v="${m[0]}" aria-pressed="${R.mode === m[0]}">${m[1]}</button>`).join('');
+  $('#rf-eqbox').hidden = R.mode !== 'equal'; $('#rf-itbox').hidden = R.mode !== 'item';
+}
+function rfItems() {
+  const R = S.rf, box = $('#rf-items'); if (!R || !box) return;
+  box.innerHTML = R.items.map((it, i) => {
+    const all = !it.w.length;
+    return `<div class="rf-item"><div class="rf-ir"><input class="input rf-in" data-i="${i}" maxlength="40" autocomplete="off" placeholder="Nama item" aria-label="Nama item ${i + 1}" value="${esc(it.n)}"><div class="amt-wrap sm"><span class="rp">${curSym()}</span><input data-money="rf-ia" data-i="${i}" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Harga item ${i + 1}" value="${it.a ? dots(it.a) : ''}"></div><button type="button" class="icon-btn" data-act="rf-irm" data-i="${i}" aria-label="Hapus item ${i + 1}">${ic('trash', 16)}</button></div>
+      <div class="rf-who" role="group" aria-label="Yang ikut membayar item ${i + 1}">${R.people.map((p, k) => `<button type="button" class="rf-who-b" data-act="rf-iw" data-i="${i}" data-p="${k}" aria-pressed="${all || it.w.indexOf(k) >= 0}">${esc(k === 0 ? rmMe() : p)}</button>`).join('')}</div></div>`;
+  }).join('') || '<p class="cat-hint">Belum ada item. Tekan Tambah item.</p>';
+}
+function rfResult() {
+  const R = S.rf, el = $('#rf-res'); if (!R || !el) return; rfRead();
+  const M = rameanModel({ budget: R.budget, data: rfData(R) });
+  const line = (k, v) => `<div class="rf-rl"><span>${k}</span><b>${v}</b></div>`;
+  const ext = (M.taxAmt || M.ship || M.disc) ? line('Subtotal', fmtRp(M.sub)) + (M.taxAmt ? line('Pajak &amp; servis ' + R.tax + '%', fmtRp(M.taxAmt)) : '') + (M.ship ? line('Ongkir', fmtRp(M.ship)) : '') + (M.disc ? line('Diskon', '-' + fmtRp(M.disc)) : '') : '';
+  const bud = M.budget > 0 && M.total > 0 ? `<p class="rf-bud ${M.over > 0 ? 'over' : ''}">${M.over > 0 ? 'Melebihi anggaran ' + fmtRp(M.over) : 'Dalam anggaran, sisa ' + fmtRp(-M.over)}.</p>` : '';
+  el.innerHTML = `<div class="rf-rt">${line('Total', fmtRp(M.total))}${ext}</div>${bud}<ul class="rm-rows">${M.people.map((p, i) => `<li class="rm-p${i === 0 ? ' me' : ''}"><span class="rm-av" aria-hidden="true">${esc((rmName(M, i)[0] || '?').toUpperCase())}</span><span class="rm-n"><b>${esc(rmName(M, i))}</b>${i === M.payer ? '<small>membayar</small>' : ''}</span><span class="rm-s">${fmtRp(M.shares[i])}</span></li>`).join('')}</ul>${M.total > 0 && M.n >= 2 ? `<p class="cat-hint">${M.payer === 0 ? 'Teman perlu mengembalikan ' + fmtRp(M.owed) + ' kepada Anda.' : 'Anda perlu mengembalikan ' + fmtRp(M.mine) + ' kepada ' + esc(M.people[M.payer]) + '.'}</p>` : ''}`;
+}
+async function saveRamean() {
+  const R = S.rf; if (!R || R.saving) return; rfRead();
+  const err = $('#rf-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); };
+  err.hidden = true;
+  if (!String(R.name).trim()) return fail('Isi nama acara.');
+  if (R.date && !isYmd(R.date)) return fail('Tanggal tidak valid.');
+  const M = rameanModel({ budget: R.budget, data: rfData(R) });
+  if (R.people.length < 2) return fail('Tambahkan minimal satu teman.');
+  if (!(M.total > 0)) return fail(R.mode === 'item' ? 'Isi minimal satu item dengan harga.' : 'Isi total tagihan.');
+  const now = new Date().toISOString();
+  const r = planClean('ramean', { name: R.name, date: R.date, budget: R.budget, note: R.note, data: rfData(R), createdAt: R.createdAt || now, updatedAt: now }, now);
+  if (r.err) return fail(r.err);
+  const btn = $('#rf-save'); R.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try { const col = planBase().collection('ramean'); await (R.id ? col.doc(R.id) : col.doc()).set(r.ok); const edit = !!R.id; closeSheet(); toast(edit ? 'Acara diperbarui' : 'Acara disimpan'); }
+  catch (e) { R.saving = false; btn.disabled = false; btn.textContent = 'Simpan'; fail(dbErrMsg(e)); }
+}
+async function deleteRamean() {
+  const R = S.rf; if (!R || !R.id) return;
+  const b = $('#rf-del'), on = !!(S.armed && S.armed.key === 'rf-del');
+  if (!on) { arm('rf-del'); if (b) { b.classList.add('armed'); b.textContent = 'Yakin hapus? Transaksi dan hutang terkait tetap ada.'; } return; }
+  disarm(); const err = $('#rf-err');
+  try { await planBase().collection('ramean').doc(R.id).delete(); closeSheet(); toast('Acara dihapus'); }
+  catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+
+/* ---------- Catat ke SaKu ---------- */
+function rcOpen(id) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const r = rmFind(id); if (!r) return; const M = rameanModel(r); if (M.rec || !M.ready) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const date = r.date || ymd(new Date()), first = ymd(addDays(parseYmd(date), 7)), C = S.rc = { id, date, first, cat: (r.data && r.data.cat) || 'makan', saving: false };
+  const friends = M.people.map((_, i) => i).filter(i => i !== 0 && i !== M.payer && M.shares[i] > 0), owedSum = M.payer === 0 ? friends.reduce((s, i) => s + M.shares[i], 0) : 0;
+  const li = [];
+  if (M.mine > 0) li.push(`<li><b>${fmtRp(M.mine)}</b> pengeluaran Anda, kategori <span id="rc-catn"></span></li>`);
+  if (M.payer === 0 && friends.length) li.push(`<li><b>${fmtRp(owedSum)}</b> Memberi Hutang ke ${friends.length} teman (${friends.map(i => esc(M.people[i])).join(', ')})</li>`);
+  if (M.payer !== 0 && M.mine > 0) li.push(`<li><b>${fmtRp(M.mine)}</b> Hutang Anda ke ${esc(M.people[M.payer])}</li>`);
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="recform" role="dialog" aria-modal="true" aria-labelledby="rc-t" novalidate>
+    <div class="sheet-h"><h2 id="rc-t">Catat ke SaKu</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="pay-sum"><span class="chip" style="--c:${planSlot(1)}">${ic('users', 18)}</span><div><b>${esc(r.name)}</b><small>Total ${fmtRp(M.total)} · dibayar ${esc(rmName(M, M.payer))}</small></div></div>
+      <p class="cat-hint">Yang akan dicatat:</p><ul class="rc-list">${li.join('') || '<li>Tidak ada yang perlu dicatat.</li>'}</ul>
+      ${M.mine > 0 ? `<div class="field"><label for="rc-cat">Kategori pengeluaran Anda</label><select class="input" id="rc-cat">${rmOutCats().map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select></div>` : ''}
+      ${friends.length || (M.payer !== 0 && M.mine > 0) ? `<div class="field"><label for="rc-first">Jatuh tempo pengembalian</label><input class="input" type="date" id="rc-first"><small class="hint">Bawaan 7 hari setelah acara. Anda akan diingatkan di menu Jatuh Tempo; ubah kapan saja di menu Hutang.</small></div>` : ''}
+      <p class="cat-hint">Uang yang ditalangi hanya menggeser saldo, bukan pengeluaran. Hanya bagian Anda yang dihitung sebagai pengeluaran.</p>
+      <p class="form-err" id="rc-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="submit" class="btn btn-primary grow" id="rc-save">${ic('check', 18)} Catat Sekarang</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  const cs = $('#rc-cat'); if (cs) { cs.value = rmOutCats().some(c => c.id === C.cat) ? C.cat : 'makan'; C.cat = cs.value; }
+  const cn = $('#rc-catn'); if (cn) cn.textContent = (CATS[C.cat] || {}).label || '';
+  const fi = $('#rc-first'); if (fi) fi.value = C.first;
+}
+async function saveRec() {
+  const C = S.rc; if (!C || C.saving) return; const r = rmFind(C.id); if (!r) return;
+  const err = $('#rc-err'), fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true; const cs = $('#rc-cat'), fi = $('#rc-first'); if (cs) C.cat = cs.value; if (fi) C.first = fi.value;
+  if (fi && !isYmd(C.first)) return fail('Pilih tanggal jatuh tempo yang valid.');
+  if (fi && C.first < C.date) return fail('Jatuh tempo tidak boleh sebelum tanggal acara.');
+  const M = rameanModel(r), D = r.data, now = new Date().toISOString(), base = planBase(), hcol = base.collection('hutang'), txc = base.collection('tx');
+  const btn = $('#rc-save'); C.saving = true; btn.disabled = true; btn.textContent = 'Mencatat…';
+  const local = S.rcDone || (S.rcDone = {}), mark = local[r.id] || (local[r.id] = { exp: false, h: {} }), h = {};
+  try {
+    const hasExp = mark.exp || (S.tx || []).some(t => t.ref && t.ref.k === 'ramean' && t.ref.id === r.id);
+    if (M.mine > 0 && !hasExp) { await txc.doc().set({ type: 'out', amount: M.mine, cat: C.cat, date: C.date, note: r.name.slice(0, 80), items: [], photo: null, createdAt: now, updatedAt: now, ref: { k: 'ramean', id: r.id } }); mark.exp = true; }
+    const mk = async (i, dir) => {
+      const who = dir === 'piutang' ? M.people[i] : M.people[M.payer], amount = dir === 'piutang' ? M.shares[i] : M.mine, key = String(i);
+      const old = (S.plan.hutang || []).filter(x => x.group === r.id && x.who === who && x.dir === dir)[0], oid = mark.h[key] || (old && old.id);
+      if (oid) { h[i] = oid; return; }
+      const res = planClean('hutang', { dir, who, amount, date: C.date, first: C.first, freq: 'once', day: 31, inst: 0, note: r.name, remind: true, group: r.id, createdAt: now, updatedAt: now }, now);
+      if (res.err) throw new Error(res.err);
+      const ref = hcol.doc(); await ref.set(res.ok); mark.h[key] = ref.id; h[i] = ref.id;
+      await txc.doc().set({ type: dir === 'piutang' ? 'out' : 'in', amount, cat: dir === 'piutang' ? 'piutang_beri' : 'hutang_terima', date: C.date, note: ((dir === 'piutang' ? 'Talangi ' + who : 'Ditalangi ' + who) + ' · ' + r.name).slice(0, 80), items: [], photo: null, createdAt: now, updatedAt: now, ref: { k: 'hutang', id: ref.id } });
+    };
+    if (M.payer === 0) { for (let i = 1; i < M.n; i++) if (M.shares[i] > 0) await mk(i, 'piutang'); }
+    else if (M.mine > 0) await mk(0, 'hutang');
+    const res = planClean('ramean', { name: r.name, date: r.date, budget: r.budget, note: r.note, data: Object.assign({}, D, { cat: C.cat, rec: { done: true, at: now, mine: M.mine, h } }), createdAt: r.createdAt, updatedAt: now }, now);
+    if (res.err) throw new Error(res.err);
+    await base.collection('ramean').doc(r.id).set(res.ok);
+    const nh = Object.keys(h).length; closeSheet(); toast('Tercatat. ' + (M.mine > 0 ? 'Bagian Anda ' + fmtRp(M.mine) : 'Selesai') + (nh ? ', ' + nh + ' catatan hutang dibuat.' : '.'));
+  } catch (e) { C.saving = false; btn.disabled = false; btn.innerHTML = ic('check', 18) + ' Catat Sekarang'; fail((e && e.message && !/^Gagal|jaringan/i.test(e.message) && /Isi|tidak valid|Pilih/.test(e.message) ? e.message : dbErrMsg(e)) + ' Sebagian mungkin sudah tercatat; tekan Catat Sekarang lagi untuk melanjutkan tanpa dobel.'); }
+}
+
+/* ---------- Aksi ---------- */
+MONEY_HOOKS['rf-budget'] = v => { if (S.rf) { S.rf.budget = v; rfResult(); } };
+MONEY_HOOKS['rf-total'] = v => { if (S.rf) { S.rf.total = v; rfResult(); } };
+MONEY_HOOKS['rf-ship'] = v => { if (S.rf) { S.rf.ship = v; rfResult(); } };
+MONEY_HOOKS['rf-disc'] = v => { if (S.rf) { S.rf.disc = v; rfResult(); } };
+MONEY_HOOKS['rf-ia'] = (v, el) => { const R = S.rf, it = R && R.items[Number(el.dataset.i)]; if (it) { it.a = v; rfResult(); } };
+function rfAddPeople() {
+  const R = S.rf, inp = $('#rf-pname'); if (!R || !inp) return;
+  const names = inp.value.split(/[,\n;]+/).map(x => x.replace(/\s+/g, ' ').trim().slice(0, 30)).filter(Boolean);
+  if (!names.length) return;
+  const room = 30 - R.people.length; if (room <= 0) { toast('Maksimal 30 peserta.'); return; }
+  names.slice(0, room).forEach(n => R.people.push(n)); inp.value = ''; rfPaint(); rfItems(); rfResult(); if (inp.focus) inp.focus();
+}
+Object.assign(ACT, {
+  'rf-open'(el) { rfOpen(el.dataset.id || null); },
+  'rf-padd'() { rfAddPeople(); },
+  'rf-prm'(el) {
+    const R = S.rf, i = Number(el.dataset.i); if (!R || !(i > 0) || i >= R.people.length) return; rfRead();
+    R.people.splice(i, 1); R.payer = R.payer === i ? 0 : (R.payer > i ? R.payer - 1 : R.payer);
+    R.items.forEach(it => { it.w = it.w.filter(k => k !== i).map(k => (k > i ? k - 1 : k)); });
+    rfPaint(); rfItems(); rfResult();
+  },
+  'rf-mode'(el) { const R = S.rf; if (!R) return; rfRead(); R.mode = el.dataset.v === 'item' ? 'item' : 'equal'; if (R.mode === 'item' && !R.items.length) R.items.push({ n: '', a: 0, w: [] }); rfPaint(); rfItems(); rfResult(); },
+  'rf-iadd'() { const R = S.rf; if (!R) return; if (R.items.length >= 60) { toast('Maksimal 60 item.'); return; } R.items.push({ n: '', a: 0, w: [] }); rfItems(); rfResult(); const ins = $$('#rf-items .rf-in'); if (ins.length && ins[ins.length - 1].focus) ins[ins.length - 1].focus(); },
+  'rf-irm'(el) { const R = S.rf; if (!R) return; R.items.splice(Number(el.dataset.i), 1); rfItems(); rfResult(); },
+  'rf-iw'(el) {
+    const R = S.rf, it = R && R.items[Number(el.dataset.i)]; if (!it) return;
+    const all = R.people.map((_, k) => k), cur = it.w.length ? it.w.slice() : all.slice(), p = Number(el.dataset.p), at = cur.indexOf(p);
+    if (at >= 0) cur.splice(at, 1); else cur.push(p);
+    if (!cur.length) return;
+    cur.sort((a, b) => a - b); it.w = cur.length === all.length ? [] : cur; rfItems(); rfResult();
+  },
+  'rf-del'() { deleteRamean(); },
+  'rm-rec'(el) { rcOpen(el.dataset.id); },
+  'rm-copy'(el) { const r = rmFind(el.dataset.id); if (r) rmCopy(rmText(r, rameanModel(r))); }
+});
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || !S.rf) return;
+  if (el.classList && el.classList.contains('rf-in')) { const it = S.rf.items[Number(el.dataset.i)]; if (it) it.n = el.value.slice(0, 40); }
+  else if (el.id === 'rf-tax') { const v = el.value.replace(/\D/g, '').slice(0, 3); if (v !== el.value) el.value = v; rfResult(); }
+});
+document.addEventListener('change', e => { const el = e.target; if (el && S.rf && (el.id === 'rf-payer' || el.id === 'rf-cat')) { rfRead(); rfResult(); } if (el && S.rc && el.id === 'rc-cat') { S.rc.cat = el.value; } });
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rf-pname') { e.preventDefault(); rfAddPeople(); } });
+document.addEventListener('submit', e => { const id = e.target && e.target.id; if (id === 'rform') saveRamean(); else if (id === 'recform') saveRec(); });
+/* ================= Menu Rencana: Anggaran, Target, Simpanan, Jajan Ramean ================= */
+/* ---------- Anggaran ---------- */
+function angHistoryCard() {
+  const base = Math.max(0, Math.round(Number(S.settings && S.settings.budget)) || 0); if (!base) return '';
+  const now = new Date(), rows = [];
+  for (let i = 0; i < 6; i++) {
+    const bm = budgetModel(S.tx, shiftAnchor('month', startOfDay(now), -i), S.settings, now);
+    if (i > 0 && bm.outM <= 0 && !bm.add) continue;
+    rows.push(`<tr class="${i === 0 ? 'now' : ''}"><td>${esc(bm.label)}</td><td>${fmtCompact(bm.cap)}</td><td>${fmtCompact(bm.outM)}</td><td class="${bm.left < 0 ? 'neg' : ''}">${bm.left < 0 ? '(' + fmtCompact(Math.abs(bm.left)) + ')' : fmtCompact(bm.left)}</td></tr>`);
+  }
+  return `<section class="card" aria-labelledby="h-anghist"><div class="card-h"><h2 id="h-anghist">Anggaran per ${CYCLE.day > 1 ? 'Periode' : 'Bulan'}</h2><span class="sub">dalam rupiah</span></div><div class="tblwrap"><table class="tbl"><thead><tr><th scope="col">${CYCLE.day > 1 ? 'Periode' : 'Bulan'}</th><th scope="col">Anggaran</th><th scope="col">Terpakai</th><th scope="col">Sisa</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></section>`;
+}
+VIEWS.anggaran = {
+  mount(v) {
+    v.innerHTML = `<div id="ang-top"></div>
+      <section class="card" aria-labelledby="h-angset"><h2 class="t" id="h-angset">Atur Anggaran Bulanan</h2><p class="desc">Batas pengeluaran per periode. Bila diisi, inilah yang dipantau tiap periode, dan sisa anggaran dikurangkan dari saldo pemasukan. Isi 0 atau kosongkan untuk memakai saldo pemasukan sebagai dasar. Kalau anggaran kurang, tambahkan dari kartu di atas.</p>
+        <form id="bud-form" class="form-grid"><div class="field"><label for="bud">Batas pengeluaran</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="bud" data-money="bud" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+          <div class="field"><label for="bud-day">Periode dimulai tanggal (tanggal gajian)</label><input class="input" id="bud-day" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="1" style="max-width:120px"><div class="bud-chips" style="margin:10px 0 0">${[1, 5, 10, 15, 20, 25, 28].map(n => `<button type="button" class="btn btn-ghost btn-sm" data-act="bud-day" data-v="${n}">${n === 1 ? 'Awal bulan' : n}</button>`).join('')}</div><small class="hint" id="bud-day-note"></small></div>
+          <button class="btn btn-primary" type="submit">Simpan anggaran</button></form></section>
+      <div id="ang-hist"></div>`;
+  },
+  update() {
+    const top = $('#ang-top'); if (!top) return;
+    if (!S.txLoaded) { top.innerHTML = subnavHTML('anggaran') + skelHTML(); return; }
+    const bm = budgetModel(S.tx, startOfDay(new Date()), S.settings, new Date()), had = !!(document.activeElement && document.activeElement.id === 'ba-amt');
+    const budHtml = budgetHTML(bm), basis = bm.basis === 'anggaran' ? 'berdasarkan anggaran' : 'berdasarkan saldo pemasukan';
+    /* Blok anggaran memakai warna "hero" (teks terang), jadi harus berada di atas latar hero; kartu putih hanya untuk keadaan kosong */
+    const now = budHtml
+      ? `<section class="hero bud-hero" aria-labelledby="h-angnow"><div class="bud-top"><h2 id="h-angnow">${esc(bm.label)}</h2><span>${basis}</span></div>${budHtml}</section>`
+      : `<section class="card" aria-labelledby="h-angnow"><div class="card-h"><h2 id="h-angnow">${esc(bm.label)}</h2><span class="sub">${basis}</span></div><div class="empty-s">Belum ada pengeluaran ${CYCLE.day > 1 ? 'periode' : 'bulan'} ini. Isi batas anggaran di bawah untuk mulai memantau.</div></section>`;
+    top.innerHTML = subnavHTML('anggaran') + `<div class="page-head"><div><p class="hello">Batas pengeluaran dan sisa dana</p><h1>Anggaran</h1></div></div>` + now + budAddCard(bm) + catBudCard();
+    if (had) { const i = $('#ba-amt'); if (i && i.focus) i.focus(); }
+    const hist = $('#ang-hist'); if (hist) hist.innerHTML = angHistoryCard();
+    const b = $('#bud'), bud = Number(S.settings && S.settings.budget) || 0;
+    if (b && document.activeElement !== b) b.value = bud ? dots(bud) : '';
+    const bd = $('#bud-day'); if (bd && document.activeElement !== bd) bd.value = CYCLE.day > 1 ? String(CYCLE.day) : ''; updateDayNote();
+  }
+};
+
+/* ---------- Budget per kategori (pecahan dari batas pengeluaran, opsional) ---------- */
+const CB_PCTS = [10, 20, 25, 30, 50];
+function cbBase() { return Math.max(0, Math.round(Number(S.settings && S.settings.budget)) || 0); }
+function cbMap() { const m = {}, cb = (S.settings && S.settings.catBudgets) || {}; Object.keys(cb).forEach(k => { const v = Math.round(Number(cb[k])) || 0; if (v > 0) m[k] = v; }); return m; }
+function cbSum(skip) { const m = cbMap(); return Object.keys(m).reduce((s, k) => s + (k === skip ? 0 : m[k]), 0); }
+function catBudCard() {
+  const base = cbBase();
+  const head = `<div class="card-h"><h2 id="h-cb">Budget per Kategori</h2><span class="sub">opsional</span></div>`;
+  if (!base) return `<section class="card cb-card" aria-labelledby="h-cb">${head}<p class="cb-note">Budget kategori adalah pecahan dari batas pengeluaran. Isi batas pengeluaran di bagian bawah halaman ini dulu, lalu bagi sebagian ke kategori yang ingin Anda jaga.</p></section>`;
+  const M = catBudgetModel(S.tx, startOfDay(new Date()), S.settings, new Date()), pct = Math.min(100, M.alloc / base * 100);
+  const rows = M.rows.map(r => {
+    const c = catOf(r.id), z = r.over ? 'over' : budZone(r.used, false), st = r.over ? 'Lewat ' + fmtRp(r.spent - r.amt) : 'Sisa ' + fmtRp(r.left);
+    return `<li><button type="button" class="cb-row ${z}" data-act="cb-open" data-id="${esc(r.id)}" aria-label="Ubah budget ${esc(c.label)}"><span class="chip" style="--c:var(--s${c.slot || 1})">${ic(c.icon || 'more', 18)}</span>
+      <span class="cb-main"><span class="cb-top"><b>${esc(c.label)}</b><span class="cb-amt">${fmtRp(r.spent)} <small>dari ${fmtRp(r.amt)}</small></span></span>
+      <span class="pbar ${r.over ? 'over' : ''}" role="progressbar" aria-label="Budget ${esc(c.label)} terpakai" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r.used))}"><i style="width:${Math.min(100, r.used).toFixed(1)}%"></i></span>
+      <span class="cb-bot"><span class="${r.over ? 'neg' : ''}">${st}</span><span>${fmtPct(r.share)} dari batas</span></span></span></button></li>`;
+  }).join('');
+  const sum = `<div class="cb-sum"><div><small>Dibagi ke kategori</small><b>${fmtRp(M.alloc)}</b></div><div><small>Belum dibagi</small><b>${fmtRp(M.free)}</b></div></div>
+    <div class="pbar" role="img" aria-label="${fmtPct(pct)} dari batas pengeluaran sudah dibagi ke kategori"><i style="width:${pct.toFixed(1)}%"></i></div>`;
+  const body = M.has ? `${sum}<ul class="cb-list">${rows}</ul>${M.other > 0 ? `<p class="cb-note">Pengeluaran di luar kategori berbudget bulan ini: ${fmtRp(M.other)}.</p>` : ''}`
+    : `<p class="cb-note">Belum ada budget kategori. Pilih kategori yang ingin dijaga (misalnya Makanan atau Transportasi) dan bagi sebagian dari batas ${fmtRp(base)}. Kategori tanpa budget tetap dihitung di batas pengeluaran.</p>`;
+  const full = M.free <= 0;
+  return `<section class="card cb-card" aria-labelledby="h-cb">${head}${body}<div class="cb-acts"><button type="button" class="btn btn-primary btn-sm" data-act="cb-open" ${full ? 'disabled' : ''}>${ic('plus', 16)} Tambah budget kategori</button>${full && M.has ? '<small>Seluruh batas sudah dibagi.</small>' : ''}</div></section>`;
+}
+function cbOpen(id) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const base = cbBase(); if (!base) { toast('Isi batas pengeluaran dulu.'); return; }
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const m = cbMap(), taken = Object.keys(m).filter(k => k !== id);
+  const cats = CATS_OUT.filter(c => taken.indexOf(c.id) < 0);
+  if (!id && !cats.length) { toast('Semua kategori sudah punya budget.'); return; }
+  S.cb = { id: id || null, cat: id || (cats[0] && cats[0].id), amount: id ? m[id] : 0, saving: false };
+  const opts = GROUPS_OUT.map(g => { const cs = cats.filter(c => c.group === g.id); return cs.length ? `<optgroup label="${esc(g.label)}">${cs.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('')}</optgroup>` : ''; }).join('');
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="cbform" role="dialog" aria-modal="true" aria-labelledby="cb-t" novalidate>
+    <div class="sheet-h"><h2 id="cb-t">${id ? 'Ubah Budget Kategori' : 'Budget Kategori Baru'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b"><div class="field"><label for="cb-cat">Kategori</label><select class="input" id="cb-cat" ${id ? 'disabled' : ''}>${id ? `<option>${esc(catOf(id).label)}</option>` : opts}</select></div>
+      <div class="field"><label for="cb-amt">Budget (bagian dari batas ${fmtRp(base)})</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="cb-amt" data-money="cb-amt" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+      <div class="bud-chips" role="group" aria-label="Pilih persen dari batas">${CB_PCTS.map(p => `<button type="button" class="btn btn-ghost btn-sm" data-act="cb-pct" data-v="${p}">${p}%</button>`).join('')}</div>
+      <p class="cat-hint" id="cb-hint" role="status"></p>
+      <p class="form-err" id="cb-err" role="alert" hidden></p></div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="cb-del" data-act="cb-del" ${id ? '' : 'hidden'}>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="cb-save">Simpan</button></div></form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#cb-amt').value = S.cb.amount ? dots(S.cb.amount) : ''; cbHint(); setTimeout(() => { const a = $('#cb-amt'); if (a && a.focus) a.focus(); }, 60);
+}
+function cbHint() {
+  const A = S.cb, h = $('#cb-hint'); if (!A || !h) return;
+  const base = cbBase(), rest = base - cbSum(A.id), v = A.amount || 0;
+  h.textContent = v > rest ? 'Melebihi sisa batas. Yang masih bisa dibagi: ' + fmtRp(Math.max(0, rest)) + '.' : 'Sisa batas setelah ini: ' + fmtRp(rest - v) + (v ? ' · ' + fmtPct(v / base * 100) + ' dari batas.' : '.');
+  h.classList.toggle('neg', v > rest);
+}
+async function cbWrite(map, msg) {
+  const next = Object.assign({}, S.settings); if (Object.keys(map).length) next.catBudgets = map; else delete next.catBudgets;
+  await S.db.doc('ledger/' + S.me.id).collection('meta').doc('settings').set(next); closeSheet(); toast(msg);
+}
+async function cbSave() {
+  const A = S.cb; if (!A || A.saving) return; const err = $('#cb-err'), sel = $('#cb-cat'), id = A.id || (sel && sel.value), fail = m => { err.textContent = m; err.hidden = false; };
+  if (!id || !CATS[id] || CATS[id].type !== 'out') return fail('Pilih kategori pengeluaran.');
+  if (!(A.amount >= 1)) return fail('Isi jumlah budget lebih dari 0.');
+  const base = cbBase(), rest = base - cbSum(id);
+  if (A.amount > rest) return fail('Melebihi sisa batas pengeluaran. Yang masih bisa dibagi: ' + fmtRp(Math.max(0, rest)) + '.');
+  const m = cbMap(); m[id] = Math.min(1e12, Math.round(A.amount));
+  const btn = $('#cb-save'); A.saving = true; btn.disabled = true;
+  try { await cbWrite(m, A.id ? 'Budget kategori diperbarui' : 'Budget kategori ditambahkan'); }
+  catch (e) { A.saving = false; btn.disabled = false; fail(dbErrMsg(e)); }
+}
+async function cbDelete() {
+  const A = S.cb; if (!A || !A.id) return;
+  const b = $('#cb-del'), on = !!(S.armed && S.armed.key === 'cb-del');
+  if (!on) { arm('cb-del'); if (b) { b.classList.add('armed'); b.textContent = 'Yakin hapus budget ini?'; } return; }
+  disarm(); const m = cbMap(); delete m[A.id];
+  try { await cbWrite(m, 'Budget kategori dihapus'); } catch (e) { const err = $('#cb-err'); err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+MONEY_HOOKS['cb-amt'] = v => { if (S.cb) { S.cb.amount = v; cbHint(); } };
+Object.assign(ACT, {
+  'cb-open'(el) { cbOpen(el.dataset.id || null); },
+  'cb-del'() { cbDelete(); },
+  'cb-pct'(el) {
+    const A = S.cb, base = cbBase(); if (!A) return; const v = Math.round(base * Number(el.dataset.v) / 100);
+    A.amount = v; const i = $('#cb-amt'); if (i) i.value = v ? dots(v) : ''; cbHint();
+  }
+});
+document.addEventListener('submit', e => { const f = e.target; if (f && f.id === 'cbform') { e.preventDefault(); cbSave(); } });
+/* ================= Menu Rencana: Perjalanan ================= */
+/* Rencana perjalanan darat, laut, udara, atau gabungan: ruas, titik isi BBM / makan / istirahat, perkiraan BBM, waktu tiba, dan total biaya.
+   Semua angka adalah perkiraan dari data yang diisi pengguna. Peta rute nyata dibuka lewat Google Maps. */
+const TR_VEH = {
+  motor: { n: 'Motor', icon: 'motor', kmpl: 42, tank: 5.5, fuel: 'Pertalite', price: 10000, speed: 52, toll: false },
+  mobil: { n: 'Mobil', icon: 'mobil', kmpl: 14, tank: 40, fuel: 'Pertamax', price: 12500, speed: 70, toll: true },
+  suv: { n: 'SUV / MPV', icon: 'suv', kmpl: 11, tank: 55, fuel: 'Pertamax', price: 12500, speed: 68, toll: true },
+  diesel: { n: 'Diesel', icon: 'dieselv', kmpl: 13, tank: 60, fuel: 'Dexlite', price: 13500, speed: 66, toll: true }
+};
+const TR_MODES = [['darat', 'Darat', 'car'], ['laut', 'Laut', 'ship'], ['udara', 'Udara', 'plane'], ['kombinasi', 'Kombinasi', 'repeat']];
+const TR_SEGICON = { darat: 'car', laut: 'ship', udara: 'plane' };
+const trFind = id => (S.plan.trip || []).filter(x => x.id === id)[0] || null;
+const trMin = hhmm => { const p = String(hhmm || '06:00').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); };
+function trTime(min) { const d = Math.floor(min / 1440), m = ((Math.round(min) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + '.' + String(m % 60).padStart(2, '0') + (d > 0 ? ' (+' + d + ' hari)' : ''); }
+function trDur(min) { const h = Math.floor(min / 60), m = Math.round(min % 60); return ((h ? h + ' jam ' : '') + (m ? m + ' mnt' : '')).trim() || '0 mnt'; }
+function trTemplate(mode) {
+  const d = (name, km, toll) => ({ m: 'darat', name, km, h: 0, toll, fare: 0, veh: 0 });
+  if (mode === 'laut') return [{ m: 'laut', name: 'Kapal laut', km: 0, h: 12, toll: 0, fare: 300000, veh: 0 }];
+  if (mode === 'udara') return [{ m: 'udara', name: 'Penerbangan', km: 0, h: 2, fare: 1200000, toll: 0, veh: 0 }];
+  if (mode === 'kombinasi') return [d('Darat ke pelabuhan', 150, 0), { m: 'laut', name: 'Feri / kapal', km: 0, h: 3, fare: 50000, toll: 0, veh: 300000 }, d('Darat ke tujuan', 80, 0)];
+  return [d('Perjalanan darat', 300, 0)];
+}
+function trDefault(mode) {
+  const v = TR_VEH.mobil;
+  return { id: null, name: '', mode, date: ymd(new Date()), note: '', saving: false, data: { from: '', to: '', veh: 'mobil', kmpl: v.kmpl, price: v.price, persons: 2, rest: 150, dep: '06:00', transfer: mode === 'udara' ? 250000 : 0, off: [], segs: trTemplate(mode) } };
+}
+function trFrom(t) { const D = JSON.parse(JSON.stringify(t.data || {})); return { id: t.id, name: t.name, mode: t.mode, date: t.date || '', note: t.note || '', saving: false, createdAt: t.createdAt, data: D }; }
+
+/* ---------- Perhitungan ---------- */
+function trCompute(D) {
+  const v = TR_VEH[D.veh] || TR_VEH.mobil, off = {}; (D.off || []).forEach(k => { off[k] = 1; });
+  let clock = trMin(D.dep), odo = 0; const R = Math.max(30, v.tank * D.kmpl * 0.75); let nextFuel = R;
+  const o = { segs: [], km: 0, toll: 0, ticket: 0, transfer: D.transfer || 0, stopCost: 0, stopMin: 0, start: clock };
+  D.segs.forEach((sg, i) => {
+    const rec = { sg, i, ev: [], t0: clock };
+    if (sg.m === 'darat') {
+      const L = sg.km, ev = []; let k, n = 0;
+      while (nextFuel <= odo + L) { ev.push({ km: nextFuel - odo, fuel: true, l: R / D.kmpl }); nextFuel += R; }
+      for (k = D.rest; k < L - 15; k += D.rest) { n++; ev.push({ km: k, rest: true, meal: n % 2 === 0 }); }
+      ev.sort((a, b) => a.km - b.km);
+      const mg = []; ev.forEach(e => { const p = mg[mg.length - 1]; if (p && e.km - p.km < 20) { p.fuel = p.fuel || e.fuel; p.rest = p.rest || e.rest; p.meal = p.meal || e.meal; p.l = (p.l || 0) + (e.l || 0); } else mg.push(e); });
+      let last = 0;
+      mg.forEach(e => {
+        clock += (e.km - last) / v.speed * 60; e.eta = clock;
+        e.key = i + '-' + Math.round(e.km) + (e.fuel ? 'f' : '') + (e.meal ? 'm' : e.rest ? 'r' : '');
+        e.on = !off[e.key]; e.min = (e.fuel ? 10 : 0) + (e.meal ? 40 : e.rest ? 20 : 0); e.cost = (e.meal ? 45000 : e.rest ? 15000 : 0) * D.persons;
+        if (e.on) { clock += e.min; o.stopMin += e.min; o.stopCost += e.cost; }
+        last = e.km;
+      });
+      clock += (L - last) / v.speed * 60; odo += L; o.km += L; if (v.toll) o.toll += sg.toll || 0; rec.ev = mg;
+    } else {
+      clock += sg.h * 60; o.ticket += D.persons * sg.fare + (sg.m === 'laut' ? (sg.veh || 0) : 0);
+    }
+    rec.t1 = clock; o.segs.push(rec);
+  });
+  o.fuelL = o.km / D.kmpl; o.fuelCost = o.fuelL * D.price; o.eta = clock; o.dur = clock - o.start;
+  o.total = o.fuelCost + o.toll + o.ticket + o.transfer + o.stopCost; o.v = v;
+  return o;
+}
+
+/* ---------- Peta skema ---------- */
+function trSchemePts(D) {
+  const w = D.segs.map(s => s.m === 'darat' ? Math.max(1, s.km) : Math.max(60, s.h * 70)), tot = w.reduce((a, b) => a + b, 0) || 1;
+  const P = t => [34 + 292 * t, 62 + 70 * t + 14 * Math.sin(t * 7)];
+  let acc = 0;
+  return D.segs.map((s, i) => {
+    const t0 = acc / tot; acc += w[i]; const t1 = acc / tot;
+    if (s.m === 'udara') { const a = P(t0), b = P(t1); return { a, c: [(a[0] + b[0]) / 2, Math.min(a[1], b[1]) - 60], b, q: true }; }
+    const pts = []; for (let k = 0; k <= 5; k++) pts.push(P(t0 + (t1 - t0) * k / 5)); return { pts };
+  });
+}
+function trPtAt(sp, t) {
+  if (sp.q) { const a = sp.a, c = sp.c, b = sp.b, u = 1 - t; return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]; }
+  const p = sp.pts, L = [], f = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]); let tot = 0, i;
+  for (i = 1; i < p.length; i++) { const d = f(p[i - 1], p[i]); L.push(d); tot += d; }
+  let want = t * tot; for (i = 0; i < L.length; i++) { if (want <= L[i] || i === L.length - 1) { const g = L[i] ? Math.min(1, want / L[i]) : 0; return [p[i][0] + (p[i + 1][0] - p[i][0]) * g, p[i][1] + (p[i + 1][1] - p[i][1]) * g]; } want -= L[i]; }
+  return p[0];
+}
+function trMapSVG(D, c) {
+  const sp = trSchemePts(D);
+  let s = '<svg class="tr-svg" viewBox="0 0 360 200" role="img" aria-label="Pratinjau skema rute"><defs><pattern id="trg" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="var(--tr-grid)" stroke-width=".6"/></pattern></defs><rect width="360" height="200" fill="var(--tr-water)"/><path d="M-10 44C30 24 70 38 120 56s110 46 160 62 80 14 100 34v60H-10z" fill="var(--tr-land)"/><rect width="360" height="200" fill="url(#trg)" opacity=".7"/>';
+  D.segs.forEach((g, i) => {
+    const q = sp[i], d = q.q ? 'M' + q.a + ' Q' + q.c + ' ' + q.b : 'M' + q.pts.map(a => a.map(n => n.toFixed(1)).join(' ')).join(' L');
+    if (g.m === 'darat') s += '<path d="' + d + '" fill="none" stroke="var(--surface)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="' + d + '" fill="none" stroke="var(--tr-c1)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>';
+    else s += '<path d="' + d + '" fill="none" stroke="' + (g.m === 'laut' ? 'var(--tr-c2)' : 'var(--tr-c3)') + '" stroke-width="3.5" stroke-dasharray="' + (g.m === 'laut' ? '2 7' : '9 6') + '" stroke-linecap="round"/>';
+  });
+  c.segs.forEach((r, i) => { if (r.sg.m !== 'darat') return; r.ev.forEach(e => { const p = trPtAt(sp[i], e.km / r.sg.km); s += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7.5" opacity="' + (e.on ? 1 : .35) + '" fill="' + (e.fuel ? 'var(--tr-bbm)' : e.meal ? 'var(--tr-mkn)' : 'var(--tr-rst)') + '" stroke="var(--surface)" stroke-width="2.5"/>'; }); });
+  const f = sp[0].q ? sp[0].a : sp[0].pts[0], l = sp[sp.length - 1], e = l.q ? l.b : l.pts[l.pts.length - 1];
+  s += '<circle cx="' + f[0].toFixed(1) + '" cy="' + f[1].toFixed(1) + '" r="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="4"/><g transform="translate(' + e[0].toFixed(1) + ' ' + e[1].toFixed(1) + ')"><path d="M0 0V-24" stroke="var(--ink)" stroke-width="2"/><path d="M0 -24h15l-4 5 4 5H0z" fill="var(--accent)"/><circle r="3.5" fill="var(--ink)"/></g></svg>';
+  return s;
+}
+
+/* ---------- Tautan Google Maps ---------- */
+function trMapsUrl(D) {
+  if (!D.from || !D.to) return '';
+  return 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(D.from) + '&destination=' + encodeURIComponent(D.to) + '&travelmode=' + (D.veh === 'motor' ? 'two-wheeler' : 'driving');
+}
+function trMapKey() { try { return localStorage.getItem('saku.mapskey') || ''; } catch (e) { return ''; } }
+function trEmbed(D) {
+  const k = trMapKey(); if (!k || !D.from || !D.to) return '';
+  return '<iframe class="tr-embed" title="Google Maps" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps/embed/v1/directions?key=' + encodeURIComponent(k) + '&origin=' + encodeURIComponent(D.from) + '&destination=' + encodeURIComponent(D.to) + '&mode=driving"></iframe>';
+}
+
+/* ---------- Tampilan hasil (diperbarui tiap perubahan) ---------- */
+function trOutHTML(T) {
+  const D = T.data, c = trCompute(D), v = c.v, hasDarat = D.segs.some(s => s.m === 'darat');
+  const rows = [['BBM', c.fuelCost, 'tr-b1', hasDarat ? (Math.round(c.fuelL * 10) / 10) + ' L untuk ' + c.km + ' km' : 'Tidak ada ruas darat'], ['Tol', c.toll, 'tr-b2', !v.toll && hasDarat ? 'Motor tidak masuk tol' : 'Golongan I'], ['Tiket kapal dan pesawat', c.ticket, 'tr-b3', 'Penumpang dan kendaraan'], ['Transfer bandara', c.transfer, 'tr-b4', 'Taksi dari dan ke bandara'], ['Makan dan istirahat', c.stopCost, 'tr-b5', 'Dari titik singgah yang aktif']].filter(r => r[1] > 0);
+  const tot = c.total || 1;
+  let tl = `<div class="tr-pt"><span class="tr-chip" style="--c:var(--accent)">${ic('flag', 16)}</span><div class="tr-tx"><b>Berangkat${D.from ? ' dari ' + esc(D.from) : ''}</b><small>Tangki penuh, ${D.persons} orang</small></div><div class="tr-rt">${trTime(c.start)}</div></div>`;
+  c.segs.forEach(r => {
+    const sg = r.sg;
+    tl += `<div class="tr-seg">${ic(TR_SEGICON[sg.m], 18)}<span><b>${esc(sg.name || (sg.m === 'darat' ? 'Ruas darat' : sg.m === 'laut' ? 'Ruas laut' : 'Ruas udara'))}</b><br>${sg.m === 'darat' ? sg.km + ' km, ' + trDur(sg.km / v.speed * 60) + ' berkendara' : trDur(sg.h * 60) + (sg.m === 'laut' ? ' di laut' : ' di udara')}</span></div>`;
+    r.ev.forEach(e => {
+      const nm = e.fuel && (e.rest || e.meal) ? 'Isi BBM dan ' + (e.meal ? 'makan' : 'istirahat') : e.fuel ? 'Isi BBM' : e.meal ? 'Makan dan istirahat' : 'Istirahat', col = e.fuel ? 'var(--tr-bbm)' : e.meal ? 'var(--tr-mkn)' : 'var(--tr-rst)';
+      tl += `<div class="tr-pt${e.on ? '' : ' off'}"><span class="tr-chip" style="--c:${col}">${ic(e.fuel ? 'fuel' : e.meal ? 'utensils' : 'coffee', 16)}</span><div class="tr-tx"><b>${nm}</b><small>Km ${Math.round(e.km)} ruas ini${e.fuel ? ', isi sekitar ' + Math.round(e.l) + ' L (' + fmtRp(Math.round(e.l * D.price / 1000) * 1000) + ')' : ''} · singgah ${e.min} mnt</small><label class="tr-sw"><input type="checkbox" data-trk="${e.key}"${e.on ? ' checked' : ''}> Singgah di sini</label></div><div class="tr-rt">${trTime(e.eta)}<small>${e.cost ? fmtRp(Math.round(e.cost / 1000) * 1000) : 'BBM dihitung terpisah'}</small></div></div>`;
+    });
+  });
+  tl += `<div class="tr-pt"><span class="tr-chip" style="--c:var(--accent)">${ic('flag', 16)}</span><div class="tr-tx"><b>Tiba${D.to ? ' di ' + esc(D.to) : ''}</b><small>Total ${trDur(c.dur)}, termasuk singgah ${trDur(c.stopMin)}</small></div><div class="tr-rt">${trTime(c.eta)}</div></div>`;
+  const mUrl = trMapsUrl(D);
+  return `<section class="card tr-hero" aria-label="Ringkasan biaya"><small>Perkiraan total biaya</small><div class="tr-big">${fmtRp(Math.round(c.total / 1000) * 1000)}</div><div class="tr-pp">Sekitar ${fmtRp(Math.round(c.total / D.persons / 1000) * 1000)} per orang untuk ${D.persons} orang</div>
+    <div class="tr-kpi"><div><small>Jarak darat</small><b>${c.km ? c.km + ' km' : 'Tanpa darat'}</b></div><div><small>Total waktu</small><b>${trDur(c.dur)}</b></div><div><small>Perkiraan tiba</small><b>${trTime(c.eta).replace(' (+', ' +').replace(' hari)', 'h')}</b></div></div></section>
+  <section class="card" aria-labelledby="tr-h-rin"><h2 class="sec-s" id="tr-h-rin">Rincian biaya</h2><div class="tr-bar" role="img" aria-label="Komposisi biaya">${rows.map(r => `<i class="${r[2]}" style="width:${(r[1] / tot * 100).toFixed(2)}%"></i>`).join('')}</div>
+    <div class="tr-bl">${rows.map(r => `<div><span><i class="${r[2]}"></i><span><b>${r[0]}</b><small>${esc(r[3])}</small></span></span><b>${fmtRp(Math.round(r[1] / 1000) * 1000)}</b></div>`).join('')}</div><p class="cat-hint">Semua angka adalah perkiraan. Ubah harga BBM, tol, dan tiket sesuai kondisi di lapangan.</p></section>
+  <section class="card" aria-labelledby="tr-h-map"><h2 class="sec-s" id="tr-h-map">Peta rute</h2>${trEmbed(D) || `<div class="tr-map">${trMapSVG(D, c)}<div class="tr-cap"><span>Pratinjau skema</span></div></div>`}
+    <div class="tr-leg"><span><i class="tr-b1"></i>Darat</span>${D.segs.some(s => s.m === 'laut') ? '<span><i class="tr-b2"></i>Laut</span>' : ''}${D.segs.some(s => s.m === 'udara') ? '<span><i class="tr-b3"></i>Udara</span>' : ''}${hasDarat ? '<span><i class="tr-dbbm"></i>Isi BBM</span><span><i class="tr-dmkn"></i>Makan</span><span><i class="tr-drst"></i>Istirahat</span>' : ''}</div>
+    <div class="btn-row">${mUrl ? `<a class="btn btn-primary btn-sm" href="${mUrl}" target="_blank" rel="noopener">${ic('road', 16)} Buka rute di Google Maps</a>` : '<span class="cat-hint">Isi kota berangkat dan tujuan untuk membuka rute di Google Maps.</span>'}</div>
+    <div class="field tr-key"><label for="tr-key">Kunci API Google Maps <span class="muted">(opsional, disimpan di perangkat ini)</span></label><input class="input" id="tr-key" autocomplete="off" placeholder="Tempel kunci Maps Embed API agar peta tampil di sini" value="${esc(trMapKey())}"></div></section>
+  <section class="card" aria-labelledby="tr-h-tl"><h2 class="sec-s" id="tr-h-tl">Titik perjalanan</h2><div class="tr-tl">${tl}</div><p class="cat-hint">Matikan titik yang tidak ingin Anda singgahi. Waktu tiba dan biaya ikut dihitung ulang.</p></section>`;
+}
+function trPaintOut() { const T = S.trD, o = $('#tr-out'); if (T && o) o.innerHTML = trOutHTML(T); }
+
+/* ---------- Formulir ---------- */
+function trSegRow(g, i, n) {
+  const dar = g.m === 'darat', laut = g.m === 'laut';
+  return `<div class="tr-sr" data-si="${i}"><div class="tr-sh"><span class="tr-sico">${ic(TR_SEGICON[g.m], 18)}</span><select class="input" data-sf="m" aria-label="Jenis ruas ${i + 1}"><option value="darat"${dar ? ' selected' : ''}>Darat</option><option value="laut"${laut ? ' selected' : ''}>Laut</option><option value="udara"${g.m === 'udara' ? ' selected' : ''}>Udara</option></select>${n > 1 ? `<button type="button" class="icon-btn" data-act="tr-segdel" data-i="${i}" aria-label="Hapus ruas ${i + 1}">${ic('trash', 18)}</button>` : ''}</div>
+    <div class="field"><label>Nama ruas</label><input class="input" data-sf="name" maxlength="60" value="${esc(g.name)}" placeholder="${dar ? 'mis. Tol Trans-Jawa' : laut ? 'mis. Feri Merak ke Bakauheni' : 'mis. CGK ke UPG'}"></div>
+    <div class="row2">${dar ? `<div class="field"><label>Jarak (km)</label><input class="input" data-sf="km" inputmode="numeric" value="${g.km || ''}" placeholder="0"></div><div class="field"><label>Tol mobil (Rp)</label><input class="input" data-sf="toll" inputmode="numeric" value="${g.toll || ''}" placeholder="0"></div>`
+      : `<div class="field"><label>Lama (jam)</label><input class="input" data-sf="h" inputmode="decimal" value="${g.h || ''}" placeholder="0"></div><div class="field"><label>Tiket per orang (Rp)</label><input class="input" data-sf="fare" inputmode="numeric" value="${g.fare || ''}" placeholder="0"></div>`}</div>
+    ${laut ? `<div class="field"><label>Tiket kendaraan (Rp)</label><input class="input" data-sf="veh" inputmode="numeric" value="${g.veh || ''}" placeholder="0"></div>` : ''}</div>`;
+}
+function trSegsPaint() { const T = S.trD, b = $('#tr-segs'); if (T && b) b.innerHTML = T.data.segs.map((g, i) => trSegRow(g, i, T.data.segs.length)).join(''); }
+function trFormPaint() {
+  const T = S.trD, D = T.data, v = TR_VEH[D.veh];
+  $('#tr-modes').innerHTML = TR_MODES.map(m => `<button type="button" data-act="tr-mode" data-v="${m[0]}" aria-pressed="${T.mode === m[0]}">${ic(m[2], 18)}<span>${m[1]}</span></button>`).join('');
+  $('#tr-veh').innerHTML = Object.keys(TR_VEH).map(k => `<button type="button" data-act="tr-veh" data-v="${k}" aria-pressed="${D.veh === k}">${ic(k === 'diesel' ? 'fuel' : k === 'motor' ? 'zap' : 'car', 20)}<span>${TR_VEH[k].n}</span></button>`).join('');
+  $('#tr-pc').textContent = String(D.persons); $('#tr-restv').textContent = D.rest + ' km';
+  $('#tr-vnote').textContent = v.n + ' memakai ' + v.fuel + '. Tangki ' + v.tank + ' L, isi ulang saat sisa 25%.' + (v.toll ? '' : ' Motor tidak boleh masuk tol, jadi tol dianggap nol dan kecepatan rata-rata lebih rendah.');
+  trSegsPaint(); trPaintOut();
+}
+function trPlannerHTML(T) {
+  const D = T.data;
+  return `<form id="tr-form" novalidate>
+  <div class="page-head"><div><p class="hello">${T.id ? 'Ubah rencana' : 'Rencana baru'}</p><h1>${T.id ? 'Ubah Perjalanan' : 'Perjalanan Baru'}</h1></div><button type="button" class="btn btn-ghost btn-sm" data-act="tr-back">${ic('chevl', 16)} Kembali</button></div>
+  <div class="tr-modes" id="tr-modes" role="group" aria-label="Jalur perjalanan"></div>
+  <div class="tr-cols"><div class="tr-col">
+    <section class="card"><h2 class="sec-s">Rute</h2>
+      <div class="field"><label for="tr-name">Nama perjalanan</label><input class="input" id="tr-name" data-tf="name" maxlength="60" autocomplete="off" placeholder="mis. Mudik Lebaran" value="${esc(T.name)}"></div>
+      <div class="row2"><div class="field"><label for="tr-from">Berangkat dari</label><input class="input" id="tr-from" data-tf="from" maxlength="40" autocomplete="off" placeholder="mis. Jakarta" value="${esc(D.from)}"></div><div class="field"><label for="tr-to">Tujuan</label><input class="input" id="tr-to" data-tf="to" maxlength="40" autocomplete="off" placeholder="mis. Yogyakarta" value="${esc(D.to)}"></div></div>
+      <div class="row2"><div class="field"><label for="tr-date">Tanggal berangkat</label><input class="input" type="date" id="tr-date" data-tf="date" value="${esc(T.date)}"></div><div class="field"><label for="tr-dep">Jam berangkat</label><input class="input" type="time" id="tr-dep" data-tf="dep" value="${esc(D.dep)}"></div></div>
+    </section>
+    <section class="card"><div class="card-h"><h2 class="sec-s">Ruas perjalanan</h2><button type="button" class="btn btn-ghost btn-sm" data-act="tr-segadd">${ic('plus', 16)} Tambah ruas</button></div><div id="tr-segs"></div><div class="field" id="tr-transbox"><label for="tr-trans">Transfer bandara dan lainnya (Rp, total)</label><input class="input" id="tr-trans" data-tf="transfer" inputmode="numeric" value="${D.transfer || ''}" placeholder="0"></div></section>
+    <section class="card"><h2 class="sec-s">Kendaraan dan jadwal</h2><div class="tr-chips" id="tr-veh" role="group" aria-label="Kendaraan"></div>
+      <div class="row2"><div class="field"><label for="tr-kmpl">Konsumsi (km/L)</label><input class="input" id="tr-kmpl" data-tf="kmpl" inputmode="decimal" value="${D.kmpl}"></div><div class="field"><label for="tr-price">Harga BBM (Rp/L)</label><input class="input" id="tr-price" data-tf="price" inputmode="numeric" value="${D.price}"></div></div>
+      <div class="field"><span class="lbl">Penumpang</span><div class="tr-step"><button type="button" class="btn btn-ghost" data-act="tr-pm" aria-label="Kurangi penumpang">−</button><output id="tr-pc" aria-live="polite"></output><button type="button" class="btn btn-ghost" data-act="tr-pp" aria-label="Tambah penumpang">+</button></div></div>
+      <div class="field"><label for="tr-rest">Istirahat tiap</label><div class="tr-rg"><input id="tr-rest" data-tf="rest" type="range" min="80" max="300" step="10" value="${D.rest}"><output id="tr-restv"></output></div></div>
+      <p class="cat-hint" id="tr-vnote"></p></section>
+    <div class="field"><label for="tr-note">Catatan <span class="muted">(opsional)</span></label><input class="input" id="tr-note" data-tf="note" maxlength="120" autocomplete="off" value="${esc(T.note)}"></div>
+    <p class="form-err" id="tr-err" role="alert" hidden></p>
+    <div class="btn-row"><button type="submit" class="btn btn-primary grow" id="tr-save">Simpan perjalanan</button>${T.id ? `<button type="button" class="btn btn-danger" id="tr-del" data-act="tr-del">${ic('trash', 18)} Hapus</button>` : ''}</div>
+  </div><div class="tr-col" id="tr-out"></div></div></form>`;
+}
+function trOpen(id, mode) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const cur = id ? trFind(id) : null; if (id && !cur) return;
+  S.trD = cur ? trFrom(cur) : trDefault(mode || 'darat'); disarm();
+  if (S.view !== 'perjalanan') { S.view = 'perjalanan'; renderView(); } else VIEWS.perjalanan.update();
+  window.scrollTo(0, 0);
+}
+function trClose() { S.trD = null; disarm(); VIEWS.perjalanan.update(); window.scrollTo(0, 0); }
+
+async function trSave() {
+  const T = S.trD; if (!T || T.saving) return;
+  const err = $('#tr-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); }; err.hidden = true;
+  const c = trCompute(T.data), now = new Date().toISOString();
+  const r = planClean('trip', { name: T.name, mode: T.mode, date: T.date, note: T.note, budget: Math.round(c.total), data: T.data, createdAt: T.createdAt || now, updatedAt: now }, now);
+  if (r.err) return fail(r.err);
+  const btn = $('#tr-save'); T.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try {
+    const col = planBase().collection('trip'); await (T.id ? col.doc(T.id) : col.doc()).set(r.ok);
+    const edit = !!T.id; S.trD = null; VIEWS.perjalanan.update(); window.scrollTo(0, 0); toast(edit ? 'Perjalanan diperbarui' : 'Perjalanan disimpan');
+  } catch (e) { T.saving = false; btn.disabled = false; btn.textContent = 'Simpan perjalanan'; fail(dbErrMsg(e)); }
+}
+async function trDelete() {
+  const T = S.trD; if (!T || !T.id) return;
+  const b = $('#tr-del'), on = !!(S.armed && S.armed.key === 'tr-del');
+  if (!on) { arm('tr-del'); if (b) { b.classList.add('armed'); b.textContent = 'Yakin hapus perjalanan ini?'; } return; }
+  disarm(); const err = $('#tr-err');
+  try { await planBase().collection('trip').doc(T.id).delete(); S.trD = null; VIEWS.perjalanan.update(); toast('Perjalanan dihapus'); }
+  catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+
+/* ---------- Daftar ---------- */
+function trCard(t) {
+  const c = trCompute(t.data), M = TR_MODES.filter(m => m[0] === t.mode)[0] || TR_MODES[0], past = t.date && t.date < ymd(new Date());
+  return `<section class="card cic tr-card${past ? ' done' : ''}" aria-label="${esc(t.name)}">
+    <div class="cic-h"><span class="chip" style="--c:${planSlot(2)}">${ic(M[2], 20)}</span><div class="cic-n"><b>${esc(t.name)}</b><small>${esc(t.data.from || '—')} → ${esc(t.data.to || '—')} · ${M[1]}</small></div><button type="button" class="btn btn-ghost btn-sm" data-act="tr-edit" data-id="${esc(t.id)}">${ic('edit', 16)} Buka</button></div>
+    <div class="cic-amt"><b>${fmtRp(Math.round(c.total / 1000) * 1000)}</b><span>perkiraan total untuk ${t.data.persons} orang</span></div>
+    <div class="cic-facts"><div><span>Berangkat</span><b>${t.date ? esc(dueDateText(t.date)) : 'Belum diatur'}</b></div><div><span>Waktu tempuh</span><b>${trDur(c.dur)}</b></div><div><span>Jarak darat</span><b>${c.km ? c.km + ' km' : '–'}</b></div></div>
+    ${t.note ? `<p class="cic-next">${esc(t.note)}</p>` : ''}</section>`;
+}
+VIEWS.perjalanan = {
+  mount(v) { v.innerHTML = '<div id="tr-root"></div>'; },
+  update() {
+    const root = $('#tr-root'); if (!root) return;
+    if (S.trD) { if (!$('#tr-form')) { root.innerHTML = trPlannerHTML(S.trD); trFormPaint(); } return; }
+    const head = subnavHTML('perjalanan') + `<div class="page-head"><div><p class="hello">Darat, laut, udara, atau gabungan</p><h1>Perjalanan</h1></div><button type="button" class="btn btn-primary" data-act="tr-new" data-mode="darat">${ic('plus', 18)} Rencana</button></div>`;
+    if (!planReady()) { root.innerHTML = head + skelHTML(); return; }
+    const list = (S.plan.trip || []).slice().sort((a, b) => ((a.date || '9') < (b.date || '9') ? -1 : (a.date || '9') > (b.date || '9') ? 1 : 0));
+    if (!list.length) {
+      root.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada rencana perjalanan</h3><p>Pilih jalur, kendaraan, dan jam berangkat. SaKu menyusun titik isi BBM, makan, dan istirahat, lalu menghitung perkiraan BBM, waktu tiba, dan total biaya.</p></div></section>
+      <div class="tr-start">${TR_MODES.map(m => `<button type="button" class="card tr-st" data-act="tr-new" data-mode="${m[0]}"><span class="chip" style="--c:${planSlot(2)}">${ic(m[2], 22)}</span><b>${m[1]}</b></button>`).join('')}</div>`;
+      return;
+    }
+    const upcoming = list.filter(t => !t.date || t.date >= ymd(new Date())), tot = upcoming.reduce((s, t) => s + trCompute(t.data).total, 0);
+    root.innerHTML = head + `<div class="tiles tiles-fill cic-sum">${tileHTML('Rencana', String(list.length), upcoming.length + ' akan datang')}${tileHTML('Perkiraan biaya', fmtCompact(Math.round(tot)), 'rencana akan datang')}</div>` + list.map(trCard).join('');
+  }
+};
+
+/* ---------- Aksi ---------- */
+function trRead(el) {
+  const T = S.trD; if (!T) return;
+  const f = el.dataset.tf, D = T.data, num = x => Number(String(x).replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+  if (f === 'name') T.name = el.value; else if (f === 'note') T.note = el.value; else if (f === 'date') T.date = el.value;
+  else if (f === 'from') D.from = el.value; else if (f === 'to') D.to = el.value; else if (f === 'dep') D.dep = el.value || '06:00';
+  else if (f === 'transfer') D.transfer = Math.round(num(el.value));
+  else if (f === 'kmpl') D.kmpl = Math.min(80, Math.max(3, num(el.value) || 3));
+  else if (f === 'price') D.price = Math.min(100000, Math.max(1000, Math.round(num(el.value)) || 1000));
+  else if (f === 'rest') { D.rest = Number(el.value) || 150; D.off = []; const o = $('#tr-restv'); if (o) o.textContent = D.rest + ' km'; }
+  if (f === 'from' || f === 'to') { const o = $('#tr-out'); if (o && !trMapKey()) { /* peta skema tidak bergantung nama kota */ } }
+  trPaintOut();
+}
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || !S.trD) return;
+  if (el.id === 'tr-key') { try { localStorage.setItem('saku.mapskey', el.value.trim()); } catch (x) { /* abaikan */ } return; }
+  if (el.dataset && el.dataset.tf && $('#tr-form') && $('#tr-form').contains(el)) { trRead(el); return; }
+  if (el.dataset && el.dataset.sf) {
+    const row = el.closest('[data-si]'); if (!row) return; const g = S.trD.data.segs[Number(row.dataset.si)]; if (!g) return;
+    const f = el.dataset.sf;
+    if (f === 'name') g.name = el.value; else if (f === 'm') return;
+    else { const v = Number(String(el.value).replace(/[^\d.,]/g, '').replace(',', '.')) || 0; g[f] = f === 'h' ? Math.round(v * 10) / 10 : Math.round(v); S.trD.data.off = []; }
+    trPaintOut();
+  }
+});
+document.addEventListener('change', e => {
+  const el = e.target; if (!el || !S.trD) return;
+  if (el.dataset && el.dataset.trk) { const D = S.trD.data, k = el.dataset.trk, i = D.off.indexOf(k); if (el.checked) { if (i >= 0) D.off.splice(i, 1); } else if (i < 0) D.off.push(k); trPaintOut(); return; }
+  if (el.dataset && el.dataset.sf === 'm') {
+    const row = el.closest('[data-si]'), g = row && S.trD.data.segs[Number(row.dataset.si)]; if (!g) return;
+    g.m = el.value; if (g.m === 'darat') { g.h = 0; g.fare = 0; g.veh = 0; if (!g.km) g.km = 100; } else { g.km = 0; g.toll = 0; if (!g.h) g.h = g.m === 'udara' ? 2 : 4; }
+    S.trD.data.off = []; trSegsPaint(); trPaintOut();
+  }
+});
+document.addEventListener('submit', e => { if (e.target && e.target.id === 'tr-form') { e.preventDefault(); trSave(); } });
+Object.assign(ACT, {
+  'tr-new'(el) { trOpen(null, el.dataset.mode || 'darat'); },
+  'tr-edit'(el) { trOpen(el.dataset.id); },
+  'tr-back'() { trClose(); },
+  'tr-mode'(el) { const T = S.trD; if (!T) return; T.mode = el.dataset.v; const D = T.data; D.segs = trTemplate(T.mode); D.off = []; D.transfer = T.mode === 'udara' ? 250000 : 0; const t = $('#tr-trans'); if (t) t.value = D.transfer || ''; trFormPaint(); },
+  'tr-veh'(el) { const T = S.trD; if (!T) return; const D = T.data, v = TR_VEH[el.dataset.v]; if (!v) return; D.veh = el.dataset.v; D.kmpl = v.kmpl; D.price = v.price; D.off = []; $('#tr-kmpl').value = String(D.kmpl); $('#tr-price').value = String(D.price); trFormPaint(); },
+  'tr-pm'() { const T = S.trD; if (!T) return; T.data.persons = Math.max(1, T.data.persons - 1); T.data.off = []; $('#tr-pc').textContent = String(T.data.persons); trPaintOut(); },
+  'tr-pp'() { const T = S.trD; if (!T) return; T.data.persons = Math.min(30, T.data.persons + 1); T.data.off = []; $('#tr-pc').textContent = String(T.data.persons); trPaintOut(); },
+  'tr-segadd'() { const T = S.trD; if (!T || T.data.segs.length >= 8) return; T.data.segs.push({ m: 'darat', name: '', km: 100, h: 0, toll: 0, fare: 0, veh: 0 }); T.data.off = []; trSegsPaint(); trPaintOut(); },
+  'tr-segdel'(el) { const T = S.trD; if (!T || T.data.segs.length < 2) return; T.data.segs.splice(Number(el.dataset.i), 1); T.data.off = []; trSegsPaint(); trPaintOut(); },
+  'tr-del'() { trDelete(); }
+});
+/* ================= Menu Rencana: Wishlist ================= */
+/* Barang atau kegiatan yang diinginkan: tanggal rencana, estimasi biaya, dan berapa yang perlu dikumpulkan per hari, minggu, atau bulan.
+   Uang yang terkumpul dicatat di wishlist saja (bukan transaksi), jadi saldo tidak berubah. */
+const WS_KINDS = { barang: { label: 'Barang', icon: 'bag', slot: 1 }, kegiatan: { label: 'Kegiatan', icon: 'sparkle', slot: 3 } };
+const WS_FREQ = [['harian', 'Harian', 'hari'], ['mingguan', 'Mingguan', 'minggu'], ['bulanan', 'Bulanan', 'bulan']];
+const wsFind = id => (S.plan.wish || []).filter(x => x.id === id)[0] || null;
+function wsModel(w, today) {
+  const left = Math.max(0, w.cost - w.saved), pct = w.cost > 0 ? Math.min(100, w.saved / w.cost * 100) : 0, reached = w.saved >= w.cost;
+  const days = w.date ? dayDiff(startOfDay(today), parseYmd(w.date)) : null, m = { w, left, pct, reached, days, done: !!w.done || false };
+  if (left > 0 && days !== null && days > 0) { m.perDay = left / days; m.perWeek = left / Math.max(1, Math.ceil(days / 7)); m.perMonth = left / Math.max(1, Math.ceil(days / 30.4375)); m.per = w.freq === 'harian' ? m.perDay : w.freq === 'mingguan' ? m.perWeek : m.perMonth; }
+  m.overdue = !m.done && !reached && days !== null && days < 0;
+  return m;
+}
+const wsRound = n => Math.max(1000, Math.ceil(n / 1000) * 1000);
+function wsNote(M) {
+  const w = M.w, F = WS_FREQ.filter(f => f[0] === w.freq)[0] || WS_FREQ[2];
+  if (M.done) return w.kind === 'kegiatan' ? 'Kegiatan ini sudah terlaksana.' : 'Barang ini sudah terbeli.';
+  if (M.reached) return 'Dana sudah cukup. Waktunya mewujudkannya!';
+  if (M.overdue) return 'Tanggal rencana sudah lewat. Sisa ' + fmtRp(M.left) + '. Ubah tanggalnya bila perlu.';
+  if (M.per) return 'Sisihkan sekitar ' + fmtRp(wsRound(M.per)) + ' per ' + F[2] + ' agar terkumpul pada ' + dueDateText(w.date) + '.';
+  if (M.days === 0) return 'Hari ini tanggal rencananya. Sisa ' + fmtRp(M.left) + '.';
+  return 'Isi tanggal rencana untuk melihat berapa yang perlu dikumpulkan.';
+}
+function wsCard(M) {
+  const w = M.w, K = WS_KINDS[w.kind] || WS_KINDS.barang;
+  const when = w.date ? esc(dueDateText(w.date)) + (M.days !== null && M.days >= 0 && !M.done ? ' · ' + (M.days === 0 ? 'hari ini' : M.days + ' hari lagi') : '') : 'Belum diatur';
+  const alt = M.perDay ? `<div class="ws-alt" aria-label="Kebutuhan menabung"><span>Harian <b>${fmtRp(wsRound(M.perDay))}</b></span><span>Mingguan <b>${fmtRp(wsRound(M.perWeek))}</b></span><span>Bulanan <b>${fmtRp(wsRound(M.perMonth))}</b></span></div>` : '';
+  return `<section class="card cic ${M.done ? 'done' : ''}" aria-label="${esc(w.name)}">
+    <div class="cic-h"><span class="chip" style="--c:${planSlot(K.slot)}">${ic(K.icon, 20)}</span><div class="cic-n"><b>${esc(w.name)}</b><small>${K.label} · ${when}</small></div></div>
+    <div class="cic-amt"><b>${fmtRp(w.saved)}</b><span>dari ${fmtRp(w.cost)}</span></div>
+    <div class="pbar" role="progressbar" aria-label="Kemajuan wishlist" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(M.pct)}"><i style="width:${M.pct.toFixed(1)}%"></i></div>
+    <div class="cic-facts ws-facts"><div><span>Sisa</span><b>${M.left > 0 ? fmtRp(M.left) : '–'}</b></div><div><span>Terkumpul</span><b>${Math.round(M.pct)}%</b></div><div><span>Kumpul</span><b>${(WS_FREQ.filter(f => f[0] === w.freq)[0] || WS_FREQ[2])[1]}</b></div></div>
+    ${alt}<p class="cic-next ${M.overdue ? 'late' : ''}">${esc(wsNote(M))}</p>${w.note ? `<p class="cat-hint">${esc(w.note)}</p>` : ''}
+    <div class="btn-row cic-acts">${M.done ? '' : `<button type="button" class="btn btn-primary btn-sm" data-act="wa-open" data-id="${esc(w.id)}">${ic('plus', 16)} Tabung</button>`}<button type="button" class="btn btn-ghost btn-sm" data-act="wf-open" data-id="${esc(w.id)}">${ic('edit', 16)} Ubah</button></div></section>`;
+}
+VIEWS.wishlist = {
+  update() {
+    const v = $('#view'), head = subnavHTML('wishlist') + `<div class="page-head"><div><p class="hello">Barang dan kegiatan yang Anda inginkan</p><h1>Wishlist</h1></div><button type="button" class="btn btn-primary" data-act="wf-open">${ic('plus', 18)} Tambah</button></div>`;
+    if (!planReady()) { v.innerHTML = head + skelHTML(); return; }
+    const today = new Date(), ms = (S.plan.wish || []).map(w => wsModel(w, today));
+    if (!ms.length) { v.innerHTML = head + `<section class="card"><div class="empty"><h3>Wishlist masih kosong</h3><p>Catat barang atau kegiatan yang Anda inginkan, lengkap dengan tanggal rencana dan estimasi biayanya. SaKu menghitung berapa yang perlu disisihkan per hari, minggu, atau bulan.</p><button type="button" class="btn btn-primary" data-act="wf-open">${ic('plus', 18)} Tambah wishlist</button></div></section>`; return; }
+    const act = ms.filter(m => !m.done).sort((a, b) => ((a.w.date || '9') < (b.w.date || '9') ? -1 : (a.w.date || '9') > (b.w.date || '9') ? 1 : 0)), fin = ms.filter(m => m.done);
+    const cost = act.reduce((s, m) => s + m.w.cost, 0), saved = act.reduce((s, m) => s + m.w.saved, 0), month = act.reduce((s, m) => s + (m.perMonth || 0), 0);
+    const tiles = act.length ? `<div class="tiles tiles-fill cic-sum">${tileHTML('Wishlist aktif', String(act.length), 'senilai ' + fmtRp(cost))}${tileHTML('Terkumpul', fmtRp(saved), cost > 0 ? Math.round(saved / cost * 100) + '% dari total' : '')}${tileHTML('Kumpulkan per bulan', month > 0 ? fmtRp(wsRound(month)) : '–', 'agar semuanya tepat waktu')}</div>` : '';
+    v.innerHTML = head + tiles + act.map(wsCard).join('') + (fin.length ? '<h2 class="sec-t">Sudah Terwujud</h2>' + fin.map(wsCard).join('') : '');
+  }
+};
+
+/* ---------- Formulir ---------- */
+function wfDefault() { return { id: null, name: '', kind: 'barang', cost: 0, saved: 0, date: '', freq: 'bulanan', note: '', done: false, createdAt: null, saving: false }; }
+function wfFrom(w) { return { id: w.id, name: w.name, kind: w.kind, cost: w.cost, saved: w.saved, date: w.date || '', freq: w.freq, note: w.note || '', done: !!w.done, createdAt: w.createdAt, saving: false }; }
+function wfOpen(id) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const cur = id ? wsFind(id) : null; if (id && !cur) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const W = S.wf = cur ? wfFrom(cur) : wfDefault();
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="wform" role="dialog" aria-modal="true" aria-labelledby="wf-t" novalidate>
+    <div class="sheet-h"><h2 id="wf-t">${W.id ? 'Ubah Wishlist' : 'Tambah Wishlist'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="field"><label for="wf-name">Apa yang diinginkan</label><input class="input" id="wf-name" maxlength="60" autocomplete="off" placeholder="mis. Kamera mirrorless, liburan ke Bali"></div>
+      <div class="field"><span class="lbl" id="wf-kl">Jenis</span><div class="seg" id="wf-kinds" role="group" aria-labelledby="wf-kl"></div></div>
+      <div class="field"><label for="wf-cost">Estimasi biaya</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="wf-cost" data-money="wf-cost" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+      <div class="field"><label for="wf-date">Tanggal rencana <span class="muted">(opsional)</span></label><input class="input" type="date" id="wf-date"></div>
+      <div class="field"><span class="lbl" id="wf-fl">Mengumpulkan secara</span><div class="seg" id="wf-freqs" role="group" aria-labelledby="wf-fl"></div><small class="hint" id="wf-hint"></small></div>
+      <div class="field"><label for="wf-saved">Sudah terkumpul <span class="muted">(opsional)</span></label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="wf-saved" data-money="wf-saved" inputmode="numeric" autocomplete="off" placeholder="0"></div><small class="hint">Dicatat di wishlist saja, bukan sebagai transaksi.</small></div>
+      <div class="field"><label for="wf-note">Catatan <span class="muted">(opsional)</span></label><input class="input" id="wf-note" maxlength="120" autocomplete="off"></div>
+      ${W.id ? '<label class="check"><input type="checkbox" id="wf-done"> Sudah terbeli / terlaksana</label>' : ''}
+      <p class="form-err" id="wf-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="wf-del" data-act="wf-del" ${W.id ? '' : 'hidden'}>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="wf-save">Simpan</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#wf-name').value = W.name; $('#wf-cost').value = W.cost ? dots(W.cost) : ''; $('#wf-saved').value = W.saved ? dots(W.saved) : ''; $('#wf-date').value = W.date; $('#wf-note').value = W.note; if ($('#wf-done')) $('#wf-done').checked = W.done;
+  wfPaint(); if (!W.id) setTimeout(() => { const a = $('#wf-name'); if (a && a.focus) a.focus(); }, 60);
+}
+function wfRead() {
+  const W = S.wf, g = id => { const e = $('#' + id); return e ? e.value : ''; }; if (!W || !$('#wf-name')) return W;
+  W.name = g('wf-name'); W.date = g('wf-date'); W.note = g('wf-note'); W.done = !!($('#wf-done') && $('#wf-done').checked); return W;
+}
+function wfPaint() {
+  const W = S.wf; if (!W || !$('#wf-kinds')) return;
+  $('#wf-kinds').innerHTML = Object.keys(WS_KINDS).map(k => `<button type="button" data-act="wf-kind" data-v="${k}" aria-pressed="${W.kind === k}">${WS_KINDS[k].label}</button>`).join('');
+  $('#wf-freqs').innerHTML = WS_FREQ.map(f => `<button type="button" data-act="wf-freq" data-v="${f[0]}" aria-pressed="${W.freq === f[0]}">${f[1]}</button>`).join('');
+  wfHint();
+}
+function wfHint() {
+  const W = S.wf, h = $('#wf-hint'); if (!W || !h) return; wfRead();
+  const M = wsModel({ cost: W.cost, saved: W.saved, date: W.date, freq: W.freq }, new Date()), F = WS_FREQ.filter(f => f[0] === W.freq)[0];
+  h.textContent = M.per ? 'Perlu sekitar ' + fmtRp(wsRound(M.per)) + ' per ' + F[2] + ' sampai tanggal rencana.' : 'Isi biaya dan tanggal rencana (yang belum lewat) untuk melihat kebutuhan menabung.';
+}
+async function wfSave() {
+  const W = S.wf; if (!W || W.saving) return; wfRead();
+  const err = $('#wf-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); }; err.hidden = true;
+  if (W.date && !isYmd(W.date)) return fail('Tanggal rencana tidak valid.');
+  const now = new Date().toISOString(), r = planClean('wish', { name: W.name, kind: W.kind, cost: W.cost, saved: W.saved, date: W.date, freq: W.freq, note: W.note, done: W.done, createdAt: W.createdAt || now, updatedAt: now }, now);
+  if (r.err) return fail(r.err);
+  const btn = $('#wf-save'); W.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try { const col = planBase().collection('wish'); await (W.id ? col.doc(W.id) : col.doc()).set(r.ok); const edit = !!W.id; closeSheet(); toast(edit ? 'Wishlist diperbarui' : 'Wishlist ditambahkan'); }
+  catch (e) { W.saving = false; btn.disabled = false; btn.textContent = 'Simpan'; fail(dbErrMsg(e)); }
+}
+async function wfDelete() {
+  const W = S.wf; if (!W || !W.id) return;
+  const b = $('#wf-del'), on = !!(S.armed && S.armed.key === 'wf-del');
+  if (!on) { arm('wf-del'); if (b) { b.classList.add('armed'); b.textContent = 'Yakin hapus wishlist ini?'; } return; }
+  disarm(); const err = $('#wf-err');
+  try { await planBase().collection('wish').doc(W.id).delete(); closeSheet(); toast('Wishlist dihapus'); } catch (e) { err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+
+/* ---------- Tabung ke wishlist ---------- */
+function waOpen(id) {
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.'); return; }
+  const w = wsFind(id); if (!w) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const M = wsModel(w, new Date()); S.wa = { id, amount: M.per ? wsRound(M.per) : 0, saving: false };
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="waform" role="dialog" aria-modal="true" aria-labelledby="wa-t" novalidate>
+    <div class="sheet-h"><h2 id="wa-t">Tabung ke Wishlist</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b"><p class="cat-hint">${esc(w.name)}: terkumpul ${fmtRp(w.saved)} dari ${fmtRp(w.cost)}.</p>
+      <div class="field"><label for="wa-amt">Jumlah ditabung</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="wa-amt" data-money="wa-amt" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+      <p class="form-err" id="wa-err" role="alert" hidden></p></div>
+    <div class="sheet-f"><button type="submit" class="btn btn-primary grow" id="wa-save">Simpan</button></div></form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#wa-amt').value = S.wa.amount ? dots(S.wa.amount) : ''; setTimeout(() => { const a = $('#wa-amt'); if (a && a.focus) a.focus(); }, 60);
+}
+async function waSave() {
+  const A = S.wa; if (!A || A.saving) return; const w = wsFind(A.id), err = $('#wa-err');
+  if (!w) return closeSheet(); if (!(A.amount > 0)) { err.textContent = 'Isi jumlah yang ditabung.'; err.hidden = false; return; }
+  const now = new Date().toISOString(), r = planClean('wish', Object.assign({}, w, { saved: Math.min(1e13, w.saved + A.amount), updatedAt: now }), now);
+  if (r.err) { err.textContent = r.err; err.hidden = false; return; }
+  const btn = $('#wa-save'); A.saving = true; btn.disabled = true;
+  try { await planBase().collection('wish').doc(w.id).set(r.ok); closeSheet(); toast('Tabungan wishlist ditambah ' + fmtRp(A.amount)); if (r.ok.saved >= r.ok.cost) toast('Dana wishlist “' + w.name + '” sudah cukup!'); }
+  catch (e) { A.saving = false; btn.disabled = false; err.textContent = dbErrMsg(e); err.hidden = false; }
+}
+MONEY_HOOKS['wf-cost'] = v => { if (S.wf) { S.wf.cost = v; wfHint(); } };
+MONEY_HOOKS['wf-saved'] = v => { if (S.wf) { S.wf.saved = v; wfHint(); } };
+MONEY_HOOKS['wa-amt'] = v => { if (S.wa) S.wa.amount = v; };
+Object.assign(ACT, {
+  'wf-open'(el) { wfOpen(el.dataset.id || null); },
+  'wa-open'(el) { waOpen(el.dataset.id); },
+  'wf-kind'(el) { const W = S.wf; if (!W) return; wfRead(); W.kind = el.dataset.v; wfPaint(); },
+  'wf-freq'(el) { const W = S.wf; if (!W) return; wfRead(); W.freq = el.dataset.v; wfPaint(); },
+  'wf-del'() { wfDelete(); }
+});
+document.addEventListener('change', e => { const el = e.target; if (el && S.wf && el.id === 'wf-date') wfHint(); });
+document.addEventListener('submit', e => { const f = e.target; if (!f) return; if (f.id === 'wform') { e.preventDefault(); wfSave(); } else if (f.id === 'waform') { e.preventDefault(); waSave(); } });
+/* ================= Menu Teman: kode teman, permintaan, dan berbagi rencana ================= */
+/* Kode khusus saling menghubungkan dua akun. Yang dibagikan hanya SALINAN yang dipilih pemiliknya (wishlist, target/rencana nikah, patungan, perjalanan, anggaran); teman hanya bisa melihat, dan pemilik memperbarui salinannya otomatis. */
+const TM_STEPS = [
+  { t: 'Buat kode Anda', d: 'Setiap akun mendapat kode khusus. Kode ini bukan kata sandi dan tidak membuka data Anda.' },
+  { t: 'Bagikan ke teman', d: 'Kirim kode lewat chat. Teman memasukkannya di menu Teman pada akun SaKu miliknya, lalu Anda menyetujui permintaannya.' },
+  { t: 'Saling terhubung', d: 'Setelah kode diterima dan disetujui, kalian terhubung. Putuskan kapan saja.' },
+  { t: 'Rencana dan wishlist bersama', d: 'Pilih sendiri apa yang dibagikan: anggaran, rencana nikah, wishlist, atau perjalanan.' }
+];
+const TM_SHARE = [
+  { i: 'flag', t: 'Anggaran bersama', d: 'Rencana pengeluaran yang disusun berdua.' },
+  { i: 'heart', t: 'Rencana nikah', d: 'Target dana dan daftar kebutuhan untuk acara besar.' },
+  { i: 'star', t: 'Wishlist bersama', d: 'Barang atau kegiatan impian yang dikumpulkan bersama.' },
+  { i: 'car', t: 'Perjalanan', d: 'Rute, titik singgah, dan estimasi biaya bareng teman.' }
+];
+function tmStageHTML(n) {
+  return `<div class="tm-stage" id="tm-stage" data-s="${n}" role="img" aria-label="Animasi cara kerja: ${esc(TM_STEPS[n - 1].t)}">
+    <div class="tm-ph tm-a"><span class="tm-av">BP</span><small>Anda</small><i class="tm-ok">${ic('check', 14)}</i></div>
+    <div class="tm-ph tm-b"><span class="tm-av tm-av2">TM</span><small>Teman</small><i class="tm-ok">${ic('check', 14)}</i></div>
+    <div class="tm-link"><i></i></div>
+    <div class="tm-code">SAKU-7K2M</div>
+    <div class="tm-cards"><span>${ic('flag', 14)} Anggaran</span><span>${ic('heart', 14)} Rencana nikah</span><span>${ic('star', 14)} Wishlist</span></div>
+  </div>`;
+}
+function tmSet(n, user) {
+  const st = $('#tm-stage'); if (!st) return; n = ((n - 1 + TM_STEPS.length) % TM_STEPS.length) + 1; S.tmN = n;
+  st.setAttribute('data-s', String(n)); st.setAttribute('aria-label', 'Animasi cara kerja: ' + TM_STEPS[n - 1].t);
+  const a = st.cloneNode(true); /* ulang animasi CSS */ st.parentNode.replaceChild(a, st);
+  $$('.tm-dot').forEach((b, i) => { b.setAttribute('aria-current', i + 1 === n ? 'step' : 'false'); });
+  const t = $('#tm-cap-t'), d = $('#tm-cap-d'); if (t) t.textContent = n + '. ' + TM_STEPS[n - 1].t; if (d) d.textContent = TM_STEPS[n - 1].d;
+  const bar = $('#tm-bar'); if (bar) { bar.classList.remove('run'); void bar.offsetWidth; if (S.tmPlay !== false) bar.classList.add('run'); }
+  if (user) tmTimer();
+}
+function tmTimer() {
+  clearInterval(S.tmT); if (S.tmPlay === false) return;
+  S.tmT = setInterval(() => { if (!$('#tm-stage')) { clearInterval(S.tmT); return; } tmSet((S.tmN || 1) + 1); }, 4200);
+}
+function tmPlayBtn() { const b = $('#tm-play'); if (b) { b.setAttribute('aria-pressed', String(S.tmPlay !== false)); b.innerHTML = (S.tmPlay !== false ? ic('x', 16) + ' Jeda' : ic('chevr', 16) + ' Putar'); } }
+
+/* ---------- penyimpanan penanda per perangkat (sekali tampil, sudah dilihat) ---------- */
+const frLS = {
+  get(k) { try { return localStorage.getItem('saku.fr.' + k + '.' + ((S.me && S.me.id) || '')); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem('saku.fr.' + k + '.' + ((S.me && S.me.id) || ''), v); } catch (e) { /* abaikan */ } }
+};
+const FR_KIND = {
+  wish: { label: 'Wishlist', icon: 'star', slot: 3 }, target: { label: 'Target / Rencana', icon: 'flag', slot: 2 },
+  ramean: { label: 'Patungan', icon: 'users', slot: 5 }, trip: { label: 'Perjalanan', icon: 'car', slot: 1 }, budget: { label: 'Anggaran', icon: 'wallet', slot: 4 }
+};
+const frAvail = () => !!(S.me && !isAdmin());
+function frSeenSet() { try { return new Set(JSON.parse(frLS.get('seen') || '[]')); } catch (e) { return new Set(); } }
+function frUnseen() { const st = S.fr && S.fr.st; if (!st) return []; const seen = frSeenSet(); return st.withMe.filter(x => !seen.has(x.key + '|' + x.from.id + '|' + x.at)); }
+function frBadgeText() {
+  const st = S.fr && S.fr.st, n = st ? st.incoming.length + frUnseen().length : 0;
+  if (n > 0) return n > 9 ? '9+' : String(n);
+  return frLS.get('opened') ? '' : 'Baru';
+}
+function paintFrBadge() {
+  const t = frAvail() && S.phase === 'app' ? frBadgeText() : '';
+  $$('[data-fr-badge]').forEach(b => { b.hidden = !t; b.textContent = t; b.classList.toggle('nb-new', t === 'Baru'); });
+}
+
+/* ---------- memuat status teman ---------- */
+async function frLoad(opt) {
+  if (!frAvail() || S.phase !== 'app') return;
+  const F = S.fr || (S.fr = { st: null, err: '', busy: false, first: true });
+  if (F.busy) return; F.busy = true;
+  try {
+    const prev = F.st, st = await api('friend.state', {}); F.st = st; F.err = ''; F.at = Date.now();
+    if (prev && !(opt && opt.quiet)) {
+      const known = new Set(prev.incoming.map(x => x.id)), fresh = st.incoming.filter(x => !known.has(x.id));
+      if (fresh.length) toast(fresh.length === 1 ? 'Permintaan pertemanan baru dari ' + fresh[0].name : fresh.length + ' permintaan pertemanan baru');
+      const had = new Set(prev.withMe.map(x => x.key + '|' + x.from.id + '|' + x.at)), nw = st.withMe.filter(x => !had.has(x.key + '|' + x.from.id + '|' + x.at));
+      if (nw.length && S.view !== 'teman') toast(nw[0].from.name + ' membagikan ' + (FR_KIND[nw[0].kind] || { label: 'rencana' }).label.toLowerCase() + ' “' + nw[0].name + '”');
+    }
+    frAutoSync();
+  } catch (e) { F.err = (e && e.userMessage) || 'Gagal memuat data teman.'; }
+  F.busy = false; paintFrBadge();
+  if (S.view === 'teman' && VIEWS.teman.render) VIEWS.teman.render();
+}
+function frBoot() {
+  if (!frAvail() || S.frTimer) return;
+  frLoad({ quiet: true });
+  S.frTimer = setInterval(() => { if (S.phase !== 'app' || document.hidden) return; frLoad(); }, 240000);
+  setTimeout(frIntroMaybe, 2600);
+}
+function frStop() { clearInterval(S.frTimer); S.frTimer = null; S.fr = null; }
+
+/* ---------- item yang bisa dibagikan ---------- */
+function frItems() {
+  const out = [], P = S.plan || {};
+  (P.wish || []).forEach(x => out.push({ kind: 'wish', id: x.id, name: x.name, sub: fmtRp(x.saved || 0) + ' dari ' + fmtRp(x.cost || 0) }));
+  (P.target || []).forEach(x => out.push({ kind: 'target', id: x.id, name: x.name, sub: x.goal ? 'Target ' + fmtRp(x.goal) : 'Target' }));
+  (P.ramean || []).forEach(x => out.push({ kind: 'ramean', id: x.id, name: x.name, sub: 'Patungan' + (x.date ? ' · ' + dueDateText(x.date) : '') }));
+  (P.trip || []).forEach(x => out.push({ kind: 'trip', id: x.id, name: x.name, sub: 'Perjalanan' + (x.date ? ' · ' + dueDateText(x.date) : '') }));
+  if (Number(S.settings && S.settings.budget) > 0) out.push({ kind: 'budget', id: 'anggaran', name: 'Anggaran bulanan', sub: 'Batas ' + fmtRp(S.settings.budget) });
+  return out;
+}
+function frPayload(kind, id) {
+  if (kind === 'budget') return { budget: Number(S.settings && S.settings.budget) || 0, catBudgets: (S.settings && S.settings.catBudgets) || {} };
+  const it = ((S.plan || {})[kind] || []).filter(x => x.id === id)[0]; if (!it) return null;
+  const d = JSON.parse(JSON.stringify(it)); delete d.id;
+  if (kind === 'ramean' && d.data) delete d.data.rec;   // tautan ke transaksi pribadi tidak ikut dibagikan
+  return d;
+}
+/* Salinan yang sudah dibagikan ikut diperbarui otomatis bila isinya berubah di perangkat pemilik */
+function frAutoSync() {
+  const F = S.fr; if (!F || !F.st || F.syncing || !planReady()) return;
+  let known = {}; try { known = JSON.parse(frLS.get('sync') || '{}'); } catch (e) { known = {}; }
+  const jobs = [];
+  F.st.mine.forEach(m => {
+    const d = frPayload(m.kind, m.itemId), to = m.to.map(x => x.id);
+    if (!d) { jobs.push({ kind: m.kind, itemId: m.itemId, to: [], data: {}, drop: m.key }); return; }
+    const sig = JSON.stringify(d) + '|' + to.join(',');
+    if (known[m.key] !== sig) jobs.push({ kind: m.kind, itemId: m.itemId, to, data: d, key: m.key, sig });
+  });
+  if (!jobs.length) { frLS.set('sync', JSON.stringify(known)); return; }
+  F.syncing = true;
+  (async () => {
+    try {
+      for (const j of jobs.slice(0, 6)) {
+        const r = await api('friend.share', { kind: j.kind, itemId: j.itemId, to: j.to, data: j.data });
+        if (r && r.state) F.st = r.state;
+        if (j.drop) delete known[j.drop]; else known[j.key] = j.sig;
+      }
+      frLS.set('sync', JSON.stringify(known));
+    } catch (e) { /* dicoba lagi pada pemuatan berikutnya */ }
+    F.syncing = false; if (S.view === 'teman' && VIEWS.teman.render) VIEWS.teman.render();
+  })();
+}
+
+/* ---------- tampilan ---------- */
+const frAv = n => `<span class="avatar sm">${esc(initials(n))}</span>`;
+function frSummary(x) {
+  const d = x.data || {};
+  if (x.kind === 'wish') { const pct = d.cost > 0 ? Math.min(100, (d.saved || 0) / d.cost * 100) : 0; return `<div class="fr-sum"><span>${fmtRp(d.saved || 0)} dari ${fmtRp(d.cost || 0)}</span><span class="pbar" role="img" aria-label="${fmtPct(pct)} terkumpul"><i style="width:${pct.toFixed(1)}%"></i></span><small>${d.date ? 'Rencana ' + dueDateText(d.date) : 'Tanpa tanggal'} · ${esc(d.kind === 'kegiatan' ? 'Kegiatan' : 'Barang')}${d.done ? ' · Sudah terwujud' : ''}</small></div>`; }
+  if (x.kind === 'target') return `<div class="fr-sum"><span>Target ${fmtRp(d.goal || 0)}</span><small>${d.deadline ? 'Sampai ' + dueDateText(d.deadline) : d.months ? d.months + ' bulan' : 'Tanpa tenggat'}${d.monthly ? ' · ' + fmtRp(d.monthly) + ' per bulan' : ''}</small></div>`;
+  if (x.kind === 'ramean') { const n = ((d.data || {}).people || []).length; return `<div class="fr-sum"><span>${n} orang${d.data && d.data.total ? ' · total ' + fmtRp(d.data.total) : ''}</span><small>${d.date ? dueDateText(d.date) : 'Tanpa tanggal'}</small></div>`; }
+  if (x.kind === 'trip') { const t = d.data || {}; return `<div class="fr-sum"><span>${esc(t.from || '?')} → ${esc(t.to || '?')}</span><small>${d.date ? dueDateText(d.date) : 'Tanpa tanggal'}${d.budget ? ' · anggaran ' + fmtRp(d.budget) : ''}</small></div>`; }
+  if (x.kind === 'budget') {
+    const cb = d.catBudgets || {}, rows = Object.keys(cb).sort((a, b) => cb[b] - cb[a]).map(k => `<li><span>${esc(catOf(k).label)}</span><b>${fmtRp(cb[k])}</b></li>`).join('');
+    return `<div class="fr-sum"><span>Batas ${fmtRp(d.budget || 0)}</span>${rows ? `<ul class="fr-bl">${rows}</ul>` : '<small>Tanpa budget kategori</small>'}</div>`;
+  }
+  return '';
+}
+VIEWS.teman = {
+  update() {
+    const v = $('#view'); if (!v) return;
+    if (!frAvail()) { v.innerHTML = '<div class="empty-s">Menu Teman untuk akun pengguna.</div>'; return; }
+    if (!S.fr) S.fr = { st: null, err: '', busy: false, first: true };
+    if (!frLS.get('opened')) { frLS.set('opened', '1'); }
+    if (!$('#fr-root')) { v.innerHTML = '<div id="fr-root"></div>'; S.frNew = new Set(frUnseen().map(x => x.key + '|' + x.from.id)); }
+    VIEWS.teman.render();
+    if (!S.fr.st || Date.now() - (S.fr.at || 0) > 20000) frLoad({ quiet: !!S.fr.st });
+  },
+  render() {
+    const root = $('#fr-root'); if (!root) return; const F = S.fr, st = F && F.st;
+    if (root.contains(document.activeElement) && document.activeElement.id === 'fr-code-in') return;   // jangan ganggu saat mengetik
+    let reduce = false; try { reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { /* abaikan */ }
+    if (S.tmPlay === undefined) S.tmPlay = !reduce;
+    const n = S.tmN || 1, open = S.frHow ? ' open' : '';
+    let html = `<div class="page-head"><div><p class="hello">Berbagi rencana dengan orang terdekat</p><h1>Teman</h1></div></div>`;
+    if (!st) html += F.err ? `<section class="card"><p class="form-err" role="alert">${esc(F.err)}</p><button type="button" class="btn btn-primary" data-act="fr-reload">Coba lagi</button></section>` : skelHTML();
+    else {
+      html += `<section class="card fr-code" aria-labelledby="fr-h1"><h2 class="sec-s" id="fr-h1">Kode teman Anda</h2><div class="fr-codebox"><b id="fr-code" aria-label="Kode teman Anda">${esc(st.code)}</b></div>
+        <div class="fr-acts"><button type="button" class="btn btn-primary btn-sm" data-act="fr-copy">${ic('copy', 16)} Salin kode</button><button type="button" class="btn btn-ghost btn-sm" data-act="fr-share-code">${ic('share', 16)} Kirim ke teman</button></div>
+        <p class="cat-hint">Kode ini bukan kata sandi dan tidak membuka data Anda. Teman baru terhubung setelah Anda menyetujui permintaannya.</p></section>
+        <section class="card" aria-labelledby="fr-h2"><h2 class="sec-s" id="fr-h2">Tambah teman</h2><form id="fr-add" class="fr-add" novalidate><div class="field"><label for="fr-code-in">Kode teman</label><input class="input" id="fr-code-in" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14" placeholder="SAKU-XXXX-XXXX"></div>
+        <button type="submit" class="btn btn-primary" id="fr-add-btn">${ic('userplus', 18)} Kirim permintaan</button></form><p class="form-err" id="fr-err" role="alert" hidden></p></section>`;
+      if (st.incoming.length) html += `<section class="card" aria-labelledby="fr-h3"><div class="card-h"><h2 id="fr-h3">Permintaan masuk</h2><span class="sub">${st.incoming.length}</span></div><ul class="fr-list">${st.incoming.map(x => `<li>${frAv(x.name)}<div class="fr-who"><b>${esc(x.name)}</b><small>${esc(x.id)}</small></div><div class="fr-btns"><button type="button" class="btn btn-primary btn-sm" data-act="fr-ok" data-id="${esc(x.id)}">Terima</button><button type="button" class="btn btn-ghost btn-sm" data-act="fr-no" data-id="${esc(x.id)}">Tolak</button></div></li>`).join('')}</ul></section>`;
+      if (st.outgoing.length) html += `<section class="card" aria-labelledby="fr-h4"><div class="card-h"><h2 id="fr-h4">Menunggu jawaban</h2></div><ul class="fr-list">${st.outgoing.map(x => `<li>${frAv(x.name)}<div class="fr-who"><b>${esc(x.name)}</b><small>${esc(x.id)}</small></div><div class="fr-btns"><button type="button" class="btn btn-ghost btn-sm" data-act="fr-cancel" data-id="${esc(x.id)}">Batalkan</button></div></li>`).join('')}</ul></section>`;
+      const armed = id => !!(S.armed && S.armed.key === 'fr-rm:' + id);
+      html += `<section class="card" aria-labelledby="fr-h5"><div class="card-h"><h2 id="fr-h5">Teman</h2><span class="sub">${st.friends.length}</span></div>${st.friends.length ? `<ul class="fr-list">${st.friends.map(x => `<li>${frAv(x.name)}<div class="fr-who"><b>${esc(x.name)}</b><small>${esc(x.id)}</small></div><div class="fr-btns"><button type="button" class="btn btn-danger btn-sm ${armed(x.id) ? 'armed' : ''}" data-act="fr-rm" data-id="${esc(x.id)}">${armed(x.id) ? 'Yakin putuskan?' : 'Putuskan'}</button></div></li>`).join('')}</ul>` : '<div class="empty-s">Belum ada teman. Kirim kode Anda, atau masukkan kode teman di atas.</div>'}</section>`;
+      const nw = S.frNew || new Set();
+      html += `<section class="card" aria-labelledby="fr-h6"><div class="card-h"><h2 id="fr-h6">Dibagikan ke Anda</h2><span class="sub">${st.withMe.length}</span></div>${st.withMe.length ? `<ul class="fr-shared">${st.withMe.map(x => { const k = FR_KIND[x.kind] || FR_KIND.wish; return `<li class="fr-item"><div class="fr-ih"><span class="chip" style="--c:var(--s${k.slot})">${ic(k.icon, 18)}</span><div class="fr-who"><b>${esc(x.name)}</b><small>${esc(k.label)} dari ${esc(x.from.name)}</small></div>${nw.has(x.key + '|' + x.from.id) ? '<span class="fr-new">Baru</span>' : ''}</div>${frSummary(x)}${x.kind === 'budget' ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-act="fr-copy-item" data-key="${esc(x.key)}" data-from="${esc(x.from.id)}">${ic('plus', 16)} Simpan salinan</button>`}</li>`; }).join('')}</ul>` : '<div class="empty-s">Belum ada yang dibagikan teman Anda.</div>'}</section>`;
+      html += `<section class="card" aria-labelledby="fr-h7"><div class="card-h"><h2 id="fr-h7">Yang Anda bagikan</h2><span class="sub">${st.mine.length}</span></div>${st.mine.length ? `<ul class="fr-list">${st.mine.map(m => { const k = FR_KIND[m.kind] || FR_KIND.wish; return `<li><span class="chip" style="--c:var(--s${k.slot})">${ic(k.icon, 18)}</span><div class="fr-who"><b>${esc(m.name)}</b><small>${esc(k.label)} · ke ${esc(m.to.map(t => t.name).join(', '))}</small></div><div class="fr-btns"><button type="button" class="btn btn-ghost btn-sm" data-act="fr-unshare" data-key="${esc(m.key)}">Hentikan</button></div></li>`; }).join('')}</ul>` : '<div class="empty-s">Belum ada yang Anda bagikan. Teman hanya melihat yang Anda pilih.</div>'}
+        <div class="fr-acts"><button type="button" class="btn btn-primary btn-sm" data-act="fr-share-open" ${st.friends.length ? '' : 'disabled'}>${ic('share', 16)} Bagikan sesuatu</button>${st.friends.length ? '' : '<small>Tambah teman dulu.</small>'}</div></section>`;
+    }
+    html += `<details class="card tm-how" id="fr-how"${open}><summary class="sec-s">Lihat cara kerja</summary>${tmStageHTML(n)}
+      <div class="tm-bar"><i id="tm-bar"></i></div>
+      <div class="tm-cap"><b id="tm-cap-t">${n}. ${esc(TM_STEPS[n - 1].t)}</b><p id="tm-cap-d">${esc(TM_STEPS[n - 1].d)}</p></div>
+      <div class="tm-ctl"><div class="tm-dots" role="group" aria-label="Langkah">${TM_STEPS.map((s, i) => `<button type="button" class="tm-dot" data-act="tm-step" data-n="${i + 1}" aria-label="Langkah ${i + 1}: ${esc(s.t)}" aria-current="${i + 1 === n ? 'step' : 'false'}"></button>`).join('')}</div><button type="button" class="btn btn-ghost btn-sm" id="tm-play" data-act="tm-play" aria-pressed="true"></button></div></details>`;
+    const keep = $('#fr-code-in') ? $('#fr-code-in').value : '';
+    root.innerHTML = html; const ci = $('#fr-code-in'); if (ci && keep) ci.value = keep;
+    tmPlayBtn(); tmSet(n); tmTimer();
+    paintFrBadge();
+    if (st) { const seen = frSeenSet(); st.withMe.forEach(x => seen.add(x.key + '|' + x.from.id + '|' + x.at)); frLS.set('seen', JSON.stringify([...seen].slice(-200))); paintFrBadge(); }
+  }
+};
+
+/* ---------- aksi ---------- */
+async function frCall(op, body, okMsg) {
+  try { const r = await api(op, body); if (r && r.state) { S.fr.st = r.state; S.fr.at = Date.now(); } if (okMsg) toast(okMsg); VIEWS.teman.render(); return r; }
+  catch (e) { toast((e && e.userMessage) || 'Gagal. Coba lagi.'); return null; }
+}
+async function frAdd() {
+  const inp = $('#fr-code-in'), err = $('#fr-err'), btn = $('#fr-add-btn'); if (!inp) return; err.hidden = true;
+  const code = inp.value.trim(); if (!code) { err.textContent = 'Masukkan kode teman.'; err.hidden = false; return; }
+  btn.disabled = true;
+  try {
+    const r = await api('friend.add', { code }); S.fr.st = r.state; inp.value = '';
+    toast(r.result === 'friends' ? 'Kalian sekarang berteman' : 'Permintaan terkirim. Menunggu persetujuan teman.'); VIEWS.teman.render();
+  } catch (e) { err.textContent = (e && e.userMessage) || 'Gagal mengirim permintaan.'; err.hidden = false; btn.disabled = false; }
+}
+function frShareOpen() {
+  const st = S.fr && S.fr.st; if (!st || !st.friends.length) return;
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat.'); return; }
+  const items = frItems(); if (!items.length) { toast('Belum ada wishlist, target, patungan, perjalanan, atau anggaran yang bisa dibagikan.'); return; }
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  S.fs = { item: 0, to: new Set(), saving: false };
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="frform" role="dialog" aria-modal="true" aria-labelledby="fs-t" novalidate>
+    <div class="sheet-h"><h2 id="fs-t">Bagikan ke Teman</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b"><div class="field"><label for="fs-item">Yang dibagikan</label><select class="input" id="fs-item">${items.map((x, i) => `<option value="${i}">${esc((FR_KIND[x.kind] || {}).label)} · ${esc(x.name)}</option>`).join('')}</select></div>
+      <fieldset class="fr-pick"><legend>Bagikan ke</legend>${st.friends.map(f => `<label class="fr-chk"><input type="checkbox" value="${esc(f.id)}"> <span>${esc(f.name)}</span></label>`).join('')}</fieldset>
+      <p class="cat-hint">Teman hanya bisa melihat salinan ini. Perubahan yang Anda buat setelahnya ikut diperbarui otomatis.</p>
+      <p class="form-err" id="fs-err" role="alert" hidden></p></div>
+    <div class="sheet-f"><button type="submit" class="btn btn-primary grow" id="fs-save">Bagikan</button></div></form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden'; S.fs.items = items;
+}
+async function frShareSave() {
+  const A = S.fs; if (!A || A.saving) return; const fail = m => { const e = $('#fs-err'); e.textContent = m; e.hidden = false; };
+  const it = A.items[Number($('#fs-item').value) || 0], to = $$('#frform .fr-chk input:checked').map(i => i.value);
+  if (!to.length) return fail('Pilih minimal satu teman.');
+  const data = frPayload(it.kind, it.id); if (!data) return fail('Data tidak ditemukan.');
+  const old = (S.fr.st.mine.filter(m => m.kind === it.kind && m.itemId === it.id)[0] || { to: [] }).to.map(x => x.id), all = Array.from(new Set(old.concat(to)));
+  const btn = $('#fs-save'); A.saving = true; btn.disabled = true;
+  try {
+    const r = await api('friend.share', { kind: it.kind, itemId: it.id, to: all, data }); S.fr.st = r.state;
+    const key = it.kind + '_' + it.id; let known = {}; try { known = JSON.parse(frLS.get('sync') || '{}'); } catch (e) { known = {}; } known[key] = JSON.stringify(data) + '|' + all.join(','); frLS.set('sync', JSON.stringify(known));
+    closeSheet(); toast('Dibagikan ke ' + to.length + ' teman'); VIEWS.teman.render();
+  } catch (e) { A.saving = false; btn.disabled = false; fail((e && e.userMessage) || 'Gagal membagikan.'); }
+}
+async function frCopyItem(key, from) {
+  const x = (S.fr.st.withMe || []).filter(y => y.key === key && y.from.id === from)[0]; if (!x || x.kind === 'budget') return;
+  if (S.canWrite === false) { toast('Akun Claude Anda hanya bisa melihat.'); return; }
+  const now = new Date().toISOString(), d = Object.assign({}, x.data, { createdAt: now, updatedAt: now });
+  if (x.kind === 'wish') { d.saved = 0; d.done = false; }
+  if (x.kind === 'target') { d.base = 0; delete d.closed; }
+  const r = planClean(x.kind, d, now); if (r.err) { toast(r.err); return; }
+  try { await planBase().collection(x.kind).doc().set(r.ok); toast('Salinan disimpan di ' + (FR_KIND[x.kind] || {}).label + ' Anda'); } catch (e) { toast(dbErrMsg(e)); }
+}
+async function frCopyCode() {
+  const t = S.fr && S.fr.st ? S.fr.st.code : ''; if (!t) return;
+  try { await navigator.clipboard.writeText(t); toast('Kode disalin'); return; } catch (e) { /* lanjut ke cadangan */ }
+  const b = $('#fr-code'); if (b) { const r = document.createRange(); r.selectNodeContents(b); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+  toast('Tekan lama kode lalu pilih Salin.');
+}
+async function frShareCode() {
+  const t = S.fr && S.fr.st ? S.fr.st.code : ''; if (!t) return;
+  const text = 'Tambahkan saya di SaKu. Kode teman saya: ' + t;
+  if (navigator.share) { try { await navigator.share({ text }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); toast('Pesan undangan disalin. Tempel di chat teman.'); } catch (e) { frCopyCode(); }
+}
+document.addEventListener('submit', e => { const f = e.target; if (!f) return; if (f.id === 'fr-add') { e.preventDefault(); frAdd(); } else if (f.id === 'frform') { e.preventDefault(); frShareSave(); } });
+document.addEventListener('toggle', e => { const el = e.target; if (el && el.id === 'fr-how') S.frHow = el.open; }, true);
+Object.assign(ACT, {
+  'tm-step'(el) { tmSet(Number(el.dataset.n) || 1, true); },
+  'tm-play'() { S.tmPlay = S.tmPlay === false; tmPlayBtn(); const b = $('#tm-bar'); if (b) { b.classList.remove('run'); void b.offsetWidth; if (S.tmPlay) b.classList.add('run'); } tmTimer(); },
+  'fr-reload'() { if (S.fr) { S.fr.err = ''; } frLoad(); },
+  'fr-copy'() { frCopyCode(); },
+  'fr-share-code'() { frShareCode(); },
+  'fr-ok'(el) { frCall('friend.respond', { id: el.dataset.id, accept: true }, 'Permintaan diterima'); },
+  'fr-no'(el) { frCall('friend.respond', { id: el.dataset.id, accept: false }, 'Permintaan ditolak'); },
+  'fr-cancel'(el) { frCall('friend.remove', { id: el.dataset.id }, 'Permintaan dibatalkan'); },
+  'fr-rm'(el) {
+    const id = el.dataset.id, on = !!(S.armed && S.armed.key === 'fr-rm:' + id);
+    if (!on) { arm('fr-rm:' + id); VIEWS.teman.render(); return; }
+    disarm(); frCall('friend.remove', { id }, 'Pertemanan diputuskan');
+  },
+  'fr-unshare'(el) { const m = S.fr.st.mine.filter(x => x.key === el.dataset.key)[0]; if (!m) return; frCall('friend.share', { kind: m.kind, itemId: m.itemId, to: [], data: {} }, 'Berhenti dibagikan'); },
+  'fr-share-open'() { frShareOpen(); },
+  'fr-copy-item'(el) { frCopyItem(el.dataset.key, el.dataset.from); }
+});
+
+/* ---------- fitur baru: pemberitahuan dan intro langkah (hanya sekali) ---------- */
+const FR_INTRO = [
+  { i: 'users', t: 'Fitur baru: Teman', d: 'Sekarang Anda bisa terhubung dengan teman atau pasangan memakai kode khusus, lalu berbagi rencana bersama. Intro singkat ini hanya muncul sekali.' },
+  { i: 'copy', t: '1. Salin kode Anda', d: 'Buka menu Teman. Setiap akun punya kode sendiri. Salin atau kirim kode itu ke teman lewat chat.' },
+  { i: 'userplus', t: '2. Masukkan kode teman', d: 'Tempel kode dari teman di kolom Tambah teman, lalu kirim permintaan. Teman akan mendapat pemberitahuan.' },
+  { i: 'check', t: '3. Terima permintaan', d: 'Permintaan masuk muncul di menu Teman dengan tanda angka. Terima untuk saling terhubung. Putuskan kapan saja.' },
+  { i: 'share', t: '4. Pilih yang dibagikan', d: 'Bagikan wishlist, rencana nikah, patungan, perjalanan, atau anggaran. Teman hanya melihat yang Anda pilih, dan Anda bisa berhenti membagikan kapan saja.' }
+];
+function frIntroMaybe(tries) {
+  if (!frAvail() || S.phase !== 'app' || frLS.get('intro')) return;
+  if (navigator.webdriver) { let f = false; try { f = !!localStorage.getItem('saku.fr.force'); } catch (e) { f = false; } if (!f) return; }
+  if ($('#pwp') || $('#fr-intro') || $('#sheet-root') || S.tourOn || document.querySelector('.tour, #tour')) { if ((tries || 0) < 8) setTimeout(() => frIntroMaybe((tries || 0) + 1), 4000); return; }
+  frLS.set('intro', '1');   // ditandai saat ditampilkan: tidak pernah muncul lagi
+  toast('Fitur baru: Teman. Berbagi rencana dengan kode.');
+  setTimeout(() => { if (S.phase === 'app' && !$('#pwp') && !$('#fr-intro')) { S.frI = 0; frIntroPaint(true); } }, 3300);
+}
+function frIntroPaint(first) {
+  let bd = $('#fr-intro'); const n = S.frI || 0, s = FR_INTRO[n], last = n === FR_INTRO.length - 1;
+  if (!bd) { bd = document.createElement('div'); bd.id = 'fr-intro'; bd.className = 'backdrop pwp-bd fri-bd'; bd.setAttribute('data-act', 'fri-bd'); document.body.appendChild(bd); }
+  bd.innerHTML = `<div class="pwp fri" role="dialog" aria-modal="true" aria-labelledby="fri-t" aria-describedby="fri-d"><span class="fri-tag">Fitur baru</span><div class="done-ic fri-ic">${ic(s.i, 26)}</div><h2 id="fri-t">${esc(s.t)}</h2><p id="fri-d">${esc(s.d)}</p>
+    <div class="fri-dots" aria-hidden="true">${FR_INTRO.map((x, i) => `<i class="${i === n ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="pwp-a">${last ? `<button type="button" class="btn btn-primary" id="fri-go" data-act="fri-go">Buka menu Teman</button>` : `<button type="button" class="btn btn-primary" id="fri-go" data-act="fri-next">Lanjut</button>`}<button type="button" class="btn btn-ghost" data-act="fri-skip">${last ? 'Nanti saja' : 'Lewati'}</button></div></div>`;
+  const g = $('#fri-go'); if (g && g.focus) g.focus();
+}
+function frIntroClose() { const bd = $('#fr-intro'); if (bd) bd.remove(); }
+Object.assign(ACT, {
+  'fri-next'() { S.frI = Math.min(FR_INTRO.length - 1, (S.frI || 0) + 1); frIntroPaint(); },
+  'fri-skip'() { frIntroClose(); },
+  'fri-go'() { frIntroClose(); ACT.nav({ dataset: { v: 'teman' } }); },
+  'fri-bd'(el, e) { if (e && e.target === el) frIntroClose(); }
+});
+/* ================= Rekening bank & e-wallet, pindah saldo, dan kategori buatan sendiri =================
+   Rekening disimpan di pengaturan akun: settings.accts = [{ id, kind: 'bank'|'ewallet'|'cash', brand, name, open }], settings.payDefault = id rekening bawaan.
+   Setiap transaksi boleh membawa acc (rekening yang dipakai). Topup e-wallet dan Pindah Saldo membawa acc (asal) dan to (tujuan):
+   uang hanya berpindah, bukan pengeluaran, dan saldo total tidak berubah. Transaksi tanpa acc dihitung ke "Tunai / tanpa rekening". */
+const accList = () => (S.settings && Array.isArray(S.settings.accts)) ? S.settings.accts : [];
+const accById = id => (id && accList().filter(a => a.id === id)[0]) || null;
+const accLabel = id => { const a = accById(id); return a ? a.name : 'Tunai / Tanpa rekening'; };
+const mkId = pre => pre + Array.from({ length: 12 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+const accOpenTotal = () => accList().reduce((s, a) => s + (Number(a.open) || 0), 0);
+/* saldo keseluruhan = saldo catatan + saldo awal semua rekening */
+function kasTotal() { return S.totals.saldo + accOpenTotal(); }
+function payDefaultId() { const id = S.settings && S.settings.payDefault; return accById(id) ? id : ''; }
+function brandOf(a) {
+  const b = (a.kind === 'ewallet' ? EWALLETS : a.kind === 'bank' ? BANKS : []).filter(x => x.id === a.brand)[0];
+  return b || { id: a.brand, name: a.name, abbr: a.kind === 'cash' ? 'TN' : String(a.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?', color: a.kind === 'cash' ? '#2E8B6B' : '#5B6B85' };
+}
+const accChip = a => { const b = brandOf(a); return `<span class="acc-chip" style="--bc:${esc(b.color)}" aria-hidden="true">${esc(b.abbr)}</span>`; };
+/* penanda rekening di baris transaksi: "Mandiri 1" atau "Mandiri 1 → GoPay" */
+function accTag(t) {
+  if (!accList().length || !t) return '';
+  const a = accById(t.acc), z = t.to ? accById(t.to) : null;
+  if (z) return `<span class="acc-tag xf">${esc(a ? a.name : 'Tunai')} → ${esc(z.name)}</span>`;
+  return a ? `<span class="acc-tag">${esc(a.name)}</span>` : '';
+}
+/* saldo dan arus tiap rekening. s,e (opsional) = rentang tanggal untuk kolom masuk/keluar periode. Kunci '' = tanpa rekening / tunai */
+function accBalances(list, s, e) {
+  const m = {}, get = id => m[id] || (m[id] = { in: 0, out: 0, mv: 0, xin: 0, xout: 0, pin: 0, pout: 0, saldo: 0, n: 0 });
+  accList().forEach(a => get(a.id)); get('');
+  for (const t of list) {
+    const a = Number(t.amount) || 0, inP = !s || (t.date >= s && t.date <= e), k = t.acc && m[t.acc] ? t.acc : '', r = get(k);
+    r.n++;
+    if (accXf(t)) { const q = get(t.to && m[t.to] ? t.to : ''); r.xout += a; q.xin += a; q.n++; if (inP) { r.pout += a; q.pin += a; } continue; }
+    if (isXfer(t)) { r.mv += cashOf(t); continue; }
+    if (t.type === 'in') { r.in += a; if (inP) r.pin += a; } else { r.out += a; if (inP) r.pout += a; }
+  }
+  Object.keys(m).forEach(k => { const o = (accById(k) || {}).open || 0, r = m[k]; r.saldo = o + r.in - r.out + r.mv + r.xin - r.xout; });
+  return m;
+}
+const saldoTxt = n => (n < 0 ? '-' : '') + fmtRp(Math.abs(n));
+async function saveSet(patch, okMsg) {
+  const next = Object.assign({}, S.settings, patch); Object.keys(next).forEach(k => { if (next[k] === null) delete next[k]; });
+  try { await S.db.doc('ledger/' + S.me.id).collection('meta').doc('settings').set(next); if (okMsg) toast(okMsg); return true; } catch (e) { toast(dbErrMsg(e)); return false; }
+}
+
+/* ---------- Kartu ringkas di Rekap ---------- */
+function accMiniCard(s, e) {
+  const list = accList(); if (!list.length) return '';
+  const bal = accBalances(S.tx, s, e), rows = list.concat(bal[''].n || bal[''].saldo ? [{ id: '', kind: 'cash', brand: '', name: 'Tunai / Tanpa rekening', open: 0 }] : []);
+  const total = rows.reduce((x, a) => x + bal[a.id].saldo, 0);
+  const li = rows.map(a => { const b = bal[a.id]; return `<li class="acc-li">${accChip(a)}<span class="acc-n"><b>${esc(a.name)}</b><small>${b.pin ? '+' + fmtCompact(b.pin) : ''}${b.pin && b.pout ? ' · ' : ''}${b.pout ? '-' + fmtCompact(b.pout) : ''}${!b.pin && !b.pout ? 'tidak ada arus periode ini' : ''}</small></span><span class="acc-s ${b.saldo < 0 ? 'neg' : ''}">${saldoTxt(b.saldo)}</span></li>`; }).join('');
+  return `<section class="card acc-card" aria-labelledby="h-acc"><div class="card-h"><h2 id="h-acc">Saldo per Rekening</h2><button type="button" class="btn btn-ghost btn-sm" data-act="nav" data-v="rekening">Kelola</button></div><ul class="acc-ul">${li}</ul><div class="acc-tot"><span>Total saldo</span><b>${saldoTxt(total)}</b></div></section>`;
+}
+
+/* ---------- Isian rekening di lembar catat transaksi ---------- */
+/* rekening yang boleh jadi tujuan untuk kategori pindah saldo/topup yang dipilih (bukan rekening asal) */
+const accTargets = F => accList().filter(a => (ACC_XFER[F.cat] === 'any' || a.kind === ACC_XFER[F.cat]) && a.id !== (F.acc || ''));
+/* saldo rekening yang tersedia untuk transaksi yang sedang dibuat/diubah (catatan lama yang sedang diubah dikembalikan dulu) */
+function accAvail(F, id) {
+  const b = accBalances(S.tx)[id || '']; let v = b ? b.saldo : 0;
+  const o = F.id ? S.tx.filter(t => t.id === F.id)[0] : null;
+  if (o) { if ((o.acc || '') === (id || '')) v -= cashOf(o) + (accXf(o) ? -(Number(o.amount) || 0) : 0); if (accXf(o) && o.to === id) v -= Number(o.amount) || 0; }
+  return v;
+}
+/* rekening wajib dipilih bila sudah ada rekening (kecuali mengubah catatan lama yang memang tanpa rekening) */
+function accRequired(F) { if (!accList().length) return false; const o = F.id ? S.tx.filter(t => t.id === F.id)[0] : null; return !(o && !o.acc); }
+function accShort(F) { return F.type === 'out' && !!F.acc && accRequired(F) && F.amount > accAvail(F, F.acc); }
+function paintAccNote() {
+  const F = S.form, n = $('#f-accnote'); if (!F || !n) return;
+  const short = accShort(F); n.hidden = !short;
+  if (short) n.textContent = 'Saldo ' + accLabel(F.acc) + ' kurang. Saldo sekarang ' + saldoTxt(accAvail(F, F.acc)) + ', jumlah ' + fmtRp(F.amount) + '. Pilih rekening lain atau kurangi jumlah.';
+}
+function paintAcc() {
+  const F = S.form, row = $('#f-accrow'); if (!F || !row) return;
+  const list = accList(), ax = F.type === 'out' && ACC_XFER[F.cat] && accTargets(F).length ? ACC_XFER[F.cat] : null;
+  row.hidden = !list.length;
+  if (!list.length) return;
+  if (F.acc && !accById(F.acc)) F.acc = '';
+  const req = accRequired(F), opt = (a, sel, bal) => `<option value="${esc(a.id)}"${sel === a.id ? ' selected' : ''}>${esc(a.name)} · Saldo ${saldoTxt(bal === false ? (accBalances(S.tx)[a.id] || { saldo: 0 }).saldo : accAvail(F, a.id))}</option>`;
+  $('#f-acc-l').textContent = ax ? 'Dari rekening' : F.type === 'in' ? 'Masuk ke rekening' : 'Dibayar dari';
+  $('#f-acc').innerHTML = (F.acc ? '' : req ? '<option value="" selected disabled>Pilih rekening…</option>' : '<option value="" selected>Tanpa rekening</option>') + (!req && F.acc ? '<option value="">Tanpa rekening</option>' : '') + list.map(a => opt(a, F.acc)).join('');
+  const tb = $('#f-tobox'); tb.hidden = !ax;
+  if (ax) {
+    const tos = accTargets(F);
+    if (!tos.some(a => a.id === F.to)) F.to = tos.length ? tos[0].id : '';
+    $('#f-to').innerHTML = tos.map(a => opt(a, F.to, false)).join('');
+  }
+  paintAccNote();
+}
+const ACC_KIND_LABEL = { bank: 'Bank', ewallet: 'E-Wallet', cash: 'Tunai' };
+document.addEventListener('change', e => {
+  const el = e.target; if (!el || !S.form) return;
+  if (el.id === 'f-acc') { S.form.acc = el.value; paintAcc(); }
+  else if (el.id === 'f-to') S.form.to = el.value;
+});
+document.addEventListener('input', e => {
+  const el = e.target; if (!el) return;
+  if (el.id === 'f-catq' && S.form) { S.form.q = el.value; paintCats(); }
+  else if (el.id === 'f-amt' && S.form) paintAccNote();
+  else if (el.id === 'ac-q' && S.rk) { S.rk.q = el.value; paintBankPick(); }
+  else if (el.id === 'ck-icq' && S.ck) { S.ck.iq = el.value; paintIconPick(); }
+  else if (el.id === 'ck-name' && S.ck) { S.ck.name = el.value; paintCkPrev(); }
+});
+
+/* ================= Kategori buatan sendiri ================= */
+const groupLabel = (id, type) => ((type === 'in' ? GROUPS_IN : GROUPS_OUT).filter(g => g.id === id)[0] || {}).label || '';
+function applyCustomCats(list) {
+  [CATS_OUT, CATS_IN].forEach(arr => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i].custom) { delete CATS[arr[i].id]; arr.splice(i, 1); } });
+  [[GROUPS_OUT, 'out'], [GROUPS_IN, 'in']].forEach(([gs]) => { const i = gs.findIndex(g => g.id === 'kustom'); if (i >= 0) gs.splice(i, 1); });
+  const used = { out: false, in: false };
+  (Array.isArray(list) ? list : []).forEach(x => {
+    if (!x || !x.id || CATS[x.id]) return;
+    const out = x.type !== 'in', gs = out ? GROUPS_OUT : GROUPS_IN, g = gs.some(y => y.id === x.group) ? x.group : 'kustom';
+    let h = 0; for (let i = 0; i < x.id.length; i++) h = (h * 31 + x.id.charCodeAt(i)) >>> 0;
+    const c = { id: x.id, type: out ? 'out' : 'in', label: String(x.label || ''), group: g, icon: ICONS[x.icon] ? x.icon : 'more', slot: 1 + h % 8, custom: true };
+    (out ? CATS_OUT : CATS_IN).push(c); CATS[c.id] = c; if (g === 'kustom') used[out ? 'out' : 'in'] = true;
+  });
+  if (used.out) GROUPS_OUT.push({ id: 'kustom', label: 'Kategori Saya' });
+  if (used.in) GROUPS_IN.push({ id: 'kustom', label: 'Kategori Saya' });
+}
+const CK_HIDE = { x: 1, chevl: 1, chevr: 1, chevd: 1, search: 1, logout: 1, settings: 1, eye: 1, eyeoff: 1, check: 1, lock: 1, download: 1, down: 1, up: 1, scale: 1, info: 1, file: 1, table: 1, bell: 1, edit: 1, cloudoff: 1, cloudup: 1, cog: 1, share: 1, copy: 1, alert: 1, plus: 1, trash: 1, gauge: 1, sparkle: 1, pie: 1, chart: 1, list: 1, camera: 1, image: 1 };
+const CK_NAME = { utensils: 'makan', cart: 'belanja', coffee: 'kopi', car: 'mobil', bus: 'bus', zap: 'listrik', wifi: 'internet', home: 'rumah', home2: 'rumah', card: 'kartu', pill: 'obat', cap: 'sekolah', film: 'film', repeat: 'langganan', package: 'paket', shirt: 'baju', scissors: 'salon', gift: 'hadiah', heart: 'kesehatan', smile: 'anak', plane: 'pesawat', tool: 'servis', shield: 'asuransi', landmark: 'bank', target: 'target', more: 'lainnya', briefcase: 'kerja', award: 'prestasi', laptop: 'laptop', bag: 'tas', swap: 'tukar', trend: 'investasi', users: 'keluarga', wallet: 'dompet', phone: 'pulsa', calendar: 'kalender', flag: 'bendera', umbrella: 'payung', receipt: 'struk', clock: 'jam', road: 'tol', plug: 'listrik', ewallet: 'e-wallet', dumbbell: 'olahraga', paw: 'hewan', gamepad: 'game', flame: 'gas', percent: 'diskon', ticket: 'tiket', train: 'kereta', metro: 'mrt krl', bed: 'hotel', ship: 'kapal', taxi: 'taksi', luggage: 'koper', book: 'buku', snowflake: 'ac', leaf: 'daun', sun: 'siang', moon: 'malam', sunrise: 'pagi', droplet: 'air', cpu: 'elektronik' };
+const ckIcons = () => Object.keys(ICONS).filter(k => !CK_HIDE[k]);
+const ckState = () => S.ck || (S.ck = { type: 'out', name: '', icon: 'more', group: 'kustom', iq: '', editId: null });
+function paintIconPick() {
+  const C = ckState(), el = $('#ck-icons'); if (!el) return; const q = (C.iq || '').trim().toLowerCase();
+  const list = ckIcons().filter(k => !q || k.indexOf(q) >= 0 || (CK_NAME[k] || '').indexOf(q) >= 0);
+  el.innerHTML = list.length ? list.map(k => `<button type="button" class="ico-b" role="radio" aria-checked="${k === C.icon}" aria-label="${esc(CK_NAME[k] || k)}" title="${esc(CK_NAME[k] || k)}" data-act="ck-icon" data-k="${k}">${ic(k, 22)}</button>`).join('') : '<p class="cat-none">Ikon tidak ditemukan.</p>';
+  paintCkPrev();
+}
+function paintCkPrev() {
+  const C = ckState(), el = $('#ck-prev'); if (!el) return;
+  el.innerHTML = `<span class="chip" style="--c:var(--s3)">${ic(C.icon, 22)}</span><b>${esc((C.name || '').trim() || 'Nama kategori')}</b><small>${C.type === 'in' ? 'Pemasukan' : 'Pengeluaran'}</small>`;
+}
+function paintCkForm() {
+  const C = ckState(); if (!$('#ck-form')) return;
+  $$('#ck-form [data-act="ck-type"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === C.type)));
+  const gs = (C.type === 'in' ? GROUPS_IN : GROUPS_OUT).filter(g => g.id !== 'kustom');
+  $('#ck-group').innerHTML = `<option value="kustom"${C.group === 'kustom' ? ' selected' : ''}>Kategori Saya</option>` + gs.map(g => `<option value="${esc(g.id)}"${C.group === g.id ? ' selected' : ''}>${esc(g.label)}</option>`).join('');
+  $('#ck-title').textContent = C.editId ? 'Ubah Kategori' : 'Tambah Kategori';
+  $('#ck-save').textContent = C.editId ? 'Simpan perubahan' : 'Tambah kategori'; $('#ck-cancel').hidden = !C.editId;
+  const nm = $('#ck-name'); if (nm && document.activeElement !== nm) nm.value = C.name;
+  paintIconPick();
+}
+VIEWS.kategoriku = {
+  mount(v) {
+    S.ck = null; ckState();
+    v.innerHTML = `<div class="page-head"><div><button type="button" class="back-link" data-act="nav" data-v="akun">${ic('chevl', 18)} Kembali ke Pengaturan</button><h1>Kategori Saya</h1><p class="hello">Buat kategori sendiri dan pilih ikonnya</p></div></div>
+      <div class="stack"><section class="card" aria-labelledby="ck-title"><h2 class="t" id="ck-title">Tambah Kategori</h2>
+        <form id="ck-form" class="form-grid" novalidate>
+          <div class="tgl" role="group" aria-label="Jenis kategori"><button type="button" class="out" data-act="ck-type" data-t="out" aria-pressed="true">${ic('up', 18)} Pengeluaran</button><button type="button" class="in" data-act="ck-type" data-t="in" aria-pressed="false">${ic('down', 18)} Pemasukan</button></div>
+          <div class="field"><label for="ck-name">Nama kategori</label><input class="input" id="ck-name" maxlength="40" autocomplete="off" placeholder="mis. Langganan Netflix"></div>
+          <div class="field"><label for="ck-group">Kelompok</label><select class="input" id="ck-group"></select></div>
+          <div class="field"><span class="lbl">Ikon</span><input class="input" type="search" id="ck-icq" placeholder="Cari ikon… (mis. makan, mobil, hotel)" autocomplete="off" aria-label="Cari ikon"><div class="ico-grid" id="ck-icons" role="radiogroup" aria-label="Pilih ikon"></div></div>
+          <div class="ck-prev" id="ck-prev" aria-live="polite"></div>
+          <p class="form-err" id="ck-err" role="alert" hidden></p>
+          <div class="btn-row"><button class="btn btn-primary" type="submit" id="ck-save">Tambah kategori</button><button class="btn btn-ghost" type="button" id="ck-cancel" data-act="ck-cancel" hidden>Batal</button></div>
+        </form></section>
+        <div id="ck-list"></div></div>`;
+    paintCkForm();
+  },
+  update() {
+    const l = $('#ck-list'); if (!l) return;
+    const cs = CATS_OUT.concat(CATS_IN).filter(c => c.custom);
+    l.innerHTML = `<section class="card" aria-labelledby="h-cklist"><div class="card-h"><h2 id="h-cklist">Kategori Buatan Anda</h2><span class="sub">${cs.length} kategori</span></div>` + (cs.length
+      ? `<ul class="ck-ul">${cs.map(c => { const on = S.armed && S.armed.key === 'ckdel:' + c.id; return `<li class="ck-li"><span class="chip" style="--c:var(--s${c.slot})">${ic(c.icon, 20)}</span><span class="ck-n"><b>${esc(c.label)}</b><small>${c.type === 'in' ? 'Pemasukan' : 'Pengeluaran'} · ${esc(groupLabel(c.group, c.type))}</small></span><button type="button" class="btn btn-ghost btn-sm" data-act="ck-edit" data-id="${esc(c.id)}">${ic('edit', 16)} Ubah</button><button type="button" class="btn btn-ghost btn-sm ${on ? 'armed' : ''}" data-act="ck-del" data-id="${esc(c.id)}">${on ? 'Yakin hapus?' : ic('trash', 16) + ' Hapus'}</button></li>`; }).join('')}</ul><p class="avg-note">Catatan lama yang memakai kategori yang dihapus akan tampil sebagai “Lainnya”.</p>`
+      : '<div class="empty-s">Belum ada kategori buatan sendiri. Isi formulir di atas lalu pilih ikonnya.</div>') + '</section>';
+  }
+};
+async function saveCustomCat() {
+  const C = ckState(), err = $('#ck-err'), fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  const label = String(C.name || '').replace(/\s+/g, ' ').trim();
+  if (!label) return fail('Isi nama kategori.');
+  const all = CATS_OUT.concat(CATS_IN);
+  if (all.some(c => c.type === C.type && c.id !== C.editId && c.label.toLowerCase() === label.toLowerCase())) return fail('Kategori dengan nama itu sudah ada.');
+  const cur = (S.settings && S.settings.customCats) || [];
+  if (!C.editId && cur.length >= 80) return fail('Jumlah kategori buatan sendiri sudah mencapai batas (80).');
+  const item = { id: C.editId || mkId('u'), type: C.type, label, group: C.group, icon: C.icon };
+  const next = C.editId ? cur.map(x => x.id === C.editId ? item : x) : cur.concat([item]);
+  const ok = await saveSet({ customCats: next }, C.editId ? 'Kategori diperbarui' : 'Kategori ditambahkan');
+  if (ok) { S.ck = null; ckState(); paintCkForm(); }
+}
+
+/* ================= Menu Rencana: Rekening ================= */
+const rkState = () => S.rk || (S.rk = { kind: 'bank', q: '', brand: '', editId: null, name: '', nameTouched: false });
+function suggestName(brandId, kind) {
+  const src = kind === 'ewallet' ? EWALLETS : BANKS, b = src.filter(x => x.id === brandId)[0]; if (!b) return kind === 'cash' ? 'Dompet' : '';
+  const n = accList().filter(a => a.brand === brandId).length; return n ? b.name + ' ' + (n + 1) : b.name;
+}
+function paintBankPick() {
+  const R = rkState(), box = $('#rk-pick'); if (!box) return;
+  $('#rk-pickbox').hidden = R.kind === 'cash';
+  const q = (R.q || '').trim().toLowerCase();
+  $('#ac-q').hidden = R.kind !== 'bank';
+  if (R.kind === 'ewallet') {
+    box.innerHTML = EWALLETS.map(b => `<button type="button" role="radio" class="bank-b" aria-checked="${R.brand === b.id}" data-act="rk-brand" data-id="${b.id}"><span class="acc-chip" style="--bc:${b.color}" aria-hidden="true">${esc(b.abbr)}</span><span>${esc(b.name)}</span></button>`).join('');
+  } else if (R.kind === 'bank') {
+    let any = false;
+    box.innerHTML = BANK_GROUPS.map(g => {
+      const bs = BANKS.filter(b => b.group === g.id && (!q || (b.name + ' ' + b.id + ' ' + b.abbr).toLowerCase().indexOf(q) >= 0)); if (!bs.length) return ''; any = true;
+      return `<div class="bank-g"><div class="cg-t">${esc(g.label)}</div><div class="bank-l">${bs.map(b => `<button type="button" role="radio" class="bank-b" aria-checked="${R.brand === b.id}" data-act="rk-brand" data-id="${b.id}"><span class="acc-chip" style="--bc:${b.color}" aria-hidden="true">${esc(b.abbr)}</span><span>${esc(b.name)}</span></button>`).join('')}</div></div>`;
+    }).join('') || '<p class="cat-none">Bank tidak ditemukan. Coba nama lain.</p>';
+  }
+}
+function paintRkForm() {
+  const R = rkState(); if (!$('#rk-form')) return;
+  $$('#rk-form [data-act="rk-kind"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === R.kind)));
+  $('#rk-ft').textContent = R.editId ? 'Ubah Rekening' : 'Tambah Rekening';
+  $('#rk-save').textContent = R.editId ? 'Simpan perubahan' : 'Tambah rekening'; $('#rk-cancel').hidden = !R.editId;
+  $$('#rk-form [data-act="rk-kind"]').forEach(b => { b.disabled = !!R.editId && b.dataset.k !== R.kind; });
+  const nm = $('#rk-name'); if (nm && document.activeElement !== nm) nm.value = R.name;
+  paintBankPick();
+}
+function rkResetForm() { S.rk = null; rkState(); paintRkForm(); const o = $('#rk-open'); if (o) o.value = ''; const q = $('#ac-q'); if (q) q.value = ''; }
+VIEWS.rekening = {
+  mount(v) {
+    S.rk = null; rkState();
+    v.innerHTML = `<div id="rk-top"></div>
+      <section class="card" aria-labelledby="rk-ft"><h2 class="t" id="rk-ft">Tambah Rekening</h2><p class="desc">Pecah uang Anda menurut rekening: pilih bank mana yang bersaldo (boleh lebih dari satu bank yang sama), e-wallet, atau uang tunai. Saat mencatat transaksi, pilih rekening yang dipakai.</p>
+        <form id="rk-form" class="form-grid" novalidate>
+          <div class="seg" role="group" aria-label="Jenis rekening"><button type="button" data-act="rk-kind" data-k="bank" aria-pressed="true">Bank</button><button type="button" data-act="rk-kind" data-k="ewallet" aria-pressed="false">E-Wallet</button><button type="button" data-act="rk-kind" data-k="cash" aria-pressed="false">Tunai</button></div>
+          <div id="rk-pickbox"><input class="input" type="search" id="ac-q" placeholder="Cari bank… (mis. Mandiri, BCA, Octo)" autocomplete="off" aria-label="Cari bank"><div class="bank-pick" id="rk-pick" role="radiogroup" aria-label="Pilih bank atau e-wallet"></div></div>
+          <div class="row2"><div class="field"><label for="rk-name">Nama rekening</label><input class="input" id="rk-name" maxlength="40" autocomplete="off" placeholder="mis. Mandiri 1"></div>
+            <div class="field"><label for="rk-open">Saldo awal</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="rk-open" data-money="rkopen" inputmode="numeric" autocomplete="off" placeholder="0"></div></div></div>
+          <p class="form-err" id="rk-err" role="alert" hidden></p>
+          <div class="btn-row"><button class="btn btn-primary" type="submit" id="rk-save">Tambah rekening</button><button class="btn btn-ghost" type="button" id="rk-cancel" data-act="rk-cancel" hidden>Batal</button></div>
+        </form></section>`;
+    paintRkForm();
+  },
+  update() {
+    const top = $('#rk-top'); if (!top) return;
+    if (!S.txLoaded) { top.innerHTML = subnavHTML('rekening') + skelHTML(); return; }
+    const now = new Date(), rg = rangeFor('month', startOfDay(now)), s = ymd(rg.start), e = ymd(rg.end), bal = accBalances(S.tx, s, e), list = accList(), def = payDefaultId();
+    const rows = list.concat(bal[''].n || bal[''].saldo ? [{ id: '', kind: 'cash', brand: '', name: 'Tunai / Tanpa rekening', open: 0, virt: true }] : []);
+    const total = rows.reduce((x, a) => x + bal[a.id].saldo, 0), lbl = rangeLabel('month', rg, startOfDay(now));
+    const cards = rows.map(a => {
+      const b = bal[a.id], dl = !a.virt && S.armed && S.armed.key === 'rkdel:' + a.id;
+      return `<li class="rk-card ${a.id === def ? 'is-def' : ''}"><div class="rk-top">${accChip(a)}<span class="rk-n"><b>${esc(a.name)}</b><small>${esc(a.virt ? 'Transaksi yang tidak memilih rekening' : ACC_KIND_LABEL[a.kind] + (brandOf(a).name !== a.name ? ' · ' + brandOf(a).name : ''))}${a.id === def ? ' · <em class="def-b">Bawaan pembayaran</em>' : ''}</small></span><span class="rk-s ${b.saldo < 0 ? 'neg' : ''}">${saldoTxt(b.saldo)}</span></div>
+        <div class="rk-stats"><span><small>Masuk · ${esc(lbl)}</small><b class="pos">+${fmtRp(b.pin)}</b></span><span><small>Keluar · ${esc(lbl)}</small><b class="neg">-${fmtRp(b.pout)}</b></span><span><small>Total masuk</small><b>${fmtRp(b.in + b.xin)}</b></span><span><small>Total keluar</small><b>${fmtRp(b.out + b.xout)}</b></span></div>
+        ${a.virt ? '' : `<div class="btn-row rk-acts">${a.id === def ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-act="rk-def" data-id="${esc(a.id)}">${ic('check', 16)} Jadikan bawaan</button>`}<button type="button" class="btn btn-ghost btn-sm" data-act="rk-edit" data-id="${esc(a.id)}">${ic('edit', 16)} Ubah</button><button type="button" class="btn btn-ghost btn-sm ${dl ? 'armed' : ''}" data-act="rk-del" data-id="${esc(a.id)}">${dl ? 'Yakin hapus?' : ic('trash', 16) + ' Hapus'}</button></div>`}</li>`;
+    }).join('');
+    const hasEw = list.some(a => a.kind === 'ewallet');
+    top.innerHTML = subnavHTML('rekening') + `<div class="page-head"><div><p class="hello">Saldo menurut bank, e-wallet, dan tunai</p><h1>Rekening</h1></div></div>
+      <section class="hero rk-hero" aria-label="Total saldo semua rekening"><div><div class="eyebrow">Saldo total semua rekening</div><div class="big">${total < 0 ? '-' : ''}<span class="rp">${curSym()}</span>${dots(Math.abs(total))}</div></div><div class="hero-cap">${list.length} rekening · saldo awal ${fmtRp(accOpenTotal())}</div>
+        <div class="btn-row rk-hacts"><button type="button" class="btn btn-light btn-sm" data-act="rk-topup" ${hasEw ? '' : 'disabled'}>${ic('ewallet', 16)} Topup E-Wallet</button><button type="button" class="btn btn-light btn-sm" data-act="rk-move" ${list.length >= 2 ? '' : 'disabled'}>${ic('swap', 16)} Pindah saldo</button></div></section>`
+      + (list.length ? `<ul class="rk-ul">${cards}</ul>` : '<section class="card"><div class="empty-s">Belum ada rekening. Tambahkan bank, e-wallet, atau tunai di bawah. Tanpa rekening, semua catatan dihitung sebagai satu dompet seperti biasa.</div></section>');
+  }
+};
+async function saveAccount() {
+  const R = rkState(), err = $('#rk-err'), fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  if (R.kind !== 'cash' && !R.brand) return fail(R.kind === 'ewallet' ? 'Pilih e-wallet.' : 'Pilih bank.');
+  const name = String($('#rk-name').value || '').replace(/\s+/g, ' ').trim() || suggestName(R.brand, R.kind);
+  if (!name) return fail('Isi nama rekening.');
+  const open = intOf($('#rk-open').value, 1e12), list = accList();
+  if (list.some(a => a.id !== R.editId && a.name.toLowerCase() === name.toLowerCase())) return fail('Sudah ada rekening bernama itu. Pakai nama lain, mis. ' + name + ' 2.');
+  if (!R.editId && list.length >= 40) return fail('Jumlah rekening sudah mencapai batas (40).');
+  const item = { id: R.editId || mkId('a'), kind: R.kind, brand: R.kind === 'cash' ? '' : R.brand, name, open };
+  const next = R.editId ? list.map(a => a.id === R.editId ? item : a) : list.concat([item]);
+  const patch = { accts: next };
+  if (!R.editId && !payDefaultId() && next.length === 1) patch.payDefault = item.id;
+  if (await saveSet(patch, R.editId ? 'Rekening diperbarui' : 'Rekening ditambahkan')) rkResetForm();
+}
+document.addEventListener('submit', e => {
+  const id = e.target && e.target.id;
+  if (id === 'rk-form') saveAccount(); else if (id === 'ck-form') saveCustomCat();
+});
+Object.assign(ACT, {
+  'ck-new'() { closeSheet(true); S.view = 'kategoriku'; renderView(); window.scrollTo(0, 0); },
+  'ck-type'(el) { const C = ckState(); C.type = el.dataset.t === 'in' ? 'in' : 'out'; C.group = 'kustom'; paintCkForm(); },
+  'ck-icon'(el) { ckState().icon = el.dataset.k; $$('#ck-icons .ico-b').forEach(b => b.setAttribute('aria-checked', String(b.dataset.k === el.dataset.k))); paintCkPrev(); },
+  'ck-edit'(el) {
+    const c = CATS[el.dataset.id]; if (!c || !c.custom) return;
+    const x = ((S.settings && S.settings.customCats) || []).filter(y => y.id === c.id)[0] || c;
+    S.ck = { type: c.type, name: c.label, icon: c.icon, group: x.group || 'kustom', iq: '', editId: c.id }; paintCkForm(); window.scrollTo(0, 0);
+  },
+  'ck-cancel'() { S.ck = null; ckState(); paintCkForm(); },
+  async 'ck-del'(el) {
+    const id = el.dataset.id; if (!arm('ckdel:' + id)) { VIEWS.kategoriku.update(); return; }
+    disarm(); const cur = (S.settings && S.settings.customCats) || [];
+    await saveSet({ customCats: cur.filter(x => x.id !== id) }, 'Kategori dihapus'); VIEWS.kategoriku.update();
+  },
+  'rk-kind'(el) { const R = rkState(); R.kind = el.dataset.k; R.brand = ''; R.q = ''; const q = $('#ac-q'); if (q) q.value = ''; if (!R.nameTouched) R.name = R.kind === 'cash' ? 'Dompet' : ''; paintRkForm(); },
+  'rk-brand'(el) {
+    const R = rkState(); R.brand = el.dataset.id; const nm = $('#rk-name');
+    if (!R.editId && (!nm.value.trim() || nm.value === R.name)) { R.name = suggestName(R.brand, R.kind); nm.value = R.name; }
+    paintBankPick();
+  },
+  'rk-edit'(el) {
+    const a = accById(el.dataset.id); if (!a) return;
+    S.rk = { kind: a.kind, q: '', brand: a.brand, editId: a.id, name: a.name, nameTouched: true }; paintRkForm(); const o = $('#rk-open'); if (o) o.value = a.open ? dots(a.open) : ''; window.scrollTo(0, document.body.scrollHeight);
+  },
+  'rk-cancel'() { rkResetForm(); },
+  async 'rk-del'(el) {
+    const id = el.dataset.id; if (!arm('rkdel:' + id)) { VIEWS.rekening.update(); return; }
+    disarm(); const cur = accList(), patch = { accts: cur.filter(a => a.id !== id) };
+    if (payDefaultId() === id) patch.payDefault = null;
+    await saveSet(patch, 'Rekening dihapus. Catatannya dihitung sebagai tunai.'); VIEWS.rekening.update();
+  },
+  async 'rk-def'(el) { await saveSet({ payDefault: el.dataset.id }, 'Rekening bawaan pembayaran diatur'); },
+  'rk-topup'() { openSheet(null, { cat: 'topup_ewallet' }); },
+  'rk-move'() { openSheet(null, { cat: 'pindah_saldo' }); }
+});
+
+/* ================= Tur menu: sekali, saat akun baru pertama kali masuk ================= */
+const TOUR_STEPS = [
+  { v: 'rekap', t: 'Rekap', d: 'Ringkasan saldo, pemasukan, dan pengeluaran Anda ada di sini.' },
+  { v: 'transaksi', t: 'Transaksi', d: 'Semua catatan keuangan Anda. Cari, ubah, atau hapus dari sini.' },
+  { v: 'tagihan', t: 'Tagihan', d: 'Jatuh tempo, cicilan, dan hutang agar tidak ada yang terlewat.' },
+  { v: 'rencana', t: 'Rencana', d: 'Atur anggaran, target, simpanan, dan jajan ramean.' },
+  { v: 'rekening', t: 'Pengaturan Rekening', d: 'Tambahkan rekening bank, e-wallet, dan tunai, lalu pindahkan saldo antar rekening.' },
+  { v: 'kurs', t: 'Kurs', d: 'Konversi mata uang dan lihat kurs serta indeks terbaru.' },
+  { v: 'akun', t: 'Pengaturan', d: 'Profil, kata sandi, kategori sendiri, dan cadangan data.' },
+  { sel: '.fab', t: 'Catat transaksi', d: 'Ketuk tombol + kapan saja untuk mencatat pemasukan atau pengeluaran.' }
+];
+const tourKey = () => { const m = me(); return m ? 'saku.tour.' + m.id : ''; };
+function tourSeen() { try { return !!localStorage.getItem(tourKey()); } catch (e) { return true; } }
+function tourMark() { try { localStorage.setItem(tourKey(), '1'); } catch (e) { /* abaikan */ } }
+function tourEl(st) {
+  const sels = st.sel ? [st.sel] : ['.side [data-v="' + st.v + '"]', '.tabbar [data-v="' + st.v + '"]'];
+  for (const q of sels) { const e = document.querySelector(q); if (e) { const r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0) return e; } }
+  return null;
+}
+function tourMaybe() {
+  if (S.tourOn || S.phase !== 'app') return;
+  const m = me(); if (!m || isAdmin() || m.role === 'admin') return;
+  let force = false; try { force = !!localStorage.getItem('saku.tour.force'); } catch (e) { force = false; }
+  if (navigator.webdriver && !force) return;
+  if (tourSeen()) return;
+  const made = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+  if (!force && (!made || Date.now() - made > 14 * 86400000)) { tourMark(); return; }   // hanya akun baru
+  tourStart(0);
+}
+function tourStart(i) { S.tourOn = true; S.tourI = i || 0; tourPaint(); }
+function tourEnd() {
+  S.tourOn = false; tourMark();
+  const o = $('#tour'); if (o) o.remove();
+  window.removeEventListener('resize', tourPaint);
+}
+function tourPaint() {
+  if (!S.tourOn) return;
+  let i = S.tourI, st = TOUR_STEPS[i], el = st && tourEl(st);
+  while (st && !el) { i++; st = TOUR_STEPS[i]; el = st && tourEl(st); }
+  if (!st) return tourEnd();
+  S.tourI = i;
+  const last = TOUR_STEPS.slice(i + 1).every(x => !tourEl(x)), r = el.getBoundingClientRect(), pad = 6;
+  let o = $('#tour'); if (!o) { o = document.createElement('div'); o.id = 'tour'; o.className = 'tour'; document.body.appendChild(o); window.addEventListener('resize', tourPaint); }
+  const wide = window.innerWidth >= 900;
+  o.innerHTML = `<div class="tour-hl" style="left:${Math.round(r.left - pad)}px;top:${Math.round(r.top - pad)}px;width:${Math.round(r.width + pad * 2)}px;height:${Math.round(r.height + pad * 2)}px"></div>
+    <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-t" style="${wide ? 'left:' + Math.round(r.right + 18) + 'px;top:' + Math.max(12, Math.min(window.innerHeight - 200, Math.round(r.top - 10))) + 'px' : 'left:16px;right:16px;bottom:' + (window.innerHeight - r.top + 14) + 'px'}">
+      <small>Langkah ${i + 1} dari ${TOUR_STEPS.length}</small><h3 id="tour-t">${esc(st.t)}</h3><p>${esc(st.d)}</p>
+      <div class="tour-act"><button type="button" class="btn btn-ghost btn-sm" data-act="tour-skip">Lewati</button><button type="button" class="btn btn-primary btn-sm" data-act="tour-next">${last ? 'Selesai' : 'Lanjut'}</button></div></div>`;
+  const nb = o.querySelector('[data-act="tour-next"]'); if (nb) nb.focus();
+}
+Object.assign(ACT, {
+  'tour-next'() { const n = S.tourI + 1; if (n >= TOUR_STEPS.length) tourEnd(); else { S.tourI = n; tourPaint(); } },
+  'tour-skip'() { tourEnd(); },
+  'tour-again'() { tourStart(0); }
+});
+document.addEventListener('keydown', e => { if (S.tourOn && e.key === 'Escape') tourEnd(); });
+
+/* ================= Pengaturan Profil: foto, tanggal lahir, email; verifikasi email untuk ganti kata sandi ================= */
+function profBodyHTML() {
+  return `<div class="pp-photo"><span class="avatar pp-av" id="pp-av"></span><div class="pp-ph-r"><div class="btn-row"><label class="btn btn-ghost btn-sm" for="pp-file">${ic('camera', 16)} Ganti foto</label><input type="file" id="pp-file" accept="image/*" hidden><button type="button" class="btn btn-ghost btn-sm" id="pp-rm" data-act="pp-rm" hidden>Hapus foto</button></div><small class="hint">Foto dipotong persegi dan dikecilkan otomatis.</small></div></div>
+    <form id="pp-birth-form" class="pp-row" novalidate><div class="field"><label for="pp-birth">Tanggal lahir</label><input class="input" id="pp-birth" type="date" autocomplete="bday" min="1900-01-01" max="${ymd(new Date())}"></div><button class="btn btn-primary btn-sm" type="submit">Simpan</button></form>
+    <form id="pp-email-form" class="pp-row" novalidate><div class="field"><label for="pp-email">Email</label><input class="input" id="pp-email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="80"></div><button class="btn btn-primary btn-sm" type="submit">Ubah email</button></form>
+    <p class="hint" id="pp-emailnote"></p>
+    <p class="form-err" id="pp-err" role="alert" hidden></p><p class="form-ok" id="pp-ok" role="status" hidden></p>`;
+}
+function paintProfile() {
+  const m = me(); if (!m || !$('#pp-av')) return;
+  const b = $('#pp-birth'); if (b && document.activeElement !== b) b.value = m.birth || '';
+  const e = $('#pp-email'); if (e && document.activeElement !== e) e.value = m.email || '';
+  const rm = $('#pp-rm'); if (rm) rm.hidden = !m.photo;
+  const n = $('#pp-emailnote');
+  if (n) n.textContent = !S.mailv ? 'Email dipakai admin untuk menghubungi Anda.' : !m.email ? 'Belum ada email. Tambahkan email untuk verifikasi akun.' : m.emailOk === true ? 'Email terverifikasi. Mengubah email meminta verifikasi ulang lewat tautan yang dikirim ke alamat baru.' : 'Email belum terverifikasi. Kirim email verifikasi dari himbauan di atas.';
+}
+const ppMsg = (ok, m) => { const e = $('#pp-err'), o = $('#pp-ok'); if (e) e.hidden = true; if (o) o.hidden = true; const t = ok ? o : e; if (t) { t.textContent = m; t.hidden = false; } };
+function ppApply(account) { if (!account) return; S.accounts[account.id] = account; try { if (typeof cacheAcct === 'function') cacheAcct(account); } catch (e) { /* abaikan */ } paintProfile(); paintAvatars(); if (typeof paintMailBar === 'function') paintMailBar(); }
+function paintAvatars() {
+  const m = me(); if (!m) return;
+  $$('#pf-av, #pp-av, .me .avatar, .top-r .avatar').forEach(el => {
+    if (m.photo) { el.style.backgroundImage = 'url("' + m.photo + '")'; el.style.backgroundSize = 'cover'; el.style.backgroundPosition = 'center'; el.style.color = 'transparent'; }
+    else { el.style.backgroundImage = ''; el.style.color = ''; }
+  });
+}
+function pwGateHTML() {
+  const m = me(); if (!S.mailv || !m) return '';
+  const fresh = m.pwOkAt && Date.now() - Date.parse(m.pwOkAt) < 15 * 60000;
+  if (m.emailOk !== true) return `<div class="banner" style="margin-bottom:14px">${ic('info', 18)}<span>Verifikasi email Anda dulu (lihat himbauan di atas) agar kata sandi bisa diganti.</span></div>`;
+  if (fresh) return `<div class="banner" style="margin-bottom:14px">${ic('check', 18)}<span>Email terverifikasi. Ganti kata sandi dalam 15 menit.</span></div>`;
+  return `<div class="banner" style="margin-bottom:14px">${ic('info', 18)}<span>Untuk keamanan, ganti kata sandi memerlukan verifikasi email. Kirim tautan ke email Anda, klik, lalu kembali ke sini.</span><button type="button" class="btn btn-primary btn-sm" data-act="pw-verify">Kirim email verifikasi</button></div>`;
+}
+async function saveBirth() {
+  const v = String($('#pp-birth').value || '').trim();
+  if (v && (!isYmd(v) || v < '1900-01-01' || v > ymd(new Date()))) return ppMsg(false, 'Pilih tanggal lahir yang valid.');
+  try { const r = await api('profile.set', { birth: v }); ppApply(r.account); ppMsg(true, 'Tanggal lahir disimpan.'); } catch (e) { ppMsg(false, e.userMessage || dbErrMsg(e)); }
+}
+async function saveEmail() {
+  const v = String($('#pp-email').value || '').trim().toLowerCase(), m = me();
+  if (v.length > 80 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return ppMsg(false, 'Email tidak valid. Contoh: janedoe@email.com.');
+  if (m && m.email === v) return ppMsg(false, 'Email ini sudah dipakai akun Anda.');
+  try {
+    if (S.mailv) { const r = await api('mail.change', { email: v }); ppApply(r.account); ppMsg(true, r.mail === 'sent' ? 'Email diubah. Buka tautan verifikasi yang kami kirim ke alamat baru.' : r.mail === 'cap' ? 'Email diubah. Batas kirim 3 kali per jam tercapai, kirim verifikasi lagi nanti.' : 'Email diubah, tetapi email verifikasi belum terkirim. Coba lagi dari himbauan di atas.'); }
+    else { const r = await api('profile.set', { email: v }); ppApply(r.account); ppMsg(true, 'Email disimpan.'); }
+  } catch (e) { ppMsg(false, e.userMessage || dbErrMsg(e)); }
+}
+function resizePhoto(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const n = 192, c = document.createElement('canvas'); c.width = n; c.height = n;
+      const sz = Math.min(img.width, img.height), sx = (img.width - sz) / 2, sy = (img.height - sz) / 2;
+      c.getContext('2d').drawImage(img, sx, sy, sz, sz, 0, 0, n, n); URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg', .82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Berkas ini bukan gambar yang bisa dibuka.')); };
+    img.src = url;
+  });
+}
+document.addEventListener('change', async e => {
+  if (!e.target || e.target.id !== 'pp-file' || !e.target.files || !e.target.files[0]) return;
+  const f = e.target.files[0]; e.target.value = '';
+  try { const photo = await resizePhoto(f), r = await api('profile.set', { photo }); ppApply(r.account); ppMsg(true, 'Foto profil diperbarui.'); }
+  catch (er) { ppMsg(false, er.userMessage || er.message || 'Foto tidak bisa disimpan.'); }
+});
+Object.assign(ACT, {
+  async 'pp-rm'() { try { const r = await api('profile.set', { photo: '' }); ppApply(r.account); ppMsg(true, 'Foto dihapus.'); } catch (e) { ppMsg(false, e.userMessage || dbErrMsg(e)); } },
+  async 'pw-verify'() {
+    try { const r = await api('pw.verify'); toast('Email verifikasi dikirim ke ' + (r.email || 'email Anda') + '. Klik tautannya lalu ganti kata sandi.'); }
+    catch (e) { toast(e.userMessage || 'Gagal mengirim email. Coba lagi.'); }
+  }
+});
+
+/* ================= Bahasa, mata uang, konversi, kurs & indeks =================
+   Bagian 1: pilihan bahasa dan mata uang buku (kartu di Pengaturan dan tombol di layar masuk). */
+function repaintAll() { S.mounted = null; S.entered = null; showPhase(); }
+function langSwitchHTML(cls) {
+  return `<div class="lang-sw${cls ? ' ' + cls : ''}" role="group" aria-label="Language / Bahasa" translate="no">${[['id', 'ID', 'Bahasa Indonesia'], ['en', 'EN', 'English']].map(l => `<button type="button" data-act="lang" data-v="${l[0]}" lang="${l[0]}" aria-pressed="${LANG === l[0]}" aria-label="${l[2]}" title="${l[2]}">${l[1]}</button>`).join('')}</div>`;
+}
+function lcCardHTML() {
+  const adm = isAdmin();
+  const seg = [['id', 'Bahasa Indonesia'], ['en', 'English']].map(l => `<button type="button" data-act="lang" data-v="${l[0]}" lang="${l[0]}" aria-pressed="${LANG === l[0]}">${l[1]}</button>`).join('');
+  return `<section class="card" id="lc-card"><h2 class="t">Bahasa &amp; Mata Uang</h2>
+    <div class="field"><span class="lbl" id="lc-lang-l">Bahasa tampilan <span class="muted" translate="no">/ Language</span></span><div class="seg" role="group" aria-labelledby="lc-lang-l" translate="no">${seg}</div></div>
+    ${adm ? '' : `<div class="field"><label for="lc-cur">Mata uang buku</label><select class="input" id="lc-cur">${CUR_LIST.map(c => `<option value="${c}"${c === CUR ? ' selected' : ''}>${c} · ${CURRENCIES[c].label} (${CURRENCIES[c].sym})</option>`).join('')}</select>
+      <p class="cat-hint" id="lc-note">Hanya mengubah simbol dan format angka. Nominal dicatat dalam satuan utuh (tanpa sen) dan angka yang sudah tercatat tidak dikonversi. Untuk menghitung nilai tukar, buka menu Kurs.</p></div>`}</section>`;
+}
+async function saveCurrency(code) {
+  if (!isCur(code) || S.phase !== 'app' || isAdmin() || !S.me) return;
+  const was = CUR; if (code === was) return;
+  setCur(code); repaintAll();
+  try {
+    await S.db.doc('ledger/' + S.me.id).collection('meta').doc('settings').set(Object.assign({}, S.settings, { currency: code }));
+    toast(LANG === 'en' ? 'Book currency: ' + code : 'Mata uang buku: ' + code);
+  } catch (e) { setCur(was); repaintAll(); toast(dbErrMsg(e)); }
+}
+Object.assign(ACT, {
+  lang(el) {
+    if (!setLang(el.dataset.v)) return;
+    if (typeof i18nSync === 'function') i18nSync();
+    repaintAll();
+    toast(LANG === 'en' ? 'Language set to English' : 'Bahasa diubah ke Bahasa Indonesia');
+  }
+});
+
+/* ---------- Bagian 2: kurs mata uang (data) ----------
+   Kurs diambil langsung dari peramban ke layanan publik (tanpa mengirim data catatan): Frankfurter (kurs rujukan Bank Sentral Eropa, deret 85 hari),
+   cadangan open.er-api.com lalu currency-api. Hasil disimpan di perangkat; bila semua gagal dan belum pernah ada salinan, dipakai kurs perkiraan bawaan. */
+const FX_LS = 'saku.fx.v1', FXC_LS = 'saku.fxc.v1', FX_TTL = 4 * 3600000, MK_TTL = 5 * 60000;
+const FX_SEED = { asof: '2026-11-05', rates: { USD: 1, IDR: 16300, CNY: 7.1, MYR: 4.2, JPY: 152, KRW: 1400 } };
+const FXH = { frank: 'https://api.frankfurter.dev/v1/', er: 'https://open.er-api.com/v6/latest/USD', fa: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json', fa2: 'https://latest.currency-api.pages.dev/v1/currencies/usd.json' };
+const FX = { rates: null, asof: '', src: '', series: null, t: 0, busy: false, fail: false, seed: false };
+function fxCacheRead() {
+  try {
+    const j = JSON.parse(lsGet(FX_LS) || 'null');
+    if (j && j.rates && CUR_LIST.every(c => Number(j.rates[c]) > 0)) { FX.rates = j.rates; FX.asof = j.asof || ''; FX.src = j.src || ''; FX.series = j.series || null; FX.t = Number(j.t) || 0; FX.seed = false; return true; }
+  } catch (e) { /* abaikan */ }
+  return false;
+}
+function fxSeedUse() { FX.rates = Object.assign({}, FX_SEED.rates); FX.asof = FX_SEED.asof; FX.src = 'seed'; FX.series = null; FX.seed = true; FX.t = 0; }
+async function fxGetJson(url, ms) {
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null, to = setTimeout(() => { if (ctl) ctl.abort(); }, ms || 9000);
+  try { const r = await fetch(url, ctl ? { signal: ctl.signal } : undefined); if (!r.ok) throw new Error('http ' + r.status); return await r.json(); } finally { clearTimeout(to); }
+}
+function fxApply(rates, asof, src, series) {
+  if (!CUR_LIST.every(c => Number(rates[c]) > 0)) throw new Error('kurs tidak lengkap');
+  FX.rates = rates; FX.asof = asof; FX.src = src; FX.series = series || null; FX.t = Date.now(); FX.seed = false; FX.fail = false;
+  lsSet(FX_LS, JSON.stringify({ rates, asof, src, series: FX.series, t: FX.t }));
+}
+async function fxLoad(force) {
+  if (FX.busy) return;
+  if (!FX.rates && !fxCacheRead()) fxSeedUse();
+  if (!force && !FX.seed && Date.now() - FX.t < FX_TTL) return;
+  FX.busy = true; FX.fail = false; fxPaint();
+  const syms = CUR_LIST.filter(c => c !== 'USD').join(','); let ok = false;
+  try {
+    const j = await fxGetJson(FXH.frank + ymd(addDays(new Date(), -85)) + '..' + ymd(new Date()) + '?base=USD&symbols=' + syms);
+    const days = j && j.rates ? Object.keys(j.rates).sort() : [];
+    if (!days.length) throw new Error('kosong');
+    const series = {}; CUR_LIST.forEach(c => { series[c] = []; });
+    days.forEach(d => CUR_LIST.forEach(c => { const v = c === 'USD' ? 1 : Number(j.rates[d] && j.rates[d][c]); if (v > 0) series[c].push([d, Math.round(v * 1e6) / 1e6]); }));
+    const last = days[days.length - 1], rates = { USD: 1 }; CUR_LIST.forEach(c => { if (c !== 'USD') rates[c] = Number(j.rates[last][c]); });
+    fxApply(rates, last, 'frankfurter', series); ok = true;
+  } catch (e) { /* coba sumber cadangan */ }
+  if (!ok) {
+    try {
+      const j = await fxGetJson(FXH.er), r = j && j.rates, rates = { USD: 1 };
+      if (!r) throw new Error('kosong'); CUR_LIST.forEach(c => { if (c !== 'USD') rates[c] = Number(r[c]); });
+      fxApply(rates, ymd(new Date((Number(j.time_last_update_unix) || Date.now() / 1000) * 1000)), 'er-api', null); ok = true;
+    } catch (e) { /* lanjut */ }
+  }
+  if (!ok) for (const u of [FXH.fa, FXH.fa2]) {
+    try {
+      const j = await fxGetJson(u), r = j && j.usd, rates = { USD: 1 };
+      if (!r) throw new Error('kosong'); CUR_LIST.forEach(c => { if (c !== 'USD') rates[c] = Number(r[c.toLowerCase()]); });
+      fxApply(rates, String(j.date || ymd(new Date())), 'currency-api', null); ok = true; break;
+    } catch (e) { /* lanjut */ }
+  }
+  if (!ok) FX.fail = true;
+  FX.busy = false; fxPaint();
+}
+/* 1 `from` = n `to` */
+function fxRate(from, to) { const r = FX.rates; if (!r || !(r[from] > 0) || !(r[to] > 0)) return null; return r[to] / r[from]; }
+/* deret nilai 1 `from` dalam `to` untuk `days` hari terakhir (null bila belum ada deret) */
+function fxSeries(from, to, days) {
+  const s = FX.series; if (!s || !s[from] || !s[to]) return null;
+  const mf = {}; s[from].forEach(p => { mf[p[0]] = p[1]; });
+  const cut = ymd(addDays(new Date(), -days)), out = [];
+  s[to].forEach(p => { if (p[0] >= cut && mf[p[0]] > 0) out.push(p[1] / mf[p[0]]); });
+  return out.length > 1 ? out : null;
+}
+function fxDec(x) { return x >= 1000 ? 0 : x >= 100 ? 2 : x >= 1 ? 4 : 6; }
+const fxVal = (code, x) => { const c = CURRENCIES[code]; return c.sym + (c.sp ? ' ' : '') + fmtNum(x, fxDec(Math.abs(x))); };
+function fxSrcText() {
+  if (FX.busy && FX.seed) return 'Mengambil kurs terbaru…';
+  if (FX.seed) return 'Kurs perkiraan bawaan (' + fmtDateLong(parseYmd(FX.asof)) + '). Kurs terbaru belum bisa diambil; hubungkan ke internet lalu tekan Perbarui.';
+  const nm = FX.src === 'frankfurter' ? 'Frankfurter (kurs rujukan Bank Sentral Eropa)' : FX.src === 'er-api' ? 'open.er-api.com' : 'currency-api';
+  return 'Kurs per ' + fmtDateLong(parseYmd(FX.asof)) + ' · sumber ' + nm + (FX.fail ? ' · gagal memperbarui, memakai salinan terakhir' : '') + '. Kurs tengah harian, bukan kurs jual/beli bank.';
+}
+function sparkSVG(vals, up) {
+  if (!vals || vals.length < 2) return '';
+  const w = 100, h = 28, mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), rg = mx - mn || 1;
+  const pts = vals.map((v, i) => (i / (vals.length - 1) * w).toFixed(1) + ',' + (h - 2 - (v - mn) / rg * (h - 4)).toFixed(1)).join(' ');
+  return `<svg class="spark ${up ? 'pos' : 'neg'}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points="${pts}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+/* baris kurs dalam arah yang enak dibaca: sisi yang lebih "kecil nilainya" dijadikan satuan (1 USD = Rp 16.400, bukan 1 IDR = $0,000061) */
+const fxRateLine = (from, to, r) => r >= 1 ? '1 ' + from + ' = ' + fxVal(to, r) : '1 ' + to + ' = ' + fxVal(from, 1 / r);
+const fxArrow = p => (p > 0 ? '▲ ' : p < 0 ? '▼ ' : '') + (p > 0 ? '+' : '') + fmtNum(p, 2) + '%';
+
+/* ---------- Bagian 3: menu Konversi ---------- */
+function fxcState() {
+  if (!S.fxc) {
+    let j = null; try { j = JSON.parse(lsGet(FXC_LS) || 'null'); } catch (e) { j = null; }
+    const from = j && isCur(j.from) ? j.from : CUR, to = j && isCur(j.to) && j.to !== from ? j.to : (from === 'USD' ? 'IDR' : 'USD');
+    S.fxc = { from, to, amt: j && Number(j.amt) > 0 ? Number(j.amt) : (from === 'IDR' ? 100000 : 100) };
+  }
+  return S.fxc;
+}
+function fxcSave() { const c = fxcState(); lsSet(FXC_LS, JSON.stringify(c)); }
+function fxParseAmt(s) {
+  s = String(s || '').replace(/[^\d.,]/g, ''); if (!s) return 0;
+  s = s.split(NUM.grp).join('').replace(NUM.dec, '.');
+  const i = s.indexOf('.'); if (i >= 0) s = s.slice(0, i + 1) + s.slice(i + 1).replace(/\./g, '');
+  const n = Number(s); return isFinite(n) ? Math.min(n, 1e15) : 0;
+}
+const fxAmtText = n => { const d = n % 1 ? Math.min(6, (String(n).split('.')[1] || '').length) : 0; return fmtNum(n, d); };
+const fxOpts = (sel, long) => CUR_LIST.map(c => `<option value="${c}"${c === sel ? ' selected' : ''}>${c} · ${long ? CURRENCIES[c].label : CURRENCIES[c].sym}</option>`).join('');
+VIEWS.konversi = {
+  mount(v) {
+    const C = fxcState();
+    v.innerHTML = `<div id="fxc-top"></div><div class="stack">
+      <section class="card fx-conv" aria-label="Konversi mata uang">
+        <div class="field"><label for="fxc-amt">Jumlah</label><input class="input fx-amt" id="fxc-amt" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(fxAmtText(C.amt))}"><small class="hint" id="fxc-hint"></small></div>
+        <div class="fx-pair"><div class="field"><label for="fxc-from">Dari</label><select class="input" id="fxc-from">${fxOpts(C.from)}</select></div>
+          <button type="button" class="icon-btn fx-swap" data-act="fx-swap" aria-label="Tukar arah konversi" title="Tukar arah">${ic('swap', 20)}</button>
+          <div class="field"><label for="fxc-to">Ke</label><select class="input" id="fxc-to">${fxOpts(C.to)}</select></div></div>
+        <div class="fx-out" id="fxc-out" aria-live="polite"></div>
+        <div class="fx-meta"><p id="fxc-meta"></p><button type="button" class="btn btn-ghost btn-sm" data-act="fx-refresh" id="fxc-ref">${ic('repeat', 16)} Perbarui kurs</button></div>
+      </section>
+      <section class="card" aria-labelledby="h-fxall"><h2 class="t" id="h-fxall">Nilai yang Sama di Mata Uang Lain</h2><ul class="fx-list" id="fxc-all"></ul></section></div>`;
+    $('#fxc-hint').textContent = 'Pemisah desimal: ' + (NUM.dec === ',' ? 'koma (,)' : 'titik (.)');
+    fxLoad(false);
+  },
+  update() { const t = $('#fxc-top'); if (!t) return; t.innerHTML = subnavHTML('konversi') + '<div class="page-head"><h1>Konversi</h1></div>'; fxcPaint(); }
+};
+function fxcPaint() {
+  const out = $('#fxc-out'); if (!out) return;
+  const C = fxcState(), r = fxRate(C.from, C.to), val = r == null ? null : C.amt * r;
+  out.innerHTML = val == null ? '<span class="muted">–</span>' : `<span class="fx-from">${esc(fmtMoneyIn(C.from, C.amt))} =</span><b class="fx-res">${esc(fmtMoneyIn(C.to, val))}</b><span class="fx-rate">${esc(fxRateLine(C.from, C.to, r))}</span>`;
+  const meta = $('#fxc-meta'); if (meta) meta.textContent = fxSrcText();
+  const rb = $('#fxc-ref'); if (rb) rb.disabled = FX.busy;
+  const all = $('#fxc-all');
+  if (all) all.innerHTML = CUR_LIST.filter(c => c !== C.from).map(c => { const rr = fxRate(C.from, c); return `<li><button type="button" class="fx-row fx-pick${c === C.to ? ' on' : ''}" data-act="fx-pick" data-c="${c}"><span class="fx-c"><b>${c}</b><small>${esc(CURRENCIES[c].label)}</small></span><span class="fx-v"><b>${rr == null ? '–' : esc(fmtMoneyIn(c, C.amt * rr))}</b></span></button></li>`; }).join('');
+}
+function fxcSync() {
+  const C = fxcState(), a = $('#fxc-amt'), f = $('#fxc-from'), t = $('#fxc-to');
+  if (f) f.value = C.from; if (t) t.value = C.to; if (a && document.activeElement !== a) a.value = fxAmtText(C.amt);
+}
+Object.assign(ACT, {
+  'fx-swap'() { const C = fxcState(), x = C.from; C.from = C.to; C.to = x; fxcSave(); fxcSync(); fxcPaint(); },
+  'fx-pick'(el) { const C = fxcState(); if (isCur(el.dataset.c) && el.dataset.c !== C.from) { C.to = el.dataset.c; fxcSave(); fxcSync(); fxcPaint(); } },
+  'fx-refresh'() { fxLoad(true); },
+  'mk-refresh'() { fxLoad(true); mkLoad(true); }
+});
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || el.id !== 'fxc-amt') return;
+  fxcState().amt = fxParseAmt(el.value); fxcSave(); fxcPaint();
+});
+document.addEventListener('change', e => {
+  const el = e.target; if (!el || !el.id) return;
+  if (el.id === 'fxc-from' || el.id === 'fxc-to') {
+    const C = fxcState(); if (!isCur(el.value)) return;
+    if (el.id === 'fxc-from') { if (el.value === C.to) C.to = C.from; C.from = el.value; } else { if (el.value === C.from) C.from = C.to; C.to = el.value; }
+    fxcSave(); fxcSync(); fxcPaint();
+  } else if (el.id === 'mk-base' && isCur(el.value)) { S.mkBase = el.value; mkPaint(); }
+});
+
+/* ---------- Bagian 4: menu Kurs & Indeks ---------- */
+const MK = { data: null, err: '', code: '', busy: false, t: 0 };
+/* ---- IHSG langsung dari peramban (edisi tanpa server: Firebase, Statis, Mobile; juga cadangan bila server gagal) ----
+   Yahoo Finance dan Stooq tidak mengirim izin CORS, jadi selain mencoba langsung, peramban juga mencoba lewat perantara CORS publik
+   (hanya meminta data indeks umum, tidak ada data pengguna yang ikut terkirim). Semua jalur dicoba bersamaan; yang pertama berhasil dipakai.
+   Hasil terakhir disimpan di perangkat agar tetap tampil (diberi tanda lama) saat semua sumber gagal. */
+const MKC_IX = { id: 'ihsg', name: 'IHSG', full: 'Indeks Harga Saham Gabungan', cc: 'ID', ccy: 'IDR', y: '^JKSE', st: '^jci' }, MKC_LS = 'saku.mk.v1';
+const MKC_VIA = [u => u, u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u), u => 'https://corsproxy.io/?url=' + encodeURIComponent(u)];
+const mkcNum = x => (typeof x === 'number' && isFinite(x) ? x : null);
+function mkcShape(closes, dates, src) {
+  const pts = closes.map((c, i) => ({ c, d: dates[i] })).filter(p => mkcNum(p.c) !== null && p.c > 100 && p.c < 1e6);   // IHSG ribuan: nilai di luar rentang ini pasti keliru
+  if (pts.length < 2) return null;
+  const last = pts[pts.length - 1], prev = pts[pts.length - 2], r2 = x => Math.round(x * 100) / 100;
+  return { id: MKC_IX.id, name: MKC_IX.name, full: MKC_IX.full, cc: MKC_IX.cc, ccy: MKC_IX.ccy, price: r2(last.c), prev: r2(prev.c), chg: r2(last.c - prev.c), pct: Math.round((last.c / prev.c - 1) * 10000) / 100, asof: last.d || null, series: pts.slice(-70).map(p => r2(p.c)), src };
+}
+function mkcParseYahoo(j) {
+  const r = j && j.chart && Array.isArray(j.chart.result) ? j.chart.result[0] : null; if (!r) return null;
+  const ts = Array.isArray(r.timestamp) ? r.timestamp : [], q = r.indicators && r.indicators.quote && r.indicators.quote[0], cl = q && Array.isArray(q.close) ? q.close : [];
+  const closes = [], dates = [];
+  for (let i = 0; i < cl.length; i++) if (mkcNum(cl[i]) !== null) { closes.push(cl[i]); dates.push(ts[i] ? new Date(ts[i] * 1000).toISOString().slice(0, 10) : null); }
+  const live = r.meta && mkcNum(r.meta.regularMarketPrice), lt = r.meta && r.meta.regularMarketTime;
+  if (live !== null && live > 0 && closes.length) {
+    const ld = lt ? new Date(lt * 1000).toISOString().slice(0, 10) : null;
+    if (ld && dates[dates.length - 1] === ld) closes[closes.length - 1] = live; else { closes.push(live); dates.push(ld); }
+  }
+  return mkcShape(closes, dates, 'yahoo');
+}
+function mkcParseStooq(text) {
+  const rows = String(text || '').trim().split(/\r?\n/).slice(1).map(l => l.split(',')).filter(a => /^\d{4}-\d{2}-\d{2}$/.test(a[0]) && a.length >= 5);
+  return mkcShape(rows.map(a => Number(a[4])), rows.map(a => a[0]), 'stooq');
+}
+function mkcGet(url, ms) {
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null, to = ctl ? setTimeout(() => ctl.abort(), ms || 9000) : null;
+  return fetch(url, { cache: 'no-store', credentials: 'omit', signal: ctl ? ctl.signal : undefined }).then(r => (r && r.ok ? r : null), () => null).then(r => { if (to) clearTimeout(to); return r; });
+}
+/* Hasil tercepat yang valid dari sekumpulan janji (null bila semuanya gagal) */
+function mkcFirst(ps) {
+  return new Promise(res => {
+    let n = ps.length, done = false; if (!n) { res(null); return; }
+    const miss = () => { if (!--n && !done) res(null); };
+    ps.forEach(p => p.then(v => { if (v && !done) { done = true; res(v); } else miss(); }, miss));
+  });
+}
+async function mkcFetch() {
+  const yu = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(MKC_IX.y) + '?range=3mo&interval=1d', su = 'https://stooq.com/q/d/l/?s=' + encodeURIComponent(MKC_IX.st) + '&i=d';
+  let o = await mkcFirst(MKC_VIA.map(via => mkcGet(via(yu)).then(r => (r ? r.json().then(mkcParseYahoo, () => null) : null))));
+  if (!o) o = await mkcFirst(MKC_VIA.map(via => mkcGet(via(su)).then(r => (r ? r.text().then(mkcParseStooq, () => null) : null))));
+  if (!o) return null;
+  const v = { ok: true, at: new Date().toISOString(), items: [o], missing: [], via: 'browser' };
+  lsSet(MKC_LS, JSON.stringify(v)); return v;
+}
+function mkcCached() { try { const v = JSON.parse(lsGet(MKC_LS) || 'null'); return v && Array.isArray(v.items) && v.items.length ? v : null; } catch (e) { return null; } }
+async function mkLoad(force) {
+  if (MK.busy) return;
+  if (!force && MK.data && !MK.data.stale && Date.now() - MK.t < MK_TTL) return;
+  MK.busy = true; MK.err = ''; MK.code = ''; mkPaint();
+  let j = null, err = null;
+  if (typeof api === 'function') {
+    try { j = await api('market.indices', {}); if (!j || !Array.isArray(j.items) || !j.items.length) j = null; else lsSet(MKC_LS, JSON.stringify(j)); } catch (e) { err = e; j = null; }
+  }
+  if (!j) { try { j = await mkcFetch(); } catch (e) { j = null; } }
+  if (!j) { const c = MK.data || mkcCached(); if (c) j = Object.assign({}, c, { stale: true }); }     // gagal semua: tampilkan data terakhir, ditandai lama
+  if (j) { MK.data = j; MK.t = Date.now(); }
+  else { MK.err = (err && err.code !== 'unsupported' && (err.userMessage || err.message)) || 'Data IHSG belum bisa diambil dari sumbernya. Periksa sambungan internet lalu coba lagi.'; MK.code = (err && err.code) || ''; }
+  MK.busy = false; mkPaint();
+}
+function fxPaint() { if (S.phase !== 'app') return; if (S.view === 'konversi') fxcPaint(); else if (S.view === 'pasar') mkPaint(); }
+const MK_YAHOO = 'https://finance.yahoo.com/quote/%5EJKSE';
+VIEWS.pasar = {
+  mount(v) {
+    v.innerHTML = `<div id="mk-top"></div><div class="stack">
+      <section class="card" aria-labelledby="h-mkr"><div class="fx-head"><h2 class="t" id="h-mkr">Kurs Mata Uang</h2><div class="field fx-base"><label for="mk-base">Terhadap</label><select class="input" id="mk-base">${fxOpts(S.mkBase || CUR, true)}</select></div></div>
+        <ul class="fx-list" id="mk-rates"></ul><div class="fx-meta"><p id="mk-meta"></p><button type="button" class="btn btn-ghost btn-sm" data-act="mk-refresh" id="mk-ref">${ic('repeat', 16)} Perbarui</button></div></section>
+      <section class="card" aria-labelledby="h-mki"><h2 class="t" id="h-mki">Indeks Saham (IHSG)</h2><div id="mk-idx"></div></section>
+      <p class="fx-disc" id="mk-disc"></p></div>`;
+    fxLoad(false); mkLoad(false);
+  },
+  update() { const t = $('#mk-top'); if (!t) return; t.innerHTML = subnavHTML('pasar') + '<div class="page-head"><h1>Kurs &amp; Indeks</h1></div>'; mkPaint(); }
+};
+function mkPaint() {
+  const rl = $('#mk-rates'); if (!rl) return;
+  const base = S.mkBase || CUR, bs = $('#mk-base'); if (bs && document.activeElement !== bs) bs.value = base;
+  rl.innerHTML = CUR_LIST.filter(c => c !== base).map(c => {
+    const r = fxRate(c, base); if (r == null) return '';
+    let k = 1; while (r * k < 1 && k < 1e6) k *= 10;
+    const ser = fxSeries(c, base, 30), chg = ser ? (ser[ser.length - 1] / ser[0] - 1) * 100 : null, up = chg == null ? true : chg >= 0;
+    return `<li class="fx-row"><span class="fx-c"><b>${c}</b><small>${esc(CURRENCIES[c].label)}</small></span><span class="fx-v"><small>${dots(k)} ${c} =</small><b>${esc(fxVal(base, r * k))}</b></span><span class="fx-t">${sparkSVG(ser, up)}${chg == null ? '' : `<span class="fx-chg ${chg > 0 ? 'pos' : chg < 0 ? 'neg' : ''}">${fxArrow(chg)}</span>`}</span></li>`;
+  }).join('');
+  const m = $('#mk-meta'); if (m) m.textContent = fxSrcText() + (FX.series ? ' Grafik dan perubahan: 30 hari terakhir.' : '');
+  const rb = $('#mk-ref'); if (rb) rb.disabled = FX.busy || MK.busy;
+  const ix = $('#mk-idx'); if (!ix) return;
+  const D = MK.data, it = D && D.items ? D.items.filter(x => x.id === 'ihsg')[0] : null;
+  if (it) {
+    const up = it.pct >= 0, cls = it.pct > 0 ? 'pos' : it.pct < 0 ? 'neg' : '', sr = it.series || [], hi = sr.length ? Math.max.apply(null, sr) : it.price, lo = sr.length ? Math.min.apply(null, sr) : it.price;
+    ix.innerHTML = `<div class="ix-one"><div class="ix-top"><span class="fx-c"><b>${esc(it.name)}</b><small>${esc(it.full)}</small></span><span class="ix-px"><b>${esc(fmtNum(it.price, 2))}</b><small class="${cls}">${it.pct > 0 ? '▲ +' : it.pct < 0 ? '▼ ' : ''}${esc(fmtNum(it.chg, 2))} (${esc(fmtNum(it.pct, 2))}%)</small></span></div>
+      <div class="ix-chart">${sparkSVG(sr, up)}</div>
+      <dl class="ix-stats"><div><dt>Tertinggi (${sr.length} hari bursa)</dt><dd>${esc(fmtNum(hi, 2))}</dd></div><div><dt>Terendah (${sr.length} hari bursa)</dt><dd>${esc(fmtNum(lo, 2))}</dd></div><div><dt>Penutupan sebelumnya</dt><dd>${esc(fmtNum(it.prev, 2))}</dd></div></dl>
+      <p class="fx-meta-p">${esc('Data per ' + (it.asof ? fmtDateLong(parseYmd(it.asof)) : '–') + (D.stale ? ' (salinan lama, sumber sedang tidak dapat dijangkau)' : '') + '. Data tertunda dan hanya untuk informasi.')}</p></div>`;
+  } else if (MK.busy) ix.innerHTML = '<p class="muted">Memuat IHSG…</p>';
+  else ix.innerHTML = `<div class="banner">${ic('info', 18)}<span>${esc(MK.err || 'Data IHSG belum dimuat.')}</span></div><ul class="fx-list fx-links"><li><a class="fx-row" href="${MK_YAHOO}" target="_blank" rel="noopener noreferrer"><span class="fx-c"><b>IHSG</b><small>Indeks Harga Saham Gabungan</small></span><span class="fx-v"><small>Buka di Yahoo Finance</small></span></a></li></ul>`;
+  const dc = $('#mk-disc'); if (dc) dc.textContent = 'Informasi ini bukan nasihat investasi. Kurs dan IHSG bisa berbeda dari angka resmi bank atau bursa, dan tidak otomatis mengubah nominal catatan Anda.';
+}
+
+/* Terjemahan layar: terapkan bahasa tersimpan saat aplikasi dibuka */
+if (typeof document !== 'undefined') { if (document.body) i18nSync(); else document.addEventListener('DOMContentLoaded', i18nSync); }
+const FB_RULES = "rules_version = '2';\n\n// Saku: aturan keamanan Firestore.\n// Tempel seluruh isi file ini di Firebase Console -> Firestore Database -> Rules -> Publish.\nservice cloud.firestore {\n  match /databases/{database}/documents {\n\n    function signedIn() {\n      return request.auth != null;\n    }\n\n    // Administrator = punya dokumen admins/{uid}\n    function isAdmin() {\n      return signedIn()\n        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));\n    }\n\n    // Admin pembantu = punya dokumen helpers/{uid}. Pengguna biasa dengan catatan sendiri, ditambah menu Admin\n    // untuk pekerjaan rutin: menyetujui/menolak pendaftar, membuat akun pengguna, mengaktifkan/menonaktifkan pengguna.\n    function isHelper() {\n      return signedIn()\n        && exists(/databases/$(database)/documents/helpers/$(request.auth.uid));\n    }\n\n    function isStaff() {\n      return isAdmin() || isHelper();\n    }\n\n    function profileOf(u) {\n      return get(/databases/$(database)/documents/profiles/$(u)).data;\n    }\n\n    // Pemilik username u = akun login ini (profiles/{u}.uid sama dengan uid yang masuk)\n    function isMe(u) {\n      return signedIn() && profileOf(u).uid == request.auth.uid;\n    }\n\n    // Pemilik yang akunnya sudah disetujui dan tidak dinonaktifkan\n    function isActiveMe(u) {\n      let p = profileOf(u);\n      return signedIn()\n        && p.uid == request.auth.uid\n        && p.status == 'active'\n        && p.active == true;\n    }\n\n    // Pembuatan admin pertama: hanya selama config/public belum ada, dan harus dalam\n    // satu penulisan yang sama dengan pembuatan config/public + admins/{uid} sendiri.\n    function bootstrapping() {\n      return signedIn()\n        && !exists(/databases/$(database)/documents/config/public)\n        && existsAfter(/databases/$(database)/documents/config/public)\n        && existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));\n    }\n\n    // Bentuk dokumen profil yang boleh dibuat pendaftar sendiri (dibatasi ukuran dan isinya)\n    function regShape(u) {\n      let d = request.resource.data;\n      return d.id == u\n        && d.keys().hasOnly(['id', 'uid', 'name', 'first', 'last', 'role', 'status', 'active', 'isDefault', 'birth', 'phone', 'email', 'emailOk', 'requestedAt', 'createdAt', 'createdBy'])\n        && (!('emailOk' in d) || d.emailOk == false)\n        && d.name is string && d.name.size() <= 70\n        && d.first is string && d.first.size() <= 30\n        && d.last is string && d.last.size() <= 30\n        && d.email is string && d.email.size() <= 80 && d.email == d.email.lower()\n        && d.phone is string && d.phone.size() <= 20\n        && d.birth is string && (d.birth.size() == 10 || d.birth.size() == 0);\n    }\n\n    // Pendaftaran sendiri: selalu menunggu persetujuan admin, peran pengguna biasa\n    function selfRegister(u) {\n      return signedIn()\n        && exists(/databases/$(database)/documents/config/public)\n        && request.resource.data.uid == request.auth.uid\n        && request.resource.data.role == 'user'\n        && request.resource.data.status == 'pending'\n        && request.resource.data.active == false\n        && existsAfter(/databases/$(database)/documents/hints/$(u))\n        && regShape(u);\n    }\n\n    function bootstrapProfile(u) {\n      return bootstrapping()\n        && request.resource.data.id == u\n        && request.resource.data.uid == request.auth.uid\n        && request.resource.data.role == 'admin'\n        && request.resource.data.status == 'active';\n    }\n\n    // Penanda publik: apakah aplikasi sudah disiapkan + batas waktu login (menit)\n    // + pengingat cadangan akhir pekan (aktif atau tidak, lama tampil dalam detik)\n    // + kunci PUBLIK pemulihan untuk cadangan tertutup (hanya bisa dipasang sekali; kunci privatnya tidak pernah disimpan di sini)\n    match /config/public {\n      allow get: if true;\n      allow create: if bootstrapping();\n      allow update: if isAdmin()\n        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionMinutes', 'backupOn', 'backupSeconds', 'vaultPub', 'vaultKid'])\n        && request.resource.data.sessionMinutes is int\n        && request.resource.data.sessionMinutes >= 1\n        && request.resource.data.sessionMinutes <= 1440\n        && (!('backupOn' in request.resource.data) || request.resource.data.backupOn is bool)\n        && (!('backupSeconds' in request.resource.data)\n            || (request.resource.data.backupSeconds is int\n                && request.resource.data.backupSeconds >= 5\n                && request.resource.data.backupSeconds <= 600))\n        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['vaultPub', 'vaultKid'])\n            || (!('vaultPub' in resource.data)\n                && request.resource.data.vaultPub is string && request.resource.data.vaultPub.size() <= 900\n                && request.resource.data.vaultKid is string && request.resource.data.vaultKid.size() <= 20));\n    }\n\n    match /admins/{uid} {\n      allow create: if isAdmin() || (signedIn() && request.auth.uid == uid && bootstrapping());\n      allow delete: if isAdmin();\n    }\n\n    // Penanda admin pembantu: hanya administrator yang boleh menunjuk atau mencabutnya\n    match /helpers/{uid} {\n      allow create: if isAdmin();\n      allow delete: if isAdmin();\n    }\n\n    // Bentuk profil yang boleh dibuat admin pembantu: selalu pengguna biasa yang langsung aktif\n    function helperNewUser(u) {\n      let d = request.resource.data;\n      return isHelper()\n        && d.id == u\n        && d.role == 'user'\n        && d.status == 'active'\n        && d.active == true\n        && d.keys().hasOnly(['id', 'uid', 'name', 'role', 'status', 'active', 'isDefault', 'createdAt', 'createdBy']);\n    }\n\n    // Statistik yang boleh ditulis pemilik akun untuk pemantauan admin: hanya jumlah dan waktu, tidak pernah isi catatan\n    function statsOk() {\n      let d = request.resource.data;\n      return (!('txCount' in d) || (d.txCount is int && d.txCount >= 0 && d.txCount <= 100000))\n        && (!('lastTxAt' in d) || (d.lastTxAt is string && d.lastTxAt.size() <= 40))\n        && (!('lastBackupAt' in d) || (d.lastBackupAt is string && d.lastBackupAt.size() <= 40))\n        && (!('lastLoginAt' in d) || (d.lastLoginAt is string && d.lastLoginAt.size() <= 40));\n    }\n\n    match /profiles/{u} {\n      allow get: if isStaff() || isMe(u);\n      allow list: if isStaff();\n      allow create: if isAdmin() || helperNewUser(u) || selfRegister(u) || bootstrapProfile(u);\n      allow update: if isAdmin()\n        || (isHelper()\n            && resource.data.role == 'user'\n            && request.resource.data.role == 'user'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'active', 'approvedAt', 'approvedBy', 'rejectedAt', 'rejectedBy']))\n        // Konfirmasi email: pemilik email yang terverifikasi (lewat tautan dari Firebase) mengaktifkan pendaftarannya sendiri.\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'pending'\n            && resource.data.emailOk == false\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.status == 'active'\n            && request.resource.data.active == true\n            && request.resource.data.emailOk == true\n            && request.resource.data.role == 'user'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'active', 'emailOk', 'verifiedAt', 'approvedAt', 'approvedBy']))\n        // Akun lama yang sudah aktif: verifikasi ulang email lewat tautan (hanya menandai emailOk).\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'active'\n            && (!('emailOk' in resource.data) || resource.data.emailOk == false)\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.emailOk == true\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailOk', 'verifiedAt']))\n        // Verifikasi email untuk ganti kata sandi: hanya menandai pwOkAt.\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'active'\n            && resource.data.emailOk == true\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.pwOkAt is string && request.resource.data.pwOkAt.size() <= 40\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pwOkAt']))\n        // Pendaftar yang belum konfirmasi boleh mengganti email-nya.\n        || (isMe(u)\n            && resource.data.status == 'pending'\n            && resource.data.emailOk == false\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email'])\n            && request.resource.data.email is string && request.resource.data.email.size() <= 80\n            && request.resource.data.email == request.resource.data.email.lower())\n        || (isActiveMe(u)\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDefault', 'txCount', 'lastTxAt', 'lastBackupAt', 'lastLoginAt', 'email', 'emailOk', 'birth', 'photo', 'pwOkAt'])\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['photo']) || (request.resource.data.photo is string && request.resource.data.photo.size() <= 40000))\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['birth']) || (request.resource.data.birth is string && (request.resource.data.birth.size() == 10 || request.resource.data.birth.size() == 0)))\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pwOkAt']) || request.resource.data.pwOkAt == '')\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['email', 'emailOk'])\n                || (request.resource.data.emailOk == false && request.resource.data.email is string && request.resource.data.email.size() <= 80 && request.resource.data.email == request.resource.data.email.lower()))\n            && (request.resource.data.isDefault == false || request.resource.data.isDefault == resource.data.isDefault)\n            && statsOk());\n      allow delete: if isAdmin();\n    }\n\n    // Kode pembeda login (dipakai untuk reset sandi oleh admin). Hanya berisi huruf acak.\n    match /hints/{u} {\n      allow get: if true;\n      allow create: if isAdmin()\n        || (isHelper()\n            && existsAfter(/databases/$(database)/documents/profiles/$(u))\n            && getAfter(/databases/$(database)/documents/profiles/$(u)).data.role == 'user')\n        || (signedIn()\n            && existsAfter(/databases/$(database)/documents/profiles/$(u))\n            && getAfter(/databases/$(database)/documents/profiles/$(u)).data.uid == request.auth.uid);\n      allow update, delete: if isAdmin();\n    }\n\n    // Buku catatan satu pengguna + foto-fotonya. Hanya pemilik yang aktif yang bisa MEMBACA.\n    // Administrator tidak bisa membaca, tetapi boleh menulis: dipakai pemulihan cadangan tertutup (isinya hasil buka berkas\n    // yang disegel dengan kunci pemulihan) dan membersihkan data akun yang dihapus.\n    match /books/{u} {\n      allow get: if isActiveMe(u);\n      allow create, update: if isActiveMe(u) || (isAdmin() && request.resource.data.keys().hasOnly(['rev', 'json']));\n      allow delete: if isAdmin();\n\n      match /photos/{id} {\n        allow get: if isActiveMe(u);\n        allow create, update: if isActiveMe(u) || (isAdmin() && request.resource.data.keys().hasOnly(['data', 'createdAt']));\n        allow delete: if isActiveMe(u) || isAdmin();\n        allow list: if isAdmin();\n      }\n    }\n\n    // Salinan tersegel (cadangan tertutup). Aplikasi pengguna menyegel salinan bukunya dengan kunci publik pemulihan;\n    // administrator hanya bisa mengunduh teks acak ini dan tidak bisa membukanya tanpa berkas kunci pemulihan.\n    function sealOk(u, allowed) {\n      let d = request.resource.data;\n      return isActiveMe(u)\n        && d.keys().hasOnly(allowed)\n        && d.kid is string && d.kid.size() <= 20\n        && d.kid == get(/databases/$(database)/documents/config/public).data.vaultKid\n        && d.at is string && d.at.size() <= 40\n        && d.w is string && d.w.size() <= 600\n        && d.i is string && d.i.size() <= 40\n        && d.c is string && d.c.size() <= 900000\n        && (!('z' in d) || d.z == 1);\n    }\n    match /vault/{u} {\n      allow get: if isActiveMe(u) || isAdmin();\n      allow list: if isAdmin();\n      allow create, update: if sealOk(u, ['rev', 'kid', 'at', 'n', 'z', 'w', 'i', 'c'])\n        && request.resource.data.rev is int\n        && request.resource.data.n is int && request.resource.data.n >= 0 && request.resource.data.n <= 100000;\n      allow delete: if isAdmin();\n\n      match /photos/{id} {\n        allow get: if isActiveMe(u) || isAdmin();\n        allow list: if isActiveMe(u) || isAdmin();\n        allow create, update: if sealOk(u, ['kid', 'at', 'z', 'w', 'i', 'c']);\n        allow delete: if isActiveMe(u) || isAdmin();\n      }\n    }\n\n    // ---------- Teman: kode teman, permintaan, pertemanan, dan rencana yang dibagikan ----------\n    // Kode teman (SAKU-XXXX-XXXX) hanya menunjuk ke username pemiliknya; tidak membuka data apa pun.\n    match /fme/{u} {\n      allow get: if isActiveMe(u);\n      allow create: if isActiveMe(u) && request.resource.data.keys().hasOnly(['code']) && request.resource.data.code is string && request.resource.data.code.size() == 8;\n      allow update, delete: if false;\n    }\n    match /fcodes/{code} {\n      allow get: if signedIn();\n      allow create: if signedIn() && isActiveMe(request.resource.data.u)\n        && request.resource.data.keys().hasOnly(['u', 'name'])\n        && request.resource.data.name is string && request.resource.data.name.size() <= 60;\n      allow update, delete: if false;\n    }\n    // Kotak masuk permintaan: pengirim membuat, penerima membaca; keduanya boleh menghapus.\n    match /fin/{to}/from/{from} {\n      allow get: if isMe(to) || isMe(from);\n      allow list: if isMe(to);\n      allow create: if isActiveMe(from) && from != to\n        && request.resource.data.keys().hasOnly(['at', 'name'])\n        && request.resource.data.name is string && request.resource.data.name.size() <= 60;\n      allow update: if false;\n      allow delete: if isMe(to) || isMe(from);\n    }\n    // Catatan permintaan keluar milik pengirim\n    match /fout/{u}/to/{o} {\n      allow get, list: if isMe(u);\n      allow create: if isActiveMe(u) && request.resource.data.keys().hasOnly(['at', 'name']);\n      allow update: if false;\n      allow delete: if isMe(u) || isMe(o);\n    }\n    // Daftar teman: satu entri per sisi; dibuat saat permintaan disetujui oleh penerima.\n    match /fship/{u}/with/{o} {\n      allow get, list: if isMe(u);\n      allow create: if request.resource.data.keys().hasOnly(['at', 'name'])\n        && ((isActiveMe(u) && exists(/databases/$(database)/documents/fin/$(u)/from/$(o)))\n            || (isActiveMe(o) && exists(/databases/$(database)/documents/fin/$(o)/from/$(u))));\n      allow update: if false;\n      allow delete: if isMe(u) || isMe(o);\n    }\n    // Rencana yang dibagikan: pemilik menulis salinannya; pemilik dan penerima membaca.\n    match /fsh/{owner}/to/{r}/items/{key} {\n      allow get, list: if isMe(owner) || isMe(r);\n      allow create, update: if isActiveMe(owner)\n        && exists(/databases/$(database)/documents/fship/$(owner)/with/$(r))\n        && request.resource.data.keys().hasOnly(['kind', 'itemId', 'name', 'at', 'j'])\n        && request.resource.data.j is string && request.resource.data.j.size() <= 40000\n        && request.resource.data.name is string && request.resource.data.name.size() <= 80;\n      allow delete: if isMe(owner) || isMe(r);\n    }\n  }\n}\n";
+/* ================= Edisi Firebase: mesin =================
+   Panggilan ke alamat /api dari net-client.js dialihkan ke sini dan dijalankan langsung ke
+   Firebase lewat REST: Authentication (identitytoolkit/securetoken) dan Firestore.
+   Keamanan sebenarnya ada di firebase/firestore.rules; kode di sini hanya menyusun permintaan
+   dan memberi pesan yang jelas.
+
+   Rancangan singkat:
+   - Satu username = satu "identitas" Firebase Auth dengan email sintetis  <username>.<kode>@catatuang.app
+     (kode acak 6 karakter disimpan di hints/<username> yang bisa dibaca publik).
+   - Reset sandi oleh admin = admin membuat identitas baru (kode baru) dengan sandi awal lalu
+     mengarahkan profiles/<username>.uid ke identitas baru. Sandi lama tidak perlu diketahui.
+   - Token yang dipegang aplikasi: "<username>~<refreshToken Firebase>".
+   - Buku catatan satu pengguna = satu dokumen books/<username> (rev + JSON), foto di books/<username>/photos/<id>. */
+const FB_CFG_KEY = 'catatuang.fbcfg.v1';
+const FbEngine = (function () {
+  const REAL = window.fetch.bind(window);
+  const MIN_PW = 5, FB_MIN_PW = 6, BACKUP_DEFAULT_SEC = 30, MAX_TX = 3000, MAX_OPS = 600, MAX_PHOTO = 450000, MAX_BOOK = 900000, ID_RE = /^[a-z0-9]{8,32}$/, MAIL_DOMAIN = 'catatuang.app';
+  class FbErr extends Error { constructor(status, message, code) { super(message); this.status = status; this.code = code || ''; } }
+  const bad = (m, code) => new FbErr(400, m, code || 'invalid');
+  const SESSION_ERR = () => new FbErr(401, 'Sesi berakhir. Silakan masuk lagi.', 'session');
+  const RULES_OLD = () => new FbErr(403, 'Aturan keamanan Firestore di proyek Anda belum diperbarui untuk fitur ini. Di Firebase Console buka Firestore Database → Rules, tempel isi berkas firebase/firestore.rules dari paket terbaru, lalu klik Publish.', 'rules');
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let last = null;
+
+  /* ---------- konfigurasi Firebase ---------- */
+  function parseCfg(text) {
+    const t = String(text || '');
+    let o = null; try { o = JSON.parse(t); } catch (e) { o = null; }
+    const pick = k => { if (o && typeof o === 'object' && typeof o[k] === 'string') return o[k].trim(); const m = new RegExp(k + '["\']?\\s*[:=]\\s*["\']([^"\']+)["\']').exec(t); return m ? m[1].trim() : ''; };
+    const c = { apiKey: pick('apiKey'), projectId: pick('projectId') };
+    if (!/^AIza[\w-]{20,}$/.test(c.apiKey)) return { error: 'apiKey tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.' };
+    if (!/^[a-z][a-z0-9-]{4,29}$/.test(c.projectId)) return { error: 'projectId tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.' };
+    return { cfg: c };
+  }
+  function readCfg() {
+    let c = window.CATAT_FIREBASE;
+    if (!c || !c.apiKey || !c.projectId) { try { c = JSON.parse(localStorage.getItem(FB_CFG_KEY) || 'null'); } catch (e) { c = null; } }
+    return c && c.apiKey && c.projectId ? c : null;
+  }
+  const baked = () => !!(window.CATAT_FIREBASE && window.CATAT_FIREBASE.apiKey && window.CATAT_FIREBASE.projectId);
+  function saveCfgText(text) {
+    const r = parseCfg(text); if (r.error) return r.error;
+    try { localStorage.setItem(FB_CFG_KEY, JSON.stringify(r.cfg)); } catch (e) { return 'Browser menolak menyimpan pengaturan.'; }
+    T.clear(); AC.clear(); cfgCache = null; last = null; return '';
+  }
+  function clearCfg() { try { localStorage.removeItem(FB_CFG_KEY); } catch (e) { /* abaikan */ } T.clear(); AC.clear(); cfgCache = null; last = null; }
+  function needCfg() { const c = readCfg(); if (!c) throw new FbErr(503, 'Firebase belum dihubungkan. Tempel konfigurasi proyek Firebase Anda.', 'nofirebase'); return c; }
+  const hosts = () => ({ auth: 'https://identitytoolkit.googleapis.com', token: 'https://securetoken.googleapis.com', fs: 'https://firestore.googleapis.com' });
+
+  /* ---------- HTTP ---------- */
+  async function http(url, opt, signal) {
+    let res;
+    try { res = await REAL(url, Object.assign({ cache: 'no-store', signal }, opt)); }
+    catch (e) { if (e && e.name === 'AbortError') throw e; throw Object.assign(new TypeError('Failed to fetch'), { fbNet: true }); }
+    let j = null; try { j = await res.json(); } catch (e) { j = null; }
+    return { ok: res.ok, status: res.status, j };
+  }
+
+  /* ---------- Authentication ---------- */
+  function authErr(r) {
+    const raw = String((r.j && r.j.error && r.j.error.message) || ''), code = raw.split(/[\s:]/)[0];
+    if (/^API key not valid|API_KEY_INVALID|API_KEY_/i.test(raw) || r.status === 400 && /API key/i.test(raw)) return new FbErr(503, 'Kunci API Firebase tidak cocok. Periksa konfigurasi yang ditempel.', 'badkey');
+    switch (code) {
+      case 'OPERATION_NOT_ALLOWED': case 'PASSWORD_LOGIN_DISABLED': return new FbErr(503, 'Masuk dengan Email/Kata sandi belum diaktifkan. Di Firebase Console buka Authentication → Sign-in method → Email/Password → Enable.', 'authoff');
+      case 'CONFIGURATION_NOT_FOUND': return new FbErr(503, 'Firebase Authentication belum dimulai. Di Firebase Console buka Authentication lalu klik Get started.', 'authoff');
+      case 'INVALID_OOB_CODE': case 'EXPIRED_OOB_CODE': return new FbErr(400, 'Tautan konfirmasi tidak valid atau sudah kedaluwarsa. Masuk lalu pilih Kirim ulang email konfirmasi.', 'badlink');
+      case 'INVALID_EMAIL': return new FbErr(400, 'Email tidak valid.', 'bademail');
+      case 'TOO_MANY_ATTEMPTS_TRY_LATER': return new FbErr(429, 'Terlalu banyak percobaan. Coba lagi beberapa menit lagi.', 'locked');
+      case 'EMAIL_EXISTS': return new FbErr(409, 'Username ini sudah dipakai.', 'exists');
+      case 'INVALID_LOGIN_CREDENTIALS': case 'EMAIL_NOT_FOUND': case 'INVALID_PASSWORD': return new FbErr(401, 'Username atau kata sandi salah.', 'badlogin');
+      case 'USER_DISABLED': return new FbErr(403, 'Akun ini dinonaktifkan. Hubungi administrator.', 'disabled');
+      case 'WEAK_PASSWORD': return bad('Kata sandi terlalu lemah. Pakai minimal 6 karakter.');
+      case 'TOKEN_EXPIRED': case 'INVALID_REFRESH_TOKEN': case 'INVALID_ID_TOKEN': case 'USER_NOT_FOUND': case 'CREDENTIAL_TOO_OLD_LOGIN_AGAIN': return new FbErr(401, 'Sesi berakhir. Silakan masuk lagi.', 'session');
+      default: return r.status >= 500 ? new FbErr(503, 'Firebase sedang bermasalah. Coba lagi sebentar lagi.', 'upstream') : new FbErr(502, 'Firebase Authentication menolak permintaan' + (raw ? ': ' + raw : '.'), 'auth');
+    }
+  }
+  async function auth(method, body, signal) {
+    const c = needCfg(), r = await http(hosts().auth + '/v1/accounts:' + method + '?key=' + encodeURIComponent(c.apiKey), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, signal);
+    if (!r.ok) throw authErr(r);
+    return r.j;
+  }
+  /* Batas kirim email konfirmasi: maksimal 3 kali per jam untuk satu alamat (dicatat di perangkat; Firebase juga membatasi dari sisi server). */
+  const MAIL_MAX = 3, MAIL_WIN = 3600000;
+  function mailQuota(key) {
+    const k = 'saku.mailq.' + String(key).toLowerCase(); let a = [];
+    try { a = JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { a = []; }
+    const now = Date.now(); a = (Array.isArray(a) ? a : []).filter(t => now - t < MAIL_WIN);
+    if (a.length >= MAIL_MAX) throw new FbErr(429, 'Batas pengiriman email tercapai (maksimal ' + MAIL_MAX + ' kali per jam). Coba lagi dalam sekitar ' + Math.max(1, Math.ceil((MAIL_WIN - (now - a[0])) / 60000)) + ' menit.', 'mailcap');
+    a.push(now); try { localStorage.setItem(k, JSON.stringify(a)); } catch (e) { /* abaikan */ }
+  }
+  async function sendVerifyMail(username, email, signal, purpose) {
+    if (!/^https?:$/.test(location.protocol)) throw new FbErr(400, 'Email konfirmasi hanya tersedia di versi web.', 'mailweb');
+    const kk = ['u:' + username, 'e:' + email]; kk.forEach(k => { try { const a = JSON.parse(localStorage.getItem('saku.mailq.' + k) || '[]'), n = Date.now(); if (Array.isArray(a) && a.filter(t => n - t < MAIL_WIN).length >= MAIL_MAX) mailQuota(k); } catch (e) { if (e instanceof FbErr) throw e; } });
+    kk.forEach(mailQuota);
+    await auth('sendOobCode', { requestType: 'EMAIL_SIGNIN', email, continueUrl: location.origin + '/?u=' + encodeURIComponent(username) + (purpose === 'pw' ? '&pw=1' : ''), canHandleCodeInApp: true }, signal);
+    try { localStorage.setItem('saku.verify.email', email); } catch (e) { /* abaikan */ }
+  }
+  const T = new Map();   // token yang dipegang aplikasi -> { id, exp, uid }
+  async function idTok(refresh, signal) {
+    const c = T.get(refresh);
+    if (c && Date.now() < c.exp - 120000) return c;
+    const cf = needCfg();
+    const r = await http(hosts().token + '/v1/token?key=' + encodeURIComponent(cf.apiKey), { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refresh) }, signal);
+    if (!r.ok) { const e = authErr(r); throw e.code === 'badlogin' || e.code === 'auth' ? SESSION_ERR() : e; }
+    const n = { id: r.j.id_token, exp: Date.now() + (Number(r.j.expires_in) || 3600) * 1000, uid: r.j.user_id };
+    T.set(refresh, n); return n;
+  }
+
+  /* ---------- Firestore ---------- */
+  function fsErr(r) {
+    const e = (r.j && r.j.error) || {}, msg = String(e.message || ''), st = String(e.status || '');
+    if (/API key not valid|API_KEY_INVALID/i.test(msg)) return new FbErr(503, 'Kunci API Firebase tidak cocok. Periksa konfigurasi yang ditempel.', 'badkey');
+    if (r.status === 401 || st === 'UNAUTHENTICATED') return SESSION_ERR();
+    if (r.status === 403 || st === 'PERMISSION_DENIED') {
+      if (/has not been used|is disabled|SERVICE_DISABLED/i.test(msg)) return new FbErr(503, 'Cloud Firestore belum diaktifkan di proyek Firebase Anda. Buka Firestore Database lalu klik Create database.', 'fsoff');
+      return new FbErr(403, 'Akses ditolak oleh aturan keamanan Firestore. Pasang aturan dari panduan, lalu coba lagi.', 'rules');
+    }
+    if (r.status === 404 && /does not exist/i.test(msg)) return new FbErr(503, 'Database Firestore belum dibuat. Buka Firestore Database lalu klik Create database.', 'nodb');
+    if (r.status === 404 || st === 'NOT_FOUND') return new FbErr(404, 'Data tidak ditemukan.', 'notfound');
+    if (st === 'ALREADY_EXISTS' || (r.status === 409 && /already exists/i.test(msg))) return new FbErr(409, 'Data sudah ada.', 'exists');
+    if (r.status === 409 || st === 'ABORTED' || st === 'FAILED_PRECONDITION') return new FbErr(409, 'Data baru saja berubah.', 'conflict');
+    if (r.status === 429 || st === 'RESOURCE_EXHAUSTED') return new FbErr(503, 'Kuota Firebase hari ini habis. Coba lagi nanti.', 'quota');
+    if (r.status >= 500) return new FbErr(503, 'Firebase sedang bermasalah. Coba lagi sebentar lagi.', 'upstream');
+    return new FbErr(502, 'Firestore menolak permintaan: ' + (msg || r.status), 'fs');
+  }
+  const dbase = () => { const c = needCfg(); return hosts().fs + '/v1/projects/' + encodeURIComponent(c.projectId) + '/databases/(default)/documents'; };
+  const dname = p => 'projects/' + needCfg().projectId + '/databases/(default)/documents/' + p;
+  async function fsReq(method, suffix, body, tok, signal) {
+    const c = needCfg(), sep = suffix.indexOf('?') >= 0 ? '&' : '?', headers = { 'content-type': 'application/json' };
+    if (tok) headers.authorization = 'Bearer ' + tok;
+    return http(dbase() + suffix + sep + 'key=' + encodeURIComponent(c.apiKey), { method, headers, body: body ? JSON.stringify(body) : undefined }, signal);
+  }
+  function enc(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'boolean') return { booleanValue: v };
+    if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    return { stringValue: String(v) };
+  }
+  const encFields = o => { const f = {}; Object.keys(o).forEach(k => { f[k] = enc(o[k]); }); return f; };
+  function dec(v) {
+    if (!v) return null;
+    if ('stringValue' in v) return v.stringValue;
+    if ('integerValue' in v) return Number(v.integerValue);
+    if ('doubleValue' in v) return v.doubleValue;
+    if ('booleanValue' in v) return v.booleanValue;
+    if ('timestampValue' in v) return v.timestampValue;
+    return null;
+  }
+  const decDoc = d => { const o = {}; Object.keys((d && d.fields) || {}).forEach(k => { o[k] = dec(d.fields[k]); }); return o; };
+  async function getDoc(path, tok, signal, mask) {
+    const q = mask ? '?' + mask.map(f => 'mask.fieldPaths=' + encodeURIComponent(f)).join('&') : '';
+    const r = await fsReq('GET', '/' + path + q, null, tok, signal);
+    if (r.status === 404 && !/does not exist/i.test(String((r.j && r.j.error && r.j.error.message) || ''))) return null;
+    if (!r.ok) throw fsErr(r);
+    return { data: decDoc(r.j), updateTime: r.j.updateTime };
+  }
+  async function listDocs(path, tok, signal, mask) {
+    const out = []; let token = '';
+    for (let i = 0; i < 20; i++) {
+      const q = ['pageSize=300'].concat(mask ? mask.map(f => 'mask.fieldPaths=' + encodeURIComponent(f)) : [], token ? ['pageToken=' + encodeURIComponent(token)] : []).join('&');
+      const r = await fsReq('GET', '/' + path + '?' + q, null, tok, signal);
+      if (!r.ok) throw fsErr(r);
+      (r.j.documents || []).forEach(d => out.push({ id: String(d.name).split('/').pop(), data: decDoc(d) }));
+      token = r.j.nextPageToken || ''; if (!token) break;
+    }
+    return out;
+  }
+  async function commit(writes, tok, signal, per) {
+    const n = per || 400;   // aturan keamanan dibatasi 20 pembacaan dokumen per permintaan, jadi penulisan banyak dipecah
+    for (let i = 0; i < writes.length; i += n) {
+      const r = await fsReq('POST', ':commit', { writes: writes.slice(i, i + n) }, tok, signal);
+      if (!r.ok) throw fsErr(r);
+    }
+  }
+  const wSet = (path, data, o) => { const w = { update: { name: dname(path), fields: encFields(data) } }; if (o && o.mask) w.updateMask = { fieldPaths: o.mask }; if (o && o.pre) w.currentDocument = o.pre; return w; };
+  const wDel = (path, pre) => { const w = { delete: dname(path) }; if (pre) w.currentDocument = pre; return w; };
+
+  /* ---------- util & validasi (disalin dari netlify/lib/core.mjs) ---------- */
+  const iso = () => new Date().toISOString();
+  const clean = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  function fbSlug(s) { return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40); }
+  const isYmd = s => { if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const d = new Date(s + 'T00:00:00Z'); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
+  /* Firebase Auth menolak kata sandi di bawah 6 karakter, sedangkan aplikasi ini mengizinkan 5. Sandi pendek dilengkapi tanda ~ HANYA saat dikirim ke Firebase (pengguna tetap mengetik sandinya sendiri). */
+  const fbPw = pw => { pw = String(pw == null ? '' : pw); return pw.length >= FB_MIN_PW ? pw : pw + '~'.repeat(FB_MIN_PW - pw.length); };
+  const cleanBackup = c => { const n = c ? Number(c.backupSeconds) : NaN; return { on: !(c && c.backupOn === false), seconds: Number.isInteger(n) && n >= 5 && n <= 600 ? n : BACKUP_DEFAULT_SEC }; };
+  const rgen = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => (b % 36).toString(36)).join('');
+  const emailFor = (u, g) => u + '.' + g + '@' + MAIL_DOMAIN;
+  const pubProfile = p => { const o = Object.assign({}, p); delete o.uid; return o; };
+  function cleanEmail(raw) {
+    const e = String(raw || '').trim().toLowerCase();
+    if (e.length > 80 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) throw bad('Email tidak valid. Contoh: sifulan12@email.com.');
+    return e;
+  }
+  function cleanReg(b) {
+    const v = { first: clean(b.first), last: clean(b.last), username: String(b.username || '').trim().toLowerCase(), birth: String(b.birth || '').trim(), phone: String(b.phone || '').replace(/[\s().-]/g, ''), email: String(b.email || '').trim() };
+    if (!/\p{L}/u.test(v.first) || v.first.length > 30) throw bad('Isi nama depan Anda.');
+    if (!/\p{L}/u.test(v.last) || v.last.length > 30) throw bad('Isi nama belakang Anda.');
+    if (!/^[a-z][a-z0-9]{3,19}$/.test(v.username)) throw bad('Username 4–20 karakter: huruf kecil dan angka saja, diawali huruf. Contoh: sifulan12.');
+    if (v.birth && (!isYmd(v.birth) || v.birth < '1900-01-01' || v.birth > new Date(Date.now() + 86400000).toISOString().slice(0, 10))) throw bad('Pilih tanggal lahir yang valid.');
+    if (!/^\+?\d{8,15}$/.test(v.phone)) throw bad('Nomor HP tidak valid. Isi 8–15 angka, contoh 081234567890.');
+    if (v.email.length > 80 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)) throw bad('Email tidak valid. Contoh: sifulan12@email.com.');
+    return v;
+  }
+  function cleanNewPw(raw) {
+    const pw = String(raw == null ? '' : raw);
+    if (pw.length < MIN_PW || pw.length > 100) throw bad('Kata sandi minimal ' + MIN_PW + ' karakter.');
+    if (pw === DEFAULT_PW) throw bad('Pilih kata sandi yang berbeda dari kata sandi awal.');
+    return pw;
+  }
+  function cleanTx(d) {
+    if (!d || typeof d !== 'object') throw bad('Data transaksi tidak valid.');
+    const amount = Math.round(Number(d.amount));
+    if (d.type !== 'in' && d.type !== 'out') throw bad('Jenis transaksi tidak valid.');
+    if (!(amount >= 1 && amount <= 1e12)) throw bad('Jumlah uang tidak valid.');
+    if (!/^[a-z0-9_-]{1,30}$/.test(String(d.cat))) throw bad('Kategori tidak valid.');
+    if (!isYmd(String(d.date))) throw bad('Tanggal tidak valid.');
+    const items = (Array.isArray(d.items) ? d.items : []).slice(0, 40).map(i => ({ n: String((i && i.n) || '').slice(0, 60), q: Math.min(999, Math.max(1, Math.round(Number(i && i.q)) || 1)), p: Math.min(1e9, Math.max(0, Math.round(Number(i && i.p)) || 0)) }));
+    if (d.photo != null && !ID_RE.test(String(d.photo))) throw bad('Foto tidak valid.');
+    const t = { type: d.type, amount, cat: String(d.cat), date: String(d.date), note: String(d.note || '').slice(0, 80), items, photo: d.photo || null, createdAt: String(d.createdAt || iso()).slice(0, 40), updatedAt: String(d.updatedAt || iso()).slice(0, 40) };
+    if (d.demo === true) t.demo = true;
+    /* rekening pembayaran (acc) dan rekening tujuan pada pindah saldo / topup e-wallet (to) */
+    ['acc', 'to'].forEach(k => { if (d[k] != null && d[k] !== '') { if (!ID_RE.test(String(d[k]))) throw bad('Rekening tidak valid.'); t[k] = String(d[k]); } });
+    const rf = d.ref;
+    if (rf && typeof rf === 'object' && PLAN_COLS.indexOf(rf.k) >= 0 && ID_RE.test(String(rf.id))) { t.ref = { k: rf.k, id: String(rf.id) }; if (/^\d{4}-(0[1-9]|1[0-2])$/.test(String(rf.p || ''))) t.ref.p = String(rf.p); }
+    return t;
+  }
+  function cleanSettings(d) {
+    const o = {}; if (!d || typeof d !== 'object') return o;
+    if (d.budget != null) o.budget = Math.min(1e12, Math.max(0, Math.round(Number(d.budget)) || 0));
+    if (typeof d.reminder === 'boolean') o.reminder = d.reminder;
+    if (typeof d.currency === 'string' && /^(IDR|USD|CNY|MYR|JPY|KRW)$/.test(d.currency)) o.currency = d.currency;
+    if (d.budgetDay != null) { const n = Math.round(Number(d.budgetDay)); if (n >= 2 && n <= 31) o.budgetDay = n; }
+    if (d.budgetAdds && typeof d.budgetAdds === 'object') {
+      const a = {};
+      Object.keys(d.budgetAdds).filter(k => /^\d{4}-(0[1-9]|1[0-2])$/.test(k)).sort().slice(-36).forEach(k => { const v = Math.min(1e12, Math.max(0, Math.round(Number(d.budgetAdds[k])) || 0)); if (v) a[k] = v; });
+      if (Object.keys(a).length) o.budgetAdds = a;
+    }
+    if (d.catBudgets && typeof d.catBudgets === 'object' && !Array.isArray(d.catBudgets)) {
+      const c = {};
+      Object.keys(d.catBudgets).filter(k => /^[a-z0-9_-]{1,30}$/.test(k)).slice(0, 60).forEach(k => { const v = Math.min(1e12, Math.max(0, Math.round(Number(d.catBudgets[k])) || 0)); if (v) c[k] = v; });
+      if (Object.keys(c).length) o.catBudgets = c;
+    }
+    /* rekening bank / e-wallet pengguna, rekening bawaan pembayaran, dan kategori buatan sendiri */
+    if (Array.isArray(d.accts)) {
+      const seen = {}, list = [];
+      d.accts.slice(0, 40).forEach(x => {
+        if (!x || typeof x !== 'object' || !ID_RE.test(String(x.id)) || seen[x.id]) return; seen[x.id] = 1;
+        const brand = String(x.brand || '').replace(/[^a-z0-9]/g, '').slice(0, 20);
+        list.push({ id: String(x.id), kind: x.kind === 'ewallet' ? 'ewallet' : x.kind === 'cash' ? 'cash' : 'bank', brand, name: String(x.name || '').replace(/\s+/g, ' ').trim().slice(0, 40) || brand, open: Math.max(-1e12, Math.min(1e12, Math.round(Number(x.open)) || 0)) });
+      });
+      if (list.length) o.accts = list;
+    }
+    if (typeof d.payDefault === 'string' && ID_RE.test(d.payDefault)) o.payDefault = d.payDefault;
+    if (Array.isArray(d.customCats)) {
+      const seen = {}, list = [];
+      d.customCats.slice(0, 80).forEach(x => {
+        if (!x || typeof x !== 'object' || !/^u[a-z0-9]{6,20}$/.test(String(x.id)) || seen[x.id]) return; seen[x.id] = 1;
+        const label = String(x.label || '').replace(/\s+/g, ' ').trim().slice(0, 40); if (!label) return;
+        list.push({ id: String(x.id), type: x.type === 'in' ? 'in' : 'out', label, group: String(x.group || '').replace(/[^a-z0-9_]/g, '').slice(0, 30), icon: String(x.icon || 'more').replace(/[^a-z0-9_]/g, '').slice(0, 20) || 'more' });
+      });
+      if (list.length) o.customCats = list;
+    }
+    return o;
+  }
+  /*PLANCLEAN:BEGIN*/
+  const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish'];
+  const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120 };
+  const PLAN_BYTES = 250000;
+  const CICILAN_KIND_IDS = ['kpr', 'mobil', 'hp', 'multi'];
+  const TARGET_KIND_IDS = ['darurat', 'tabungan', 'investasi', 'haji', 'nikah', 'rumah', 'kendaraan', 'liburan', 'pendidikan', 'lain'];
+  /* Merapikan satu data rencana (cicilan, hutang, target, ramean, perjalanan, wishlist). Hasil { ok: data } atau { err: pesan }. */
+  function planClean(c, d, stamp) {
+    const fail = m => ({ err: m });
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return fail('Data tidak valid.');
+    const str = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
+    const int = (v, lo, hi) => { const n = Math.round(Number(v)); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo; };
+    const isDay = s => { if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const t = new Date(s + 'T00:00:00Z'); return !isNaN(t.getTime()) && t.toISOString().slice(0, 10) === s; };
+    const isMon = s => /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
+    const monN = s => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1;
+    const base = { createdAt: str(d.createdAt || stamp, 40), updatedAt: str(d.updatedAt || stamp, 40) };
+    if (c === 'cicilan') {
+      const name = str(d.name, 60), kind = CICILAN_KIND_IDS.indexOf(d.kind) >= 0 ? d.kind : '', mode = d.mode === 'float' || d.mode === 'flat' ? d.mode : '';
+      if (!name) return fail('Isi nama cicilan.');
+      if (!kind) return fail('Pilih jenis cicilan.');
+      if (!mode) return fail('Pilih konsep cicilan.');
+      const amount = int(d.amount, 0, 1e12); if (amount < 1) return fail('Isi nominal cicilan.');
+      const start = str(d.start, 7), end = str(d.end, 7);
+      if (!isMon(start) || !isMon(end)) return fail('Isi bulan mulai dan bulan selesai.');
+      const n = monN(end) - monN(start) + 1; if (n < 1 || n > 600) return fail('Periode cicilan tidak valid (1 sampai 600 bulan).');
+      return { ok: Object.assign({ name, kind, mode, lender: str(d.lender, 60), amount, start, end, day: int(d.day, 1, 31), done0: int(d.done0, 0, n), note: str(d.note, 120), remind: d.remind !== false }, base) };
+    }
+    if (c === 'hutang') {
+      const dir = d.dir === 'piutang' || d.dir === 'hutang' ? d.dir : '', who = str(d.who, 60);
+      if (!dir) return fail('Pilih jenis hutang.');
+      if (!who) return fail('Isi nama orangnya.');
+      const amount = int(d.amount, 0, 1e12); if (amount < 1) return fail('Isi nominal hutang.');
+      const date = str(d.date, 10), first = str(d.first, 10);
+      if (!isDay(date)) return fail('Tanggal pinjam tidak valid.');
+      if (!isDay(first)) return fail('Tanggal jatuh tempo tidak valid.');
+      const freq = d.freq === 'monthend' || d.freq === 'day' ? d.freq : 'once';
+      const o = { dir, who, amount, date, first, freq, day: freq === 'day' ? int(d.day, 1, 31) : 31, inst: freq === 'once' ? 0 : int(d.inst, 0, amount), note: str(d.note, 120), remind: d.remind !== false };
+      if (d.closed === true) o.closed = true;
+      if (d.group != null && String(d.group)) o.group = str(d.group, 40);
+      return { ok: Object.assign(o, base) };
+    }
+    if (c === 'target') {
+      const name = str(d.name, 60), kind = TARGET_KIND_IDS.indexOf(d.kind) >= 0 ? d.kind : 'lain';
+      if (!name) return fail('Isi nama target.');
+      const months = int(d.months, 0, 60), goal = int(d.goal, 0, 1e13);
+      if (goal < 1 && !months) return fail('Isi nominal target.');
+      const deadline = str(d.deadline, 10), start = str(d.start, 10);
+      if (deadline && !isDay(deadline)) return fail('Tanggal target tidak valid.');
+      if (start && !isDay(start)) return fail('Tanggal mulai tidak valid.');
+      const o = { name, kind, goal, months, deadline, start, monthly: int(d.monthly, 0, 1e12), pocket: d.pocket === 'investasi' ? 'investasi' : 'tabungan', base: int(d.base, 0, 1e13), note: str(d.note, 120) };
+      if (d.closed === true) o.closed = true;
+      return { ok: Object.assign(o, base) };
+    }
+    if (c === 'ramean') {
+      const name = str(d.name, 60); if (!name) return fail('Isi nama acara.');
+      const x = d.data == null ? {} : d.data;
+      if (!x || typeof x !== 'object' || Array.isArray(x)) return fail('Data acara tidak valid.');
+      const people = (Array.isArray(x.people) ? x.people : []).slice(0, 30).map((p, i) => str(p, 30) || (i === 0 ? 'Saya' : 'Teman ' + i));
+      if (!people.length) people.push('Saya');
+      const np = people.length, pi = v => { const n = Math.round(Number(v)); return isFinite(n) ? Math.min(np - 1, Math.max(0, n)) : 0; };
+      const items = (Array.isArray(x.items) ? x.items : []).slice(0, 60).map(it => {
+        const o = it && typeof it === 'object' ? it : {}, w = [];
+        (Array.isArray(o.w) ? o.w : []).slice(0, 30).forEach(v => { const n = Math.round(Number(v)); if (isFinite(n) && n >= 0 && n < np && w.indexOf(n) < 0) w.push(n); });
+        return { n: str(o.n, 40), a: int(o.a, 0, 1e10), w: w.sort((p, q) => p - q) };
+      });
+      const data = { people, mode: x.mode === 'item' ? 'item' : 'equal', payer: pi(x.payer), total: int(x.total, 0, 1e11), items, tax: int(x.tax, 0, 100), ship: int(x.ship, 0, 1e10), disc: int(x.disc, 0, 1e10), cat: String(x.cat == null ? '' : x.cat).replace(/[^a-z_]/g, '').slice(0, 20) };
+      if (x.rec && typeof x.rec === 'object' && x.rec.done === true) {
+        const h = {}, src = x.rec.h && typeof x.rec.h === 'object' && !Array.isArray(x.rec.h) ? x.rec.h : {};
+        Object.keys(src).slice(0, 30).forEach(k => { const n = Number(k); if (Number.isInteger(n) && n >= 0 && n < np && /^[a-z0-9]{8,32}$/.test(String(src[k]))) h[n] = String(src[k]); });
+        data.rec = { done: true, at: str(x.rec.at, 40), mine: int(x.rec.mine, 0, 1e11), h };
+      }
+      const dt = str(d.date, 10);
+      return { ok: Object.assign({ name, date: isDay(dt) ? dt : '', budget: int(d.budget, 0, 1e12), note: str(d.note, 120), data }, base) };
+    }
+    if (c === 'trip') {
+      const name = str(d.name, 60); if (!name) return fail('Isi nama perjalanan.');
+      const mode = ['darat', 'laut', 'udara', 'kombinasi'].indexOf(d.mode) >= 0 ? d.mode : 'darat';
+      const date = str(d.date, 10); if (date && !isDay(date)) return fail('Tanggal berangkat tidak valid.');
+      const x = d.data == null ? {} : d.data;
+      if (!x || typeof x !== 'object' || Array.isArray(x)) return fail('Data perjalanan tidak valid.');
+      const num = (v, lo, hi, dp) => { const n = Number(v), k = Math.pow(10, dp || 0); return isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n * k) / k)) : lo; };
+      const segs = [];
+      for (const o0 of (Array.isArray(x.segs) ? x.segs : []).slice(0, 8)) {
+        const o = o0 && typeof o0 === 'object' ? o0 : {}, m = ['darat', 'laut', 'udara'].indexOf(o.m) >= 0 ? o.m : 'darat';
+        const sg = { m, name: str(o.name, 60), km: int(o.km, 0, 20000), h: num(o.h, 0, 300, 1), toll: int(o.toll, 0, 1e8), fare: int(o.fare, 0, 1e9), veh: int(o.veh, 0, 1e9) };
+        if (m === 'darat' && sg.km < 1) return fail('Isi jarak untuk ruas darat.');
+        if (m !== 'darat' && !(sg.h > 0)) return fail('Isi lama perjalanan untuk ruas laut atau udara.');
+        segs.push(sg);
+      }
+      if (!segs.length) return fail('Tambahkan minimal satu ruas perjalanan.');
+      const dep = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(x.dep)) ? String(x.dep) : '06:00';
+      const off = (Array.isArray(x.off) ? x.off : []).slice(0, 80).map(k => String(k)).filter(k => /^[0-9a-z-]{1,24}$/.test(k));
+      const data = { from: str(x.from, 40), to: str(x.to, 40), veh: ['motor', 'mobil', 'suv', 'diesel'].indexOf(x.veh) >= 0 ? x.veh : 'mobil', kmpl: num(x.kmpl, 3, 80, 1), price: int(x.price, 1000, 100000), persons: int(x.persons, 1, 30), rest: int(x.rest, 50, 500), dep, transfer: int(x.transfer, 0, 1e8), off, segs };
+      return { ok: Object.assign({ name, mode, date, budget: int(d.budget, 0, 1e12), note: str(d.note, 120), data }, base) };
+    }
+    if (c === 'wish') {
+      const name = str(d.name, 60); if (!name) return fail('Isi nama wishlist.');
+      const kind = d.kind === 'kegiatan' ? 'kegiatan' : 'barang', cost = int(d.cost, 0, 1e13);
+      if (cost < 1) return fail('Isi estimasi biaya.');
+      const date = str(d.date, 10); if (date && !isDay(date)) return fail('Tanggal rencana tidak valid.');
+      const o = { name, kind, cost, saved: int(d.saved, 0, 1e13), date, freq: ['harian', 'mingguan', 'bulanan'].indexOf(d.freq) >= 0 ? d.freq : 'bulanan', note: str(d.note, 120) };
+      if (d.done === true) o.done = true;
+      return { ok: Object.assign(o, base) };
+    }
+    return fail('Jenis data tidak dikenal.');
+  }
+  /*PLANCLEAN:END*/
+  function cleanPlan(c, d) { const r = planClean(c, d, iso()); if (r.err) throw bad(r.err); return r.ok; }
+  const emptyPlan = () => ({ cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [] });
+  function normPlan(p) { const o = emptyPlan(); if (p && typeof p === 'object') PLAN_COLS.forEach(c => { if (Array.isArray(p[c])) o[c] = p[c].slice(); }); return o; }
+  const byteLen = s => new TextEncoder().encode(s).length;
+  function parseBook(d) {
+    let o = {}; try { o = JSON.parse((d && d.json) || '{}') || {}; } catch (e) { o = {}; }
+    return { rev: Number(d && d.rev) || 0, tx: Array.isArray(o.tx) ? o.tx : [], settings: o.settings && typeof o.settings === 'object' ? o.settings : {}, plan: normPlan(o.plan) };
+  }
+
+
+  /* ---------- salinan tersegel (cadangan tertutup seluruh akun) ----------
+     Edisi ini tidak punya server yang menyimpan rahasia, jadi penyegelan dilakukan oleh aplikasi PENGGUNA sendiri:
+     setelah catatannya berubah, aplikasi menyalin bukunya ke vault/<username> dalam bentuk terenkripsi (AES-GCM, kuncinya
+     dibungkus RSA-OAEP dengan kunci PUBLIK pemulihan di config/public). Administrator hanya bisa mengunduh teks acak itu.
+     Hanya pemegang berkas kunci pemulihan (dibuat sekali saat fitur diaktifkan, tidak pernah disimpan di Firebase) yang
+     dapat membukanya untuk memulihkan. */
+  const u8b64 = u => { let t = ''; for (let i = 0; i < u.length; i += 0x8000) t += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(t).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+  const b64u8 = t => { const r = atob(String(t).replace(/-/g, '+').replace(/_/g, '/')), u = new Uint8Array(r.length); for (let i = 0; i < r.length; i++) u[i] = r.charCodeAt(i); return u; };
+  const vAad = (kind, id, pid) => new TextEncoder().encode('saku-escrow|' + kind + '|' + id + (pid ? '|' + pid : ''));
+  async function zipU8(u8) {
+    if (typeof CompressionStream !== 'function' || typeof Blob !== 'function') return { z: 0, u8 };
+    return { z: 1, u8: new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()) };
+  }
+  async function unzipU8(u8) {
+    if (typeof DecompressionStream !== 'function' || typeof Blob !== 'function') throw bad('Browser ini tidak bisa membuka cadangan terkompresi. Pakai browser yang lebih baru.', 'vaultbad');
+    return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  }
+  const RSA = { name: 'RSA-OAEP', hash: 'SHA-256' };
+  const pubCache = new Map();
+  async function pubKey(str) {
+    if (pubCache.has(str)) return pubCache.get(str);
+    let k; try { k = await crypto.subtle.importKey('jwk', JSON.parse(str), RSA, false, ['encrypt']); } catch (e) { throw new FbErr(502, 'Kunci pemulihan di Firebase tidak valid.', 'vaultkey'); }
+    pubCache.set(str, k); return k;
+  }
+  async function escSeal(pub, kid, aad, obj) {
+    const zz = await zipU8(new TextEncoder().encode(JSON.stringify(obj)));
+    const aes = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']), iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, aes, zz.u8));
+    const w = new Uint8Array(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, pub, await crypto.subtle.exportKey('raw', aes)));
+    const o = { v: 1, a: 'RSA-OAEP+A256GCM', k: kid, w: u8b64(w), i: u8b64(iv), c: u8b64(ct) }; if (zz.z) o.z = 1;
+    return o;
+  }
+  function keyFileOf(raw) {
+    const k = raw && typeof raw === 'object' ? raw : null;
+    if (!k || k.app !== 'saku' || k.kind !== 'recovery-key' || !k.priv || typeof k.kid !== 'string') throw bad('Ini bukan berkas kunci pemulihan SaKu.', 'vaultkey');
+    return k;
+  }
+  async function escOpen(keyFile, aad, s) {
+    if (!s || typeof s !== 'object' || s.v !== 1 || s.a !== 'RSA-OAEP+A256GCM' || ['w', 'i', 'c'].some(f => typeof s[f] !== 'string') || s.c.length > 1_400_000) throw bad('Berkas cadangan tidak dikenali.', 'vaultbad');
+    if (s.k !== keyFile.kid) throw new FbErr(400, 'Berkas kunci ini bukan pasangan cadangan tersebut. Pakai berkas kunci pemulihan yang dibuat saat fitur ini pertama diaktifkan.', 'vaultkey');
+    let priv; try { priv = await crypto.subtle.importKey('jwk', keyFile.priv, RSA, false, ['decrypt']); } catch (e) { throw bad('Berkas kunci pemulihan rusak.', 'vaultkey'); }
+    try {
+      const aes = await crypto.subtle.importKey('raw', await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, priv, b64u8(s.w)), 'AES-GCM', false, ['decrypt']);
+      let pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u8(s.i), additionalData: aad }, aes, b64u8(s.c)));
+      if (s.z === 1) pt = await unzipU8(pt);
+      return JSON.parse(new TextDecoder().decode(pt));
+    } catch (e) { if (e instanceof FbErr) throw e; throw bad('Berkas cadangan rusak, sudah diubah, atau bukan milik akun ini.', 'vaultbad'); }
+  }
+  /* Isi yang dipulihkan dibersihkan dengan pembersih yang sama dengan penulisan biasa */
+  function vaultClean(o) {
+    let skipped = 0;
+    const tx = [], seen = new Set();
+    for (const t of (Array.isArray(o.tx) ? o.tx : []).slice(0, MAX_TX)) {
+      try { if (!t || !ID_RE.test(String(t.id)) || seen.has(t.id)) throw 0; seen.add(t.id); tx.push(Object.assign({ id: String(t.id) }, cleanTx(t))); } catch (e) { skipped++; }
+    }
+    const plan = emptyPlan();
+    for (const col of PLAN_COLS) {
+      for (const p of (Array.isArray(o.plan && o.plan[col]) ? o.plan[col] : []).slice(0, PLAN_MAX[col])) {
+        const r = p && ID_RE.test(String(p.id)) ? planClean(col, p, iso()) : { err: 1 };
+        if (r.ok) plan[col].push(Object.assign({ id: String(p.id) }, r.ok)); else skipped++;
+      }
+    }
+    return { tx, plan, settings: cleanSettings(o.settings), skipped };
+  }
+
+  /* Penyalinan tersegel oleh pemilik akun (latar belakang; gagal tidak pernah mengganggu pencatatan) */
+  const ESC = { rev: new Map(), photosDone: new Map(), seen: new Set(), timers: new Map(), chain: new Map(), pending: new Set() };
+  async function escRun(u, job) {
+    const vc = (await readCfgDoc()).vault; if (!vc.pub) return;
+    const tok = (await idTok(job.refresh)).id, key = await pubKey(vc.pub);
+    let bk = job.bk || null;
+    const getBk = async () => { if (!bk) { const cur = await getDoc('books/' + u, tok); bk = parseBook(cur && cur.data); } return bk; };
+    if (!ESC.seen.has(u)) {   // pertama kali di sesi ini: lewati bila salinan di Firebase sudah sama baru
+      const ex = await getDoc('vault/' + u, tok, null, ['rev', 'kid']);
+      if (ex && ex.data.kid === vc.kid && Number(ex.data.rev) === job.rev) ESC.rev.set(u, vc.kid + ':' + job.rev);
+      ESC.seen.add(u);
+    }
+    if (ESC.rev.get(u) !== vc.kid + ':' + job.rev) {
+      const b = await getBk(), sealed = await escSeal(key, vc.kid, vAad('book', u), { v: 1, id: u, at: iso(), rev: b.rev, tx: b.tx, settings: b.settings, plan: b.plan });
+      if (sealed.c.length > 900000) return;   // terlalu besar untuk satu dokumen Firestore; dilewati
+      const doc = { rev: b.rev, kid: vc.kid, at: iso(), n: b.tx.length, w: sealed.w, i: sealed.i, c: sealed.c }; if (sealed.z) doc.z = 1;
+      await commit([wSet('vault/' + u, doc)], tok);
+      ESC.rev.set(u, vc.kid + ':' + b.rev);
+    }
+    const b2 = await getBk(), own2 = Array.from(new Set(b2.tx.map(t => t && t.photo).filter(p => p && ID_RE.test(String(p))))), sig = own2.slice().sort().join(',');
+    if (ESC.photosDone.get(u) !== sig) {   // foto yang dipakai catatan berubah (mis. setelah pemulihan oleh admin): periksa salinannya
+      const own = own2, b = b2;
+      const have = new Set((await listDocs('vault/' + u + '/photos', tok, null, ['at'])).map(d => d.id)), ownSet = new Set(own);
+      const missing = own.filter(id => !have.has(id)), orphan = Array.from(have).filter(id => !ownSet.has(id));
+      for (const id of missing.slice(0, 5)) {
+        const d = await getDoc('books/' + u + '/photos/' + id, tok); if (!d || typeof d.data.data !== 'string') continue;
+        const sealed = await escSeal(key, vc.kid, vAad('photo', u, id), { v: 1, data: d.data.data, createdAt: String(d.data.createdAt || '') });
+        const doc = { kid: vc.kid, at: iso(), w: sealed.w, i: sealed.i, c: sealed.c }; if (sealed.z) doc.z = 1;
+        if (sealed.c.length <= 900000) await commit([wSet('vault/' + u + '/photos/' + id, doc)], tok);
+      }
+      if (orphan.length) await commit(orphan.slice(0, 20).map(id => wDel('vault/' + u + '/photos/' + id)), tok, null, 8);
+      if (missing.length <= 5 && orphan.length <= 20) ESC.photosDone.set(u, sig); else escKick(u, { refresh: job.refresh, rev: job.rev, bk }, 3000);
+    }
+  }
+  function escKick(u, job, delay) {
+    const prev = ESC.timers.get(u); if (prev) clearTimeout(prev.t);
+    const run = () => {
+      ESC.timers.delete(u);
+      const p = (ESC.chain.get(u) || Promise.resolve()).then(() => escRun(u, job)).catch(() => { /* dicoba lagi pada sinkron berikutnya */ }).then(() => { ESC.pending.delete(p); if (ESC.chain.get(u) === p) ESC.chain.delete(u); });
+      ESC.chain.set(u, p); ESC.pending.add(p);
+    };
+    if (delay > 0) ESC.timers.set(u, { t: setTimeout(run, delay), run }); else run();
+  }
+  /* Untuk uji: jalankan semua penyalinan yang tertunda lalu tunggu selesai */
+  async function vaultFlush() {
+    for (let i = 0; i < 6; i++) {
+      Array.from(ESC.timers.values()).forEach(e => { clearTimeout(e.t); e.run(); });
+      if (!ESC.pending.size) break;
+      await Promise.all(Array.from(ESC.pending));
+    }
+  }
+  const escUpToDate = (u, vc, rev) => !vc.pub || (ESC.rev.get(u) === vc.kid + ':' + rev && ESC.photosDone.has(u));
+
+  /* ---------- sesi ---------- */
+  function testPoll() { const c = readCfg(); return c && c.pollMs && /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? Number(c.pollMs) : 0; }   // interval uji, hanya berlaku di localhost
+  let cfgCache = null;
+  async function readCfgDoc(signal) {
+    if (cfgCache && Date.now() - cfgCache.t < (testPoll() ? 400 : 60000)) return cfgCache;   // pengaturan dibaca paling sering semenit sekali (hemat kuota)
+    const d = await getDoc('config/public', null, signal);
+    cfgCache = cfgFrom(d);
+    return cfgCache;
+  }
+  const cfgFrom = d => ({ v: cleanMin(d && d.data.sessionMinutes), backup: cleanBackup(d && d.data), vault: { pub: d && typeof d.data.vaultPub === 'string' ? d.data.vaultPub : '', kid: d && typeof d.data.vaultKid === 'string' ? d.data.vaultKid : '' }, t: Date.now(), exists: !!d });
+  const sessMin = async signal => (await readCfgDoc(signal)).v;
+  const backupCfg = async signal => (await readCfgDoc(signal)).backup;
+  const AC = new Map();   // token -> { prof, t }
+  /* ---------- Teman: kode teman, permintaan, dan berbagi rencana ----------
+     fme/{u} {code}; fcodes/{KODE} {u,name}; fin/{ke}/from/{dari} {at,name}; fout/{u}/to/{o} {at,name};
+     fship/{u}/with/{o} {at,name}; fsh/{pemilik}/to/{penerima}/items/{kunci} {kind,itemId,name,at,j}. */
+  const FR_AL = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', FR_KINDS = ['wish', 'ramean', 'target', 'trip', 'budget'], FR_MAX_F = 50, FR_BYTES = 30000;
+  const frNorm = x => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^SAKU/, '').slice(0, 8);
+  const frFmt = c => 'SAKU-' + c.slice(0, 4) + '-' + c.slice(4);
+  const uName = a => String((a.prof && (a.prof.name || a.prof.first)) || a.u).slice(0, 60);
+  async function frCode(a, sig) {
+    const g = await getDoc('fme/' + a.u, a.tok.id, sig);
+    if (g && g.data.code) return g.data.code;
+    for (let i = 0; i < 10; i++) {
+      const bytes = crypto.getRandomValues(new Uint8Array(8)); let code = ''; for (let j = 0; j < 8; j++) code += FR_AL[bytes[j] % FR_AL.length];
+      if (await getDoc('fcodes/' + code, a.tok.id, sig)) continue;
+      await commit([wSet('fcodes/' + code, { u: a.u, name: uName(a) }, { pre: { exists: false } })], a.tok.id, sig);
+      await commit([wSet('fme/' + a.u, { code })], a.tok.id, sig); return code;
+    }
+    throw new FbErr(503, 'Kode teman belum bisa dibuat. Coba lagi.', 'busy');
+  }
+  async function frState(a, sig) {
+    const tk = a.tok.id, me = a.u, code = await frCode(a, sig);
+    const [fr, inc, out] = await Promise.all([listDocs('fship/' + me + '/with', tk, sig), listDocs('fin/' + me + '/from', tk, sig), listDocs('fout/' + me + '/to', tk, sig)]);
+    const friendIds = new Set(fr.map(d => d.id)), outgoing = [];
+    for (const o of out) {
+      if (friendIds.has(o.id)) continue;
+      const still = await getDoc('fin/' + o.id + '/from/' + me, tk, sig).catch(() => null);
+      if (still) outgoing.push({ id: o.id, name: o.data.name || o.id, at: o.data.at });
+    }
+    const mineMap = {}, withMe = [];
+    await Promise.all(fr.map(async f => {
+      const [theirs, mine] = await Promise.all([listDocs('fsh/' + f.id + '/to/' + me + '/items', tk, sig).catch(() => []), listDocs('fsh/' + me + '/to/' + f.id + '/items', tk, sig).catch(() => [])]);
+      theirs.forEach(d => { let data = null; try { data = JSON.parse(d.data.j); } catch (e) { /* abaikan */ } if (data) withMe.push({ key: d.id, from: { id: f.id, name: f.data.name || f.id }, kind: d.data.kind, name: d.data.name, at: d.data.at, data }); });
+      mine.forEach(d => { const m = mineMap[d.id] || (mineMap[d.id] = { key: d.id, kind: d.data.kind, itemId: d.data.itemId, name: d.data.name, at: d.data.at, to: [] }); m.to.push({ id: f.id, name: f.data.name || f.id }); });
+    }));
+    const L = x => ({ id: x.id, name: x.data.name || x.id, at: x.data.at });
+    return { code: frFmt(code), friends: fr.map(L), incoming: inc.map(L), outgoing, mine: Object.keys(mineMap).map(k => mineMap[k]), withMe };
+  }
+  async function frUnlink(a, other, sig) {
+    const tk = a.tok.id, me = a.u, w = [];
+    w.push(wDel('fship/' + me + '/with/' + other), wDel('fship/' + other + '/with/' + me), wDel('fin/' + me + '/from/' + other), wDel('fin/' + other + '/from/' + me), wDel('fout/' + me + '/to/' + other), wDel('fout/' + other + '/to/' + me));
+    for (const [o, r] of [[me, other], [other, me]]) (await listDocs('fsh/' + o + '/to/' + r + '/items', tk, sig, ['at']).catch(() => [])).forEach(d => w.push(wDel('fsh/' + o + '/to/' + r + '/items/' + d.id)));
+    await commit(w, tk, sig, 6);
+  }
+  async function frAccept(a, other, name, sig) {
+    const at = iso(), tk = a.tok.id, me = a.u;
+    await commit([wSet('fship/' + me + '/with/' + other, { at, name: String(name || other).slice(0, 60) })], tk, sig);
+    await commit([wSet('fship/' + other + '/with/' + me, { at, name: uName(a) })], tk, sig);
+    await commit([wDel('fin/' + me + '/from/' + other), wDel('fout/' + me + '/to/' + other), wDel('fout/' + other + '/to/' + me)], tk, sig, 6);
+  }
+
+  async function authed(req, fresh) {
+    const m = /^Bearer (.+)$/.exec(req.headers.get('authorization') || ''), tokStr = m ? m[1] : '', i = tokStr.indexOf('~');
+    if (i < 1) throw SESSION_ERR();
+    const u = tokStr.slice(0, i), refresh = tokStr.slice(i + 1), tok = await idTok(refresh, req.signal), c = AC.get(tokStr);
+    if (!fresh && c && Date.now() - c.t < 30000) return Object.assign({}, c, { tok });
+    let p;
+    try { p = await getDoc('profiles/' + u, tok.id, req.signal); }
+    catch (e) { if (e.code === 'rules') throw new FbErr(401, 'Sesi Anda tidak lagi berlaku. Silakan masuk lagi.', 'session'); throw e; }
+    const gone = new FbErr(401, 'Akun Anda dinonaktifkan atau dihapus oleh administrator.', 'disabled');
+    if (!p) throw gone;
+    const prof = p.data;
+    if (prof.uid !== tok.uid) throw new FbErr(401, 'Kata sandi akun ini berubah. Silakan masuk lagi.', 'session');
+    if (prof.active === false || prof.status !== 'active') throw gone;
+    const out = { u, refresh, tokStr, prof, t: Date.now() }; AC.set(tokStr, out);
+    return Object.assign({}, out, { tok });
+  }
+  const needAdmin = a => { if (a.prof.role !== 'admin') throw new FbErr(403, 'Hanya administrator yang boleh melakukan ini.', 'forbidden'); };
+  /* Admin pembantu ('helper', dokumen helpers/<uid>): pengguna biasa dengan catatan sendiri, ditambah menu Admin untuk pekerjaan rutin
+     (setujui/tolak pendaftar, buat akun pengguna, aktifkan/nonaktifkan pengguna). Tidak boleh reset sandi, hapus akun, ubah peran,
+     memegang brankas cadangan, atau mengubah pengaturan, dan hanya menyentuh akun pengguna biasa. */
+  const isStaff = a => a.prof.role === 'admin' || a.prof.role === 'helper';
+  const needStaff = a => { if (!isStaff(a)) throw new FbErr(403, 'Hanya administrator atau admin pembantu yang boleh melakukan ini.', 'forbidden'); };
+  async function session(prof, refresh, signal) { return { mailv: true, token: prof.id + '~' + refresh, account: pubProfile(prof), sessionMinutes: await sessMin(signal), backup: await backupCfg(signal) }; }
+
+  /* ---------- operasi ---------- */
+  const ops = {
+    async status(b, c) {
+      needCfg();
+      const d = await getDoc('config/public', null, c.sig);
+      cfgCache = cfgFrom(d);
+      return { mailv: true, hasAccounts: !!d, setupReady: !d, aiScan: false, sessionMinutes: cfgCache.v, backup: cfgCache.backup };
+    },
+
+    /* ---- Konfirmasi email: tautan masuk-tanpa-sandi dikirim Firebase ke email pendaftar; mengkliknya mengaktifkan akun ---- */
+    async setup(b, c) {
+      needCfg();
+      const username = String(b.username || 'admin').trim().toLowerCase(), pw = String(b.password || '');
+      if (!/^[a-z][a-z0-9]{3,19}$/.test(username)) throw bad('Username admin 4–20 karakter: huruf kecil dan angka, diawali huruf.');
+      if (pw.length < 6 || pw.length > 100) throw bad('Kata sandi minimal 6 karakter.');
+      if (pw === DEFAULT_PW) throw bad('Pilih kata sandi yang berbeda dari kata sandi awal.');
+      if (await getDoc('config/public', null, c.sig)) throw new FbErr(409, 'Akun sudah ada. Masuk memakai akun yang ada.', 'exists');
+      const gen = rgen(), r = await auth('signUp', { email: emailFor(username, gen), password: fbPw(pw), returnSecureToken: true }, c.sig), now = iso();
+      const prof = { id: username, uid: r.localId, name: 'Administrator', role: 'admin', status: 'active', active: true, isDefault: false, createdAt: now, createdBy: 'setup', lastLoginAt: now };
+      try {
+        await commit([wSet('config/public', { ready: true, sessionMinutes: 20, createdAt: now }, { pre: { exists: false } }), wSet('admins/' + r.localId, { username, createdAt: now }, { pre: { exists: false } }), wSet('profiles/' + username, prof, { pre: { exists: false } }), wSet('hints/' + username, { g: gen }, { pre: { exists: false } })], r.idToken, c.sig);
+      } catch (e) { if (e.code === 'exists' || e.code === 'conflict') throw new FbErr(409, 'Akun sudah ada. Masuk memakai akun yang ada.', 'exists'); throw e; }
+      cfgCache = null;
+      return session(prof, r.refreshToken, c.sig);
+    },
+
+    async login(b, c) {
+      needCfg();
+      const id = fbSlug(b.username), pw = String(b.password || '');
+      if (!id || !pw || pw.length > 200) throw bad('Isi username dan kata sandi.');
+      const wrong = () => new FbErr(401, 'Username atau kata sandi salah.', 'badlogin');
+      const h = await getDoc('hints/' + id, null, c.sig); if (!h) throw wrong();
+      const r = await auth('signInWithPassword', { email: emailFor(id, h.data.g), password: fbPw(pw), returnSecureToken: true }, c.sig);
+      let p; try { p = await getDoc('profiles/' + id, r.idToken, c.sig); } catch (e) { if (e.code === 'rules') throw wrong(); throw e; }
+      if (!p || p.data.uid !== r.localId) throw wrong();
+      const prof = p.data;
+      if (prof.status === 'pending' && prof.emailOk === false) throw new FbErr(403, 'Email Anda belum dikonfirmasi. Buka email dari SaKu, klik tautannya (cek folder spam), lalu masuk lagi. Akun langsung aktif tanpa menunggu admin.', 'unverified');
+      if (prof.status === 'pending') throw new FbErr(403, 'Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.', 'pending');
+      if (prof.status === 'rejected') throw new FbErr(403, 'Pendaftaran Anda ditolak admin. Hubungi administrator.', 'rejected');
+      if (prof.active === false) throw new FbErr(403, 'Akun ini dinonaktifkan. Hubungi administrator.', 'disabled');
+      const at = iso();
+      try { await commit([wSet('profiles/' + id, { lastLoginAt: at }, { mask: ['lastLoginAt'], pre: { exists: true } })], r.idToken, c.sig); } catch (e) { if (e.fbNet) throw e; }   // statistik, bukan syarat masuk
+      return session(Object.assign({}, prof, { lastLoginAt: at }), r.refreshToken, c.sig);
+    },
+
+    async register(b, c) {
+      needCfg();
+      const v = cleanReg(b), pw = cleanNewPw(b.password);
+      if (!(await getDoc('config/public', null, c.sig))) throw new FbErr(409, 'Aplikasi belum disiapkan oleh administrator.', 'noadmin');
+      if (await getDoc('hints/' + v.username, null, c.sig)) throw new FbErr(409, 'Username ini sudah dipakai. Coba tambahkan angka lain.', 'dupe');
+      const gen = rgen(), r = await auth('signUp', { email: emailFor(v.username, gen), password: fbPw(pw), returnSecureToken: true }, c.sig), t = iso();
+      const prof = { id: v.username, uid: r.localId, name: v.first + ' ' + v.last, first: v.first, last: v.last, role: 'user', status: 'pending', active: false, isDefault: false, birth: v.birth, phone: v.phone, email: v.email.toLowerCase(), emailOk: false, requestedAt: t, createdAt: t, createdBy: 'daftar' };
+      try { await commit([wSet('profiles/' + v.username, prof, { pre: { exists: false } }), wSet('hints/' + v.username, { g: gen }, { pre: { exists: false } })], r.idToken, c.sig); }
+      catch (e) { if (e.code === 'exists' || e.code === 'conflict') throw new FbErr(409, 'Username ini sudah dipakai. Coba tambahkan angka lain.', 'dupe'); throw e; }
+      let mail = 'fail'; try { await sendVerifyMail(v.username, prof.email, c.sig); mail = 'sent'; } catch (e) { mail = e.code === 'mailcap' ? 'cap' : 'fail'; }
+      return { ok: true, mail };
+    },
+
+    async 'mail.resend'(b, c) {
+      needCfg();
+      const id = fbSlug(b.username), pw = String(b.password || '');
+      if (!id || !pw || pw.length > 200) throw bad('Isi username dan kata sandi.');
+      const wrong = () => new FbErr(401, 'Username atau kata sandi salah.', 'badlogin');
+      const h = await getDoc('hints/' + id, null, c.sig); if (!h) throw wrong();
+      const r = await auth('signInWithPassword', { email: emailFor(id, h.data.g), password: fbPw(pw), returnSecureToken: true }, c.sig);
+      let p; try { p = await getDoc('profiles/' + id, r.idToken, c.sig); } catch (e) { if (e.code === 'rules') throw wrong(); throw e; }
+      if (!p || p.data.uid !== r.localId) throw wrong();
+      if (p.data.status !== 'pending' || p.data.emailOk !== false || !p.data.email) throw bad('Akun ini tidak menunggu konfirmasi email.');
+      let email = p.data.email;
+      if (b.email != null && String(b.email).trim()) {   // pendaftar boleh mengganti email sebelum konfirmasi
+        email = cleanEmail(b.email);
+        if (email !== p.data.email) await commit([wSet('profiles/' + id, { email }, { mask: ['email'], pre: { exists: true } })], r.idToken, c.sig);
+      }
+      await sendVerifyMail(id, email, c.sig);
+      return { ok: true, email: String(email).replace(/^(.{2}).*(@.*)$/, '$1***$2') };
+    },
+
+    async 'profile.set'(b, c) {
+      const a = await authed(c.req, true), p = {};
+      if ('birth' in b) { const v = String(b.birth || '').trim(); if (v && (!isYmd(v) || v < '1900-01-01' || v > new Date(Date.now() + 86400000).toISOString().slice(0, 10))) throw bad('Pilih tanggal lahir yang valid.'); p.birth = v; }
+      if ('photo' in b) { const v = String(b.photo || ''); if (v && (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v) || v.length > 40000)) throw bad('Foto tidak valid atau terlalu besar.'); p.photo = v; }
+      if (!Object.keys(p).length) throw bad('Tidak ada yang diubah.');
+      await commit([wSet('profiles/' + a.u, p, { mask: Object.keys(p), pre: { exists: true } })], a.tok.id, c.sig);
+      AC.delete(a.tokStr);
+      return { account: pubProfile(Object.assign({}, a.prof, p)) };
+    },
+
+    /* Ganti kata sandi butuh verifikasi email: kirim tautan, klik tautannya (berlaku 15 menit), lalu ganti sandi */
+    async 'pw.verify'(b, c) {
+      const a = await authed(c.req, true);
+      if (a.prof.emailOk !== true || !a.prof.email) throw bad('Verifikasi email Anda dulu lewat himbauan di atas, lalu ganti kata sandi.');
+      await sendVerifyMail(a.u, a.prof.email, c.sig, 'pw');
+      return { ok: true, email: String(a.prof.email).replace(/^(.{2}).*(@.*)$/, '$1***$2') };
+    },
+
+    async 'mail.send'(b, c) {
+      const a = await authed(c.req, true);
+      if (!a.prof.email) throw bad('Akun ini belum punya email. Isi email dulu.');
+      if (a.prof.emailOk === true) throw bad('Email Anda sudah terverifikasi.');
+      await sendVerifyMail(a.u, a.prof.email, c.sig);
+      return { ok: true, email: String(a.prof.email).replace(/^(.{2}).*(@.*)$/, '$1***$2') };
+    },
+
+    async 'mail.change'(b, c) {
+      const a = await authed(c.req, true), email = cleanEmail(b.email);
+      if (a.prof.email === email && a.prof.emailOk === true) throw bad('Email ini sudah terverifikasi.');
+      await commit([wSet('profiles/' + a.u, { email, emailOk: false }, { mask: ['email', 'emailOk'], pre: { exists: true } })], a.tok.id, c.sig);
+      AC.delete(a.tokStr);
+      let mail = 'fail'; try { await sendVerifyMail(a.u, email, c.sig); mail = 'sent'; } catch (e) { mail = e.code === 'mailcap' ? 'cap' : 'fail'; }
+      return { ok: true, mail, account: pubProfile(Object.assign({}, a.prof, { email, emailOk: false })) };
+    },
+
+    async 'mail.verify'(b, c) {
+      needCfg();
+      const id = fbSlug(b.u), code = String(b.oobCode || ''), email = String(b.email || '').trim().toLowerCase();
+      if (!id || !code || code.length > 300 || !email) throw bad('Tautan konfirmasi tidak lengkap.');
+      const r = await auth('signInWithEmailLink', { email, oobCode: code }, c.sig), at = iso();
+      const miss = e => e.code === 'rules' || e.code === 'conflict' || e.code === 'missing';
+      if (b.pw) {
+        try { await commit([wSet('profiles/' + id, { pwOkAt: at }, { mask: ['pwOkAt'], pre: { exists: true } })], r.idToken, c.sig); }
+        catch (e) { if (miss(e)) throw new FbErr(403, 'Email ini tidak cocok dengan akun, atau email belum terverifikasi.', 'mismatch'); throw e; }
+        return { ok: true, pw: true };
+      }
+      try { await commit([wSet('profiles/' + id, { status: 'active', active: true, emailOk: true, verifiedAt: at, approvedAt: at, approvedBy: 'email' }, { mask: ['status', 'active', 'emailOk', 'verifiedAt', 'approvedAt', 'approvedBy'], pre: { exists: true } })], r.idToken, c.sig); }
+      catch (e) {
+        if (!miss(e)) throw e;
+        try { await commit([wSet('profiles/' + id, { emailOk: true, verifiedAt: at }, { mask: ['emailOk', 'verifiedAt'], pre: { exists: true } })], r.idToken, c.sig); }   // akun lama yang sudah aktif: verifikasi ulang
+        catch (e2) { if (miss(e2)) throw new FbErr(403, 'Email ini tidak cocok dengan akun, atau akun sudah diproses admin.', 'mismatch'); throw e2; }
+      }
+      return { ok: true };
+    },
+
+    async me(b, c) { const a = await authed(c.req, true); return { mailv: true, account: pubProfile(a.prof), sessionMinutes: await sessMin(c.sig), backup: await backupCfg(c.sig) }; },
+
+    async ping(b, c) { const m = /^Bearer (.+)$/.exec(c.req.headers.get('authorization') || ''); if (!m || m[1].indexOf('~') < 1) throw SESSION_ERR(); return { token: m[1], sessionMinutes: await sessMin(c.sig) }; },
+
+    /* Pengaturan admin: batas waktu login (menit) dan pengingat cadangan akhir pekan (aktif/tidak, lama tampil dalam detik) */
+    async 'config.set'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const cur = await getDoc('config/public', a.tok.id, c.sig), data = {}; let any = false;
+      if (b.sessionMinutes !== undefined) {
+        const n = Number(b.sessionMinutes);
+        if (!Number.isInteger(n) || n < 1 || n > 1440) throw bad('Isi angka bulat 1 sampai 1440 menit.');
+        data.sessionMinutes = n; any = true;
+      }
+      if (b.backupOn !== undefined) { if (typeof b.backupOn !== 'boolean') throw bad('Pilihan pengingat cadangan tidak valid.'); data.backupOn = b.backupOn; any = true; }
+      if (b.backupSeconds !== undefined) {
+        const n = Number(b.backupSeconds);
+        if (!Number.isInteger(n) || n < 5 || n > 600) throw bad('Isi angka bulat 5 sampai 600 detik.');
+        data.backupSeconds = n; any = true;
+      }
+      if (!any) throw bad('Isi angka bulat 1 sampai 1440 menit.');
+      if (data.sessionMinutes === undefined) data.sessionMinutes = cleanMin(cur && cur.data.sessionMinutes);   // aturan keamanan memeriksa sessionMinutes di setiap perubahan
+      await commit([wSet('config/public', data, { mask: Object.keys(data), pre: { exists: true } })], a.tok.id, c.sig);
+      cfgCache = null;
+      const k = await readCfgDoc(c.sig);
+      return { ok: true, sessionMinutes: k.v, backup: k.backup };
+    },
+
+    async poll(b, c) {
+      const a = await authed(c.req, true);
+      const accounts = isStaff(a) ? (await listDocs('profiles', a.tok.id, c.sig)).map(d => { const o = pubProfile(Object.assign({}, d.data, { id: d.id })); if (d.id !== a.u && o.photo) { delete o.photo; o.hasPhoto = true; } return o; }) : [pubProfile(a.prof)];
+      const meta = await getDoc('books/' + a.u, a.tok.id, c.sig, ['rev']), rev = meta ? Number(meta.data.rev) || 0 : 0;
+      let ledger;
+      if (Number.isInteger(b.rev) && b.rev === rev) ledger = { same: true, rev };
+      else { const full = meta ? await getDoc('books/' + a.u, a.tok.id, c.sig) : null, bk = parseBook(full && full.data); ledger = { rev: bk.rev, tx: bk.tx, settings: bk.settings, plan: bk.plan }; }
+      const vc = (await readCfgDoc(c.sig)).vault;
+      if (ledger.rev > 0 && !escUpToDate(a.u, vc, ledger.rev)) escKick(a.u, { refresh: a.refresh, rev: ledger.rev, bk: ledger.same ? null : { rev: ledger.rev, tx: ledger.tx, settings: ledger.settings, plan: ledger.plan } }, 0);
+      return { account: pubProfile(a.prof), accounts, sessionMinutes: await sessMin(c.sig), backup: await backupCfg(c.sig), ledger };
+    },
+
+    async 'pw.change'(b, c) {
+      const a = await authed(c.req, true), cur = String(b.cur || ''), next = String(b.next || '');
+      if (next.length < MIN_PW || next.length > 100) throw bad('Kata sandi baru minimal ' + MIN_PW + ' karakter.');
+      if (next === DEFAULT_PW) throw bad('Pilih kata sandi yang berbeda dari kata sandi awal.');
+      if (a.prof.emailOk === true && !(a.prof.pwOkAt && Date.now() - Date.parse(a.prof.pwOkAt) < 15 * 60000)) throw new FbErr(403, 'Verifikasi email dulu: kirim email verifikasi, klik tautannya, lalu ganti kata sandi (berlaku 15 menit).', 'pwverify');
+      const h = await getDoc('hints/' + a.u, null, c.sig); if (!h) throw SESSION_ERR();
+      let r; try { r = await auth('signInWithPassword', { email: emailFor(a.u, h.data.g), password: fbPw(cur), returnSecureToken: true }, c.sig); }
+      catch (e) { if (e.code === 'badlogin') throw new FbErr(400, 'Kata sandi saat ini salah.', 'badpw'); throw e; }
+      const up = await auth('update', { idToken: r.idToken, password: fbPw(next), returnSecureToken: true }, c.sig);
+      if (a.prof.isDefault !== false || a.prof.pwOkAt) await commit([wSet('profiles/' + a.u, Object.assign({ isDefault: false }, a.prof.pwOkAt ? { pwOkAt: '' } : {}), { mask: a.prof.pwOkAt ? ['isDefault', 'pwOkAt'] : ['isDefault'], pre: { exists: true } })], up.idToken || r.idToken, c.sig);
+      const prof = Object.assign({}, a.prof, { isDefault: false }); AC.delete(a.tokStr);
+      return session(prof, up.refreshToken || r.refreshToken, c.sig);
+    },
+
+    async 'acct.create'(b, c) {
+      const a = await authed(c.req); needStaff(a);
+      const name = clean(b.name), id = fbSlug(name), role = a.prof.role === 'admin' && (b.role === 'admin' || b.role === 'helper') ? b.role : 'user';
+      if (name.length < 2 || name.length > 40) throw bad('Isi nama 2–40 karakter.');
+      if (!id) throw bad('Nama harus memuat huruf atau angka.');
+      const dupe = () => new FbErr(409, 'Nama ini sudah dipakai. Tambahkan inisial atau nama belakang.', 'dupe');
+      if (await getDoc('hints/' + id, null, c.sig)) throw dupe();
+      const gen = rgen(), r = await auth('signUp', { email: emailFor(id, gen), password: DEFAULT_PW, returnSecureToken: true }, c.sig), now = iso();
+      const prof = { id, uid: r.localId, name, role, status: 'active', active: true, isDefault: true, createdAt: now, createdBy: a.u };
+      const w = [wSet('profiles/' + id, prof, { pre: { exists: false } }), wSet('hints/' + id, { g: gen }, { pre: { exists: false } })];
+      if (role === 'admin') w.push(wSet('admins/' + r.localId, { username: id, createdAt: now }, { pre: { exists: false } }));
+      if (role === 'helper') w.push(wSet('helpers/' + r.localId, { username: id, createdAt: now }, { pre: { exists: false } }));
+      try { await commit(w, a.tok.id, c.sig); } catch (e) { if (e.code === 'exists' || e.code === 'conflict') throw dupe(); if (e.code === 'rules' && role === 'helper') throw RULES_OLD(); throw e; }
+      return { ok: true, id };
+    },
+
+    async 'acct.approve'(b, c) { return edit(c, b.id, p => (p.status === 'pending' || p.status === 'rejected' ? { status: 'active', active: true, approvedAt: iso(), approvedBy: '@ADMIN' } : null), 'Akun ini tidak menunggu persetujuan.', true); },
+    async 'acct.reject'(b, c) { return edit(c, b.id, p => (p.status === 'pending' ? { status: 'rejected', active: false, rejectedAt: iso(), rejectedBy: '@ADMIN' } : null), 'Hanya pendaftaran yang menunggu yang bisa ditolak.', true); },
+    async 'acct.toggle'(b, c) { return edit(c, b.id, p => (p.status === 'active' ? { active: p.active === false } : null), 'Akun ini belum aktif.', true); },
+
+    /* Admin memilih siapa yang menjadi administrator (atau mencabutnya): profil + dokumen admins/<uid> yang dibaca aturan keamanan */
+    async 'acct.role'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const role = b.role === 'admin' ? 'admin' : b.role === 'helper' ? 'helper' : b.role === 'user' ? 'user' : '';
+      if (!role) throw bad('Pilih peran: administrator, admin pembantu, atau pengguna.');
+      const id = fbSlug(b.id); if (!id) throw bad('Akun tidak ditemukan.');
+      if (id === a.u) throw bad('Untuk akun Anda sendiri, pakai menu Pengaturan.');
+      const p = await getDoc('profiles/' + id, a.tok.id, c.sig); if (!p) throw new FbErr(404, 'Akun tidak ditemukan.', 'notfound');
+      if (p.data.status !== 'active' || p.data.role === role || !p.data.uid) throw bad('Peran akun ini tidak bisa diubah. Pastikan akunnya aktif dan perannya berbeda.');
+      const at = iso(), w = [wSet('profiles/' + id, { role, roleAt: at, roleBy: a.u }, { mask: ['role', 'roleAt', 'roleBy'], pre: { exists: true } })];
+      /* hanya menyentuh dokumen yang memang perlu berubah, supaya peran admin/pengguna tetap jalan walau aturan lama belum mengenal helpers/ */
+      if (role === 'admin') w.push(wSet('admins/' + p.data.uid, { username: id, createdAt: at })); else if (p.data.role === 'admin') w.push(wDel('admins/' + p.data.uid));
+      if (role === 'helper') w.push(wSet('helpers/' + p.data.uid, { username: id, createdAt: at })); else if (p.data.role === 'helper') w.push(wDel('helpers/' + p.data.uid));
+      try { await commit(w, a.tok.id, c.sig); } catch (e) { if (e.code === 'rules' && (role === 'helper' || p.data.role === 'helper')) throw RULES_OLD(); throw e; }
+      AC.clear();
+      return { ok: true };
+    },
+
+    async 'acct.reset'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const id = fbSlug(b.id); if (!id) throw bad('Akun tidak ditemukan.');
+      if (id === a.u) throw bad('Untuk akun Anda sendiri, pakai menu Pengaturan.');
+      const p = await getDoc('profiles/' + id, a.tok.id, c.sig); if (!p) throw new FbErr(404, 'Akun tidak ditemukan.', 'notfound');
+      const gen = rgen(), r = await auth('signUp', { email: emailFor(id, gen), password: DEFAULT_PW, returnSecureToken: true }, c.sig), now = iso();
+      const w = [wSet('profiles/' + id, { uid: r.localId, isDefault: true, resetAt: now }, { mask: ['uid', 'isDefault', 'resetAt'], pre: { exists: true } }), wSet('hints/' + id, { g: gen }, { mask: ['g'] })];
+      if (p.data.role === 'admin') { w.push(wSet('admins/' + r.localId, { username: id, createdAt: now }, { pre: { exists: false } })); if (p.data.uid) w.push(wDel('admins/' + p.data.uid)); }
+      if (p.data.role === 'helper') { w.push(wSet('helpers/' + r.localId, { username: id, createdAt: now }, { pre: { exists: false } })); if (p.data.uid) w.push(wDel('helpers/' + p.data.uid)); }
+      await commit(w, a.tok.id, c.sig);
+      return { ok: true };
+    },
+
+    async 'acct.delete'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const id = fbSlug(b.id); if (!id) throw bad('Akun tidak ditemukan.');
+      if (id === a.u) throw bad('Anda tidak bisa menghapus akun sendiri.');
+      const p = await getDoc('profiles/' + id, a.tok.id, c.sig); if (!p) throw new FbErr(404, 'Akun tidak ditemukan.', 'notfound');
+      const photos = await listDocs('books/' + id + '/photos', a.tok.id, c.sig, ['createdAt']);
+      await commit(photos.map(d => wDel('books/' + id + '/photos/' + d.id)), a.tok.id, c.sig, 5);
+      const w = [wDel('books/' + id)]; if (p.data.role === 'admin' && p.data.uid) w.push(wDel('admins/' + p.data.uid)); if (p.data.role === 'helper' && p.data.uid) w.push(wDel('helpers/' + p.data.uid));
+      w.push(wDel('hints/' + id)); w.push(wDel('profiles/' + id));
+      await commit(w, a.tok.id, c.sig);
+      try {   // salinan tersegel akun ini (aturan lama belum mengenal koleksi vault, jadi kegagalan di sini diabaikan)
+        const vp = await listDocs('vault/' + id + '/photos', a.tok.id, c.sig, ['at']);
+        await commit(vp.map(d => wDel('vault/' + id + '/photos/' + d.id)).concat([wDel('vault/' + id)]), a.tok.id, c.sig, 8);
+      } catch (e) { if (e.fbNet) throw e; }
+      ESC.rev.delete(id); ESC.photosDone.delete(id); ESC.seen.delete(id);
+      return { ok: true };
+    },
+
+    /* Indeks saham butuh server perantara (sumber datanya menolak panggilan langsung dari peramban); tersedia di edisi Netlify dan Supabase */
+    async 'market.indices'() { throw new FbErr(501, 'Data IHSG tersedia di edisi Netlify dan Supabase.', 'unsupported'); },
+    async 'friend.state'(b, c) { const a = await authed(c.req); return frState(a, c.sig); },
+
+    async 'friend.add'(b, c) {
+      const a = await authed(c.req), me = a.u, tk = a.tok.id, code = frNorm(b.code);
+      if (code.length !== 8) throw bad('Kode teman tidak lengkap. Contoh: SAKU-7K2M-9QXA.');
+      const hit = await getDoc('fcodes/' + code, tk, c.sig); if (!hit) throw bad('Kode teman tidak ditemukan. Periksa lagi kodenya.', 'nocode');
+      const other = String(hit.data.u || ''); if (other === me) throw bad('Itu kode Anda sendiri. Kirim kode ini ke teman, bukan dimasukkan di sini.');
+      if (await getDoc('fship/' + me + '/with/' + other, tk, c.sig)) throw bad('Kalian sudah berteman.');
+      const theirReq = await getDoc('fin/' + me + '/from/' + other, tk, c.sig);
+      if (theirReq) { await frAccept(a, other, theirReq.data.name || hit.data.name, c.sig); return { result: 'friends', state: await frState(a, c.sig) }; }
+      const at = iso();
+      await commit([wSet('fin/' + other + '/from/' + me, { at, name: uName(a) })], tk, c.sig);
+      await commit([wSet('fout/' + me + '/to/' + other, { at, name: String(hit.data.name || other).slice(0, 60) })], tk, c.sig);
+      return { result: 'sent', state: await frState(a, c.sig) };
+    },
+
+    async 'friend.respond'(b, c) {
+      const a = await authed(c.req), id = String(b.id || ''), r = id ? await getDoc('fin/' + a.u + '/from/' + id, a.tok.id, c.sig) : null;
+      if (!r) throw bad('Permintaan ini sudah tidak ada.');
+      if (b.accept === true) await frAccept(a, id, r.data.name, c.sig); else await frUnlink(a, id, c.sig);
+      return { state: await frState(a, c.sig) };
+    },
+
+    async 'friend.remove'(b, c) {
+      const a = await authed(c.req), id = String(b.id || ''); if (!id || id === a.u) throw bad('Teman tidak valid.');
+      await frUnlink(a, id, c.sig); return { state: await frState(a, c.sig) };
+    },
+
+    async 'friend.share'(b, c) {
+      const a = await authed(c.req), me = a.u, tk = a.tok.id, kind = String(b.kind || ''), itemId = String(b.itemId || 'anggaran');
+      if (FR_KINDS.indexOf(kind) < 0) throw bad('Jenis data tidak bisa dibagikan.');
+      if (!ID_RE.test(itemId)) throw bad('ID tidak valid.');
+      const key = kind + '_' + itemId, fr = await listDocs('fship/' + me + '/with', tk, c.sig), want = new Set((Array.isArray(b.to) ? b.to : []).map(String));
+      let data = null, name = '';
+      if (want.size) {
+        if (kind === 'budget') { const st = cleanSettings(b.data); data = { budget: st.budget || 0, catBudgets: st.catBudgets || {} }; name = 'Anggaran bulanan'; if (!data.budget) throw bad('Isi batas pengeluaran dulu sebelum membagikan anggaran.'); }
+        else { data = cleanPlan(kind, b.data); name = String(data.name || 'Tanpa nama').slice(0, 60); }
+        if (JSON.stringify(data).length > FR_BYTES) throw bad('Data terlalu besar untuk dibagikan.');
+      }
+      const at = iso(), w = [];
+      fr.forEach(f => { const p = 'fsh/' + me + '/to/' + f.id + '/items/' + key; if (want.has(f.id) && data) w.push(wSet(p, { kind, itemId, name, at, j: JSON.stringify(data) })); else w.push(wDel(p)); });
+      await commit(w, tk, c.sig, 6);
+      return { state: await frState(a, c.sig) };
+    },
+
+    async 'ledger.write'(b, c) {
+      const a = await authed(c.req), u = a.u, list = Array.isArray(b.ops) ? b.ops : null;
+      if (!list || !list.length) throw bad('Tidak ada yang disimpan.');
+      if (list.length > MAX_OPS) throw bad('Terlalu banyak perubahan sekaligus.');
+      const steps = list.map(o => {
+        if (!o || typeof o !== 'object') throw bad('Permintaan tidak valid.');
+        const k = o.k;
+        if (k === 'tx.set') { if (!ID_RE.test(String(o.id))) throw bad('ID transaksi tidak valid.'); return { k, id: String(o.id), t: cleanTx(o.data) }; }
+        if (k === 'tx.del' || k === 'photo.del') { if (!ID_RE.test(String(o.id))) throw bad('ID tidak valid.'); return { k, id: String(o.id) }; }
+        if (k === 'photo.set') {
+          if (!ID_RE.test(String(o.id))) throw bad('ID foto tidak valid.');
+          const d = o.data && o.data.data;
+          if (typeof d !== 'string' || d.length > MAX_PHOTO || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(d)) throw bad('Foto tidak valid atau terlalu besar.');
+          return { k, id: String(o.id), d };
+        }
+        if (k === 'settings.set') return { k, s: cleanSettings(o.data) };
+        if (k === 'settings.del') return { k };
+        if (k === 'plan.set') {
+          if (PLAN_COLS.indexOf(o.c) < 0) throw bad('Jenis data tidak dikenal.');
+          if (!ID_RE.test(String(o.id))) throw bad('ID tidak valid.');
+          return { k, c: o.c, id: String(o.id), p: cleanPlan(o.c, o.data) };
+        }
+        if (k === 'plan.del') {
+          if (PLAN_COLS.indexOf(o.c) < 0) throw bad('Jenis data tidak dikenal.');
+          if (!ID_RE.test(String(o.id))) throw bad('ID tidak valid.');
+          return { k, c: o.c, id: String(o.id) };
+        }
+        throw bad('Perintah tidak dikenal.');
+      });
+      // 1) foto baru ditulis lebih dulu (per 8 dokumen), supaya catatan tidak pernah menunjuk foto yang belum ada
+      const setP = steps.filter(s => s.k === 'photo.set'), delP = steps.filter(s => s.k === 'photo.del');
+      const now = iso();
+      await commit(setP.map(s => wSet('books/' + u + '/photos/' + s.id, { data: s.d, createdAt: now })), a.tok.id, c.sig, 8);
+      // 2) buku catatan: baca, terapkan, tulis dengan pemeriksaan versi; ulangi bila ada yang menulis bersamaan
+      let result = null;
+      for (let attempt = 0; attempt < 8 && !result; attempt++) {
+        const cur = await getDoc('books/' + u, a.tok.id, c.sig), bk = parseBook(cur && cur.data);
+        const idx = new Map(bk.tx.map((t, i) => [t.id, i])); let changed = false;
+        for (const s of steps) {
+          if (s.k === 'tx.set') {
+            const rec = Object.assign({ id: s.id }, s.t);
+            if (idx.has(s.id)) bk.tx[idx.get(s.id)] = rec;
+            else { if (bk.tx.length >= MAX_TX) throw new FbErr(409, 'Batas ' + MAX_TX + ' transaksi tercapai. Hapus transaksi lama dulu.', 'limit'); idx.set(s.id, bk.tx.push(rec) - 1); }
+            changed = true;
+          } else if (s.k === 'tx.del') { if (idx.has(s.id)) { bk.tx[idx.get(s.id)] = null; idx.delete(s.id); changed = true; } }
+          else if (s.k === 'settings.set') { bk.settings = s.s; changed = true; }
+          else if (s.k === 'settings.del') { bk.settings = {}; changed = true; }
+          else if (s.k === 'plan.set') {
+            const arr = bk.plan[s.c], at = arr.findIndex(x => x && x.id === s.id), rec = Object.assign({ id: s.id }, s.p);
+            if (at >= 0) arr[at] = rec;
+            else { if (arr.length >= PLAN_MAX[s.c]) throw new FbErr(409, 'Batas ' + PLAN_MAX[s.c] + ' data tercapai. Hapus data lama dulu.', 'limit'); arr.push(rec); }
+            changed = true;
+          } else if (s.k === 'plan.del') {
+            const arr = bk.plan[s.c], at = arr.findIndex(x => x && x.id === s.id);
+            if (at >= 0) { arr.splice(at, 1); changed = true; }
+          }
+        }
+        bk.tx = bk.tx.filter(Boolean);
+        if (!changed) { result = { rev: bk.rev, tx: bk.tx, settings: bk.settings, plan: bk.plan }; break; }
+        if (JSON.stringify(bk.plan).length > PLAN_BYTES) throw new FbErr(409, 'Data rencana sudah terlalu besar. Hapus data lama dulu.', 'limit');
+        bk.rev += 1;
+        const json = JSON.stringify({ tx: bk.tx, settings: bk.settings, plan: bk.plan });
+        if (byteLen(json) > MAX_BOOK) throw new FbErr(409, 'Penyimpanan catatan penuh. Hapus transaksi lama dulu.', 'limit');
+        const writes = [wSet('books/' + u, { rev: bk.rev, json }, { pre: cur ? { updateTime: cur.updateTime } : { exists: false } })];
+        if (steps.some(x => x.k === 'tx.set' || x.k === 'tx.del')) writes.push(wSet('profiles/' + u, { txCount: bk.tx.length, lastTxAt: iso() }, { mask: ['txCount', 'lastTxAt'], pre: { exists: true } }));   // statistik untuk admin (jumlah dan waktu saja)
+        try { await commit(writes, a.tok.id, c.sig); result = { rev: bk.rev, tx: bk.tx, settings: bk.settings, plan: bk.plan }; }
+        catch (e) { if (e.code === 'conflict' || e.code === 'exists') { await sleep(20 + Math.random() * 60 * (attempt + 1)); continue; } throw e; }
+      }
+      if (!result) throw new FbErr(503, 'Server sedang sibuk. Coba lagi sebentar lagi.', 'busy');
+      // 3) foto yang dihapus: setelah catatan tersimpan. Gagal di sini tidak masalah (hanya menyisakan foto yatim)
+      if (delP.length) { try { await commit(delP.map(s => wDel('books/' + u + '/photos/' + s.id)), a.tok.id, c.sig, 8); } catch (e) { if (e.fbNet) throw e; } }
+      if (steps.some(x => x.k === 'photo.set' || x.k === 'photo.del' || x.k === 'tx.del')) ESC.photosDone.delete(u);
+      try { const vc = (await readCfgDoc(c.sig)).vault; if (vc.pub && result.rev > 0) escKick(u, { refresh: a.refresh, rev: result.rev, bk: result }, 4000); } catch (e) { /* salinan tersegel tidak boleh mengganggu pencatatan */ }
+      return result;
+    },
+
+    /* ---- brankas cadangan (hanya administrator; yang diunduh hanya teks tersegel, kuncinya tidak ada pada administrator) ---- */
+    async 'vault.status'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      cfgCache = cfgFrom(await getDoc('config/public', null, c.sig));
+      const vc = cfgCache.vault, list = vc.pub ? await listDocs('vault', a.tok.id, c.sig, ['rev', 'kid', 'at', 'n']) : [];
+      return { mode: 'escrow', ready: !!vc.pub, needKey: true, kid: vc.kid, modes: ['replace'], last: null, accounts: list.map(d => ({ id: d.id, n: Number(d.data.n) || 0, at: d.data.at || '', kid: d.data.kid || '' })) };
+    },
+
+    /* Membuat pasangan kunci pemulihan. Tidak menyimpan apa pun: berkas kuncinya harus diunduh dulu, baru kunci publiknya dipasang. */
+    async 'vault.keygen'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const kp = await crypto.subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['encrypt', 'decrypt']);
+      const pj = await crypto.subtle.exportKey('jwk', kp.publicKey), sj = await crypto.subtle.exportKey('jwk', kp.privateKey);
+      const kid = u8b64(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pj.n)))).slice(0, 10);
+      const pubJ = { kty: pj.kty, n: pj.n, e: pj.e, alg: 'RSA-OAEP-256', ext: true, key_ops: ['encrypt'] };
+      return { pub: JSON.stringify(pubJ), kid, keyFile: { app: 'saku', kind: 'recovery-key', v: 1, kid, at: iso(), pub: pubJ, priv: sj } };
+    },
+
+    async 'vault.enable'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const pub = String(b.pub || ''), kid = String(b.kid || '');
+      let j = null; try { j = JSON.parse(pub); } catch (e) { j = null; }
+      if (pub.length > 900 || !/^[A-Za-z0-9_-]{6,20}$/.test(kid) || !j || j.kty !== 'RSA' || typeof j.n !== 'string' || j.n.length < 300 || typeof j.e !== 'string') throw bad('Kunci pemulihan tidak valid.', 'vaultkey');
+      if (u8b64(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(j.n)))).slice(0, 10) !== kid) throw bad('Kunci pemulihan tidak cocok dengan kodenya.', 'vaultkey');
+      await pubKey(pub);
+      const cur = await getDoc('config/public', a.tok.id, c.sig);
+      if (cur && cur.data.vaultPub) throw new FbErr(409, 'Kunci pemulihan sudah dipasang. Pakai berkas kunci yang dibuat saat pertama kali.', 'exists');
+      const data = { vaultPub: pub, vaultKid: kid, sessionMinutes: cleanMin(cur && cur.data.sessionMinutes) };
+      try { await commit([wSet('config/public', data, { mask: Object.keys(data), pre: { exists: true } })], a.tok.id, c.sig); }
+      catch (e) { if (e.code === 'rules') throw RULES_OLD(); throw e; }
+      cfgCache = null;
+      return { ok: true, kid };
+    },
+
+    async 'vault.seal'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const id = fbSlug(b.id), p = id ? await getDoc('profiles/' + id, a.tok.id, c.sig) : null; if (!p) throw new FbErr(404, 'Akun tidak ditemukan.', 'notfound');
+      let d; try { d = await getDoc('vault/' + id, a.tok.id, c.sig); } catch (e) { if (e.code === 'rules') throw RULES_OLD(); throw e; }
+      if (!d) return { id, name: p.data.name, role: p.data.role, empty: true };
+      const photos = (await listDocs('vault/' + id + '/photos', a.tok.id, c.sig, ['at'])).map(x => x.id), v = d.data;
+      const sealed = { v: 1, a: 'RSA-OAEP+A256GCM', k: v.kid, w: v.w, i: v.i, c: v.c }; if (v.z) sealed.z = 1;
+      return { id, name: p.data.name, role: p.data.role, n: Number(v.n) || 0, at: v.at || '', photos, sealed };
+    },
+
+    async 'vault.photo'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const id = fbSlug(b.id), pid = String(b.pid || '');
+      if (!id) throw new FbErr(404, 'Akun tidak ditemukan.', 'notfound');
+      if (!ID_RE.test(pid)) throw bad('ID foto tidak valid.');
+      const d = await getDoc('vault/' + id + '/photos/' + pid, a.tok.id, c.sig);
+      if (!d) return { id, pid, missing: true };
+      const sealed = { v: 1, a: 'RSA-OAEP+A256GCM', k: d.data.kid, w: d.data.w, i: d.data.i, c: d.data.c }; if (d.data.z) sealed.z = 1;
+      return { id, pid, sealed };
+    },
+
+    async 'vault.log'() { return { ok: true, last: null }; },
+
+    /* Pemulihan: aplikasi administrator membuka bagian tersegel dengan berkas kunci yang diberikan, lalu langsung menuliskannya
+       ke akun pemilik. Isinya hanya lewat di memori; tidak ada operasi yang mengembalikannya ke layar. */
+    async 'vault.restore'(b, c) {
+      const a = await authed(c.req); needAdmin(a);
+      const id = fbSlug(b.id), p = id ? await getDoc('profiles/' + id, a.tok.id, c.sig) : null;
+      if (!p) throw new FbErr(404, 'Akun ini belum ada. Buat akunnya dulu dengan nama yang sama, lalu pulihkan.', 'notfound');
+      if (p.data.status !== 'active') throw bad('Akun ini belum aktif.');
+      const kf = keyFileOf(b.key);
+      if (b.phase === 'photo') {
+        const pid = String(b.pid || ''); if (!ID_RE.test(pid)) throw bad('ID foto tidak valid.');
+        const o = await escOpen(kf, vAad('photo', id, pid), b.sealed), d = o && o.data;
+        if (typeof d !== 'string' || d.length > MAX_PHOTO || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(d)) throw bad('Foto di dalam cadangan rusak.', 'vaultbad');
+        try { await commit([wSet('books/' + id + '/photos/' + pid, { data: d, createdAt: String(o.createdAt || iso()).slice(0, 40) })], a.tok.id, c.sig); }
+        catch (e) { if (e.code === 'rules') throw RULES_OLD(); throw e; }
+        return { ok: true };
+      }
+      if (b.phase !== 'book') throw bad('Permintaan tidak valid.');
+      if (b.mode === 'merge') throw bad('Edisi Firebase hanya bisa mengganti seluruh catatan akun saat memulihkan.');
+      const o = await escOpen(kf, vAad('book', id), b.sealed);
+      if (!o || o.id !== id) throw bad('Cadangan ini bukan milik akun tersebut.', 'vaultbad');
+      const cl = vaultClean(o), json = JSON.stringify({ tx: cl.tx, settings: cl.settings, plan: cl.plan });
+      if (byteLen(json) > MAX_BOOK) throw new FbErr(409, 'Isi cadangan terlalu besar untuk satu akun.', 'limit');
+      const rev = Math.max(Number(o.rev) || 0, Math.floor(Date.now() / 1000));   // lebih besar dari revisi apa pun yang ada, supaya perangkat pemilik memuat ulang
+      try { await commit([wSet('books/' + id, { rev, json }), wSet('profiles/' + id, { txCount: cl.tx.length, lastTxAt: iso() }, { mask: ['txCount', 'lastTxAt'], pre: { exists: true } })], a.tok.id, c.sig); }
+      catch (e) { if (e.code === 'rules') throw RULES_OLD(); throw e; }
+      try {   // foto lama yang tak dipakai lagi oleh catatan hasil pemulihan
+        const keep = new Set(cl.tx.map(t => t.photo).filter(Boolean)), ph = await listDocs('books/' + id + '/photos', a.tok.id, c.sig, ['createdAt']), del = ph.filter(d => !keep.has(d.id));
+        if (del.length) await commit(del.map(d => wDel('books/' + id + '/photos/' + d.id)), a.tok.id, c.sig, 8);
+      } catch (e) { if (e.fbNet) throw e; }
+      return { ok: true, n: cl.tx.length, added: cl.tx.length, skipped: cl.skipped, rev };
+    },
+
+    /* Dicatat setelah pengguna mengunduh cadangan; dipakai untuk pengingat dan pemantauan admin (hanya waktunya, bukan isinya) */
+    async 'backup.log'(b, c) {
+      const a = await authed(c.req), t = iso();
+      await commit([wSet('profiles/' + a.u, { lastBackupAt: t }, { mask: ['lastBackupAt'], pre: { exists: true } })], a.tok.id, c.sig);
+      AC.delete(a.tokStr);
+      return { ok: true, lastBackupAt: t };
+    },
+
+    async 'photo.get'(b, c) {
+      const a = await authed(c.req), id = String(b.id || '');
+      if (!ID_RE.test(id)) throw bad('ID foto tidak valid.');
+      const d = await getDoc('books/' + a.u + '/photos/' + id, a.tok.id, c.sig);
+      return d ? { exists: true, doc: { data: d.data.data, createdAt: d.data.createdAt } } : { exists: false };
+    },
+
+    async scan() { throw new FbErr(501, 'Baca foto otomatis tidak tersedia di edisi Firebase.', 'noscan'); }
+  };
+
+  async function edit(c, rawId, patchFn, failMsg, staff) {
+    const a = await authed(c.req); if (staff) needStaff(a); else needAdmin(a);
+    const id = fbSlug(rawId); if (!id) throw bad('Akun tidak ditemukan.');
+    if (id === a.u) throw bad('Untuk akun Anda sendiri, pakai menu Pengaturan.');
+    const p = await getDoc('profiles/' + id, a.tok.id, c.sig); if (!p) throw new FbErr(404, 'Akun tidak ditemukan.', 'notfound');
+    if (a.prof.role !== 'admin' && p.data.role !== 'user') throw new FbErr(403, 'Admin pembantu hanya boleh mengelola akun pengguna biasa.', 'forbidden');
+    const patch = patchFn(p.data); if (!patch) throw bad(failMsg || 'Tidak bisa diproses.');
+    Object.keys(patch).forEach(k => { if (patch[k] === '@ADMIN') patch[k] = a.u; });
+    await commit([wSet('profiles/' + id, patch, { mask: Object.keys(patch), pre: { exists: true } })], a.tok.id, c.sig);
+    return { ok: true };
+  }
+
+  /* ---------- pintu masuk ---------- */
+  const json = (obj, status) => new Response(JSON.stringify(obj), { status: status || 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+  async function handle(req) {
+    let op = null;
+    try {
+      let body = {};
+      try { body = JSON.parse((await req.text()) || '{}'); } catch (e) { throw bad('Permintaan tidak valid.'); }
+      op = body && typeof body.op === 'string' && Object.prototype.hasOwnProperty.call(ops, body.op) ? body.op : null;
+      if (!op) throw bad('Perintah tidak dikenal.');
+      const out = await ops[op](body, { req, sig: req.signal });
+      if (op === 'status') last = null;
+      return json(out);
+    } catch (e) {
+      if (e && (e.fbNet || e.name === 'AbortError')) throw e;
+      if (e instanceof FbErr) { if (op === 'status') last = { code: e.code, message: e.message }; return json({ error: e.message, code: e.code }, e.status); }
+      console.error('catat-uang firebase error', e && e.stack || e);
+      return json({ error: 'Terjadi kesalahan di aplikasi. Muat ulang halaman lalu coba lagi.', code: 'client' }, 500);
+    }
+  }
+  return { handle, parseCfg, saveCfgText, clearCfg, readCfg, baked, last: () => last, pollMs: testPoll, vaultFlush };
+})();
+
+/* Panggilan ke /api dialihkan ke mesin Firebase; yang lain berjalan seperti biasa */
+const fbRealFetch = window.fetch.bind(window);
+window.fetch = function (input, init) {
+  let u = null;
+  try { u = new URL(typeof input === 'string' ? input : (input && input.url) || String(input), location.href); } catch (e) { u = null; }
+  if (!u || u.origin !== location.origin || u.pathname !== '/api') return fbRealFetch(input, init);
+  return FbEngine.handle(new Request(u.href, init));
+};
+/* ================= Edisi Netlify: lapisan jaringan =================
+   File ini dipasang SETELAH part2.js. Fungsi yang namanya sama dengan di part2.js
+   menggantikannya (deklarasi terakhir yang berlaku); build-netlify.js memeriksa
+   bahwa setiap nama yang diganti memang ada di part2.js. */
+const TOKEN_KEY = 'catatuang.token.v1', ACCT_KEY = 'catatuang.acct.v1', QKEY = 'catatuang.backlog.v1.', CKEY = 'catatuang.cache.v1.', SMIN_KEY = 'catatuang.smin.v1';
+Object.assign(S, { vaultOn: true, token: null, remember: true, hasAccounts: null, setupReady: false, offline: false, netErr: '', lastPing: 0, pinging: false, polling: false, pollGen: 0, accSig: '' });
+const L = { rev: null, tx: [], settings: {}, plan: {}, loaded: false, errFired: false, txCbs: new Set(), setCbs: new Set(), planCbs: new Set(), errCbs: new Set(), justQueued: 0 };
+const Q = { uid: null, ops: [], sending: false, solo: false, gen: 0, timer: null, note: 0 };
+const store3 = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }, del(k) { try { localStorage.removeItem(k); } catch (e) { /* abaikan */ } } };
+
+/* ---------- API ---------- */
+function netErr(msg, extra) { const e = new Error(msg); e.userMessage = msg; return Object.assign(e, extra || {}); }
+function setOffline(v) { if (S.offline !== v) { S.offline = v; paintNet(); } }
+function netOff() { return typeof navigator !== 'undefined' && navigator.onLine === false; }   /* kait: edisi statis selalu "online" */
+function apiUrl() { return '/api'; }   /* kait: edisi Supabase memakai alamat Edge Function di proyek Supabase */
+async function api(op, body, signal) {
+  const endpoint = apiUrl();
+  if (!endpoint) throw netErr('Alamat server belum diisi.', { code: 'nourl' });
+  const used = S.token, ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 30000);
+  if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', () => ctl.abort()); }
+  let res;
+  try {
+    res = await fetch(endpoint, { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, used ? { authorization: 'Bearer ' + used } : {}), body: JSON.stringify(Object.assign({ op }, body || {})), signal: ctl.signal, cache: 'no-store' });
+  } catch (e) {
+    clearTimeout(to);
+    if (signal && signal.aborted) throw Object.assign(new Error('dibatalkan'), { name: 'AbortError' });
+    setOffline(true);
+    throw netErr('Tidak bisa terhubung ke server. Periksa koneksi internet.', { code: 'network', transient: true });
+  }
+  clearTimeout(to);
+  let j = null; try { j = await res.json(); } catch (e) { j = null; }
+  if (!res.ok) {
+    if (res.status >= 500) setOffline(res.status === 502 || res.status === 503 || res.status === 504);
+    const er = netErr((j && j.error) || 'Server sedang bermasalah. Coba lagi sebentar lagi.', { status: res.status, code: (j && j.code) || '', transient: res.status >= 500 });
+    if (res.status === 401 && used && S.token === used && j && /^(session|disabled|expired)$/.test(j.code)) onAuthLost(er.userMessage);
+    throw er;
+  }
+  setOffline(false);
+  return j;
+}
+function onAuthLost(msg) {
+  if (S.phase !== 'app') return;
+  const n = Q.ops.length;
+  logout((msg || 'Sesi berakhir. Silakan masuk lagi.') + (n ? ' ' + n + ' catatan offline tetap tersimpan dan akan diunggah setelah Anda masuk.' : ''));
+}
+
+/* ---------- Sesi ---------- */
+function setSessMin(v) { S.sessMin = cleanMin(v); store3.set(SMIN_KEY, String(S.sessMin)); }
+function setToken(t, remember) {
+  S.token = t; if (remember != null) S.remember = !!remember;
+  store3.del(TOKEN_KEY); try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* abaikan */ }
+  if (S.remember) store3.set(TOKEN_KEY, t); else { try { sessionStorage.setItem(TOKEN_KEY, t); } catch (e) { /* abaikan */ } }
+}
+function readStoredToken() {
+  const a = store3.get(TOKEN_KEY); if (a) return { t: a, remember: true };
+  try { const b = sessionStorage.getItem(TOKEN_KEY); if (b) return { t: b, remember: false }; } catch (e) { /* abaikan */ }
+  return null;
+}
+function saveSession() { /* token disimpan lewat setToken */ }
+function touchSession() { /* tidak dipakai */ }
+function clearSession() { S.token = null; store3.del(TOKEN_KEY); store3.del(ACCT_KEY); try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* abaikan */ } wipeCache(); }
+function tryRestore() { /* pemulihan sesi dilakukan di netBoot */ }
+function cacheAcct(a) { if (a) store3.set(ACCT_KEY, JSON.stringify(a)); }
+function readAcct() { try { const a = JSON.parse(store3.get(ACCT_KEY) || 'null'); return a && a.id ? a : null; } catch (e) { return null; } }
+function onActivity() {
+  if (!S.token || S.pinging || Date.now() - S.lastPing < 60000) return;
+  const used = S.token; S.lastPing = Date.now(); S.pinging = true;
+  api('ping').then(r => { if (S.token === used && r && r.token) setToken(r.token); if (r && r.sessionMinutes) setSessMin(r.sessionMinutes); if (r) setBackupCfg(r.backup); }).catch(() => { S.lastPing = 0; }).then(() => { S.pinging = false; });
+}
+
+/* ---------- Tampilan login: akun pertama ---------- */
+function nodbHTML() {
+  return '<div class="boot">' + LOGO + '<h2>Server tidak terjangkau</h2><p>' + esc(S.netErr || 'Periksa koneksi internet Anda, lalu coba lagi.') + '</p><button class="btn btn-primary" data-act="net-retry">Coba lagi</button></div>';
+}
+function setupHTML() {
+  if (!S.setupReady) return '<h2>Server belum disiapkan</h2><p class="sub">Belum ada akun, dan variabel <code>SETUP_CODE</code> belum diisi di Netlify. Isi di Site configuration → Environment variables, deploy ulang, lalu muat ulang halaman ini.</p>';
+  return `<form id="setup-form" style="display:contents" novalidate><h2>Buat akun admin</h2><p class="sub">Belum ada akun. Masukkan kode setup dari pengaturan Netlify, lalu pilih username dan kata sandi administrator.</p>
+    <div class="field"><label for="s-code">Kode setup</label><input class="input" id="s-code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+    <div class="field"><label for="s-user">Username admin</label><input class="input" id="s-user" value="admin" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20"><small class="hint">4–20 huruf kecil atau angka, diawali huruf.</small></div>
+    <div class="field"><label for="s-pw">Kata sandi admin</label><div class="pw"><input class="input" id="s-pw" type="password" autocomplete="new-password" placeholder="Minimal 6 karakter"><button type="button" class="eye" data-act="toggle-pw" data-t="s-pw" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div></div>
+    <p class="form-err" id="s-err" role="alert" hidden></p><button class="btn btn-primary" id="s-btn" type="submit">Buat akun admin</button></form>`;
+}
+async function submitSetup() {
+  const err = $('#s-err'), btn = $('#s-btn'); err.hidden = true;
+  btn.disabled = true; btn.textContent = 'Membuat…';
+  try {
+    const r = await api('setup', { code: $('#s-code').value, username: $('#s-user').value, password: $('#s-pw').value });
+    setSessMin(r.sessionMinutes); setBackupCfg(r.backup); S.hasAccounts = true; setToken(r.token, true); S.accounts = { [r.account.id]: r.account }; cacheAcct(r.account);
+    prepareLedger(r.account.id); enterApp(r.account);
+  } catch (e) { err.textContent = e.userMessage || 'Gagal membuat akun.'; err.hidden = false; btn.disabled = false; btn.textContent = 'Buat akun admin'; }
+}
+async function setupAdmin() { /* tidak dipakai di edisi Netlify */ }
+function subscribeAccounts() { /* tidak dipakai di edisi Netlify */ }
+
+/* ---------- Masuk / daftar / admin ---------- */
+async function doLogin() {
+  const err = $('#l-err'), btn = $('#l-btn'), name = $('#l-name').value, pw = $('#l-pw').value;
+  const fail = m => { err.textContent = m; err.hidden = false; };
+  err.hidden = true;
+  if (!slug(name) || !pw) return fail('Isi nama dan kata sandi.');
+  btn.disabled = true; btn.textContent = 'Memeriksa…';
+  try {
+    const r = await api('login', { username: name, password: pw });
+    S.mailv = !!r.mailv; setSessMin(r.sessionMinutes); setBackupCfg(r.backup); setToken(r.token, !!($('#l-rem') && $('#l-rem').checked)); cacheAcct(r.account);
+    S.accounts = { [r.account.id]: r.account }; S.accLoaded = true; S.accSig = '';
+    prepareLedger(r.account.id); enterApp(r.account);
+  } catch (e) { fail(e.userMessage || 'Gagal masuk. Coba lagi.'); const rs = $('#l-resend'); if (rs) rs.hidden = e.code !== 'unverified'; const rc = $('#l-mchg'); if (rc) rc.hidden = e.code !== 'unverified'; }
+  btn.disabled = false; btn.textContent = 'Masuk';
+}
+async function submitRegistration(v) {
+  try { const r = await api('register', v); S.regMail = (r && r.mail) || ''; return ''; }
+  catch (e) { if (e.status && e.status < 500) return e.userMessage; throw e; }
+}
+async function refreshAccounts() { for (let i = 0; i < 30 && S.polling; i++) await sleep(100); await pollNow(); }
+async function adminOp(op, id) { await api(op, { id }); await refreshAccounts(); }
+function approveRemote(a) { return adminOp('acct.approve', a.id); }
+function rejectRemote(a) { return adminOp('acct.reject', a.id); }
+function resetRemote(a) { return adminOp('acct.reset', a.id); }
+function toggleRemote(a) { return adminOp('acct.toggle', a.id); }
+function deleteRemote(a) { return adminOp('acct.delete', a.id); }
+async function roleRemote(a, role) { await api('acct.role', { id: a.id, role }); await refreshAccounts(); }
+async function createAccountRemote(name, id, role) {
+  try { await api('acct.create', { name, role }); await refreshAccounts(); return ''; }
+  catch (e) { if (e.status && e.status < 500 && e.status !== 401) return e.userMessage; throw e; }
+}
+async function applyPwChange(cur, n1) {
+  try {
+    const r = await api('pw.change', { cur, next: n1 });
+    setToken(r.token); S.lastPing = Date.now(); cacheAcct(r.account);
+    S.accounts[r.account.id] = r.account; S.me = r.account; S.accSig = ''; onAccountsChanged();
+    return '';
+  } catch (e) { if (e.status === 400) return e.userMessage; throw e; }
+}
+async function saveSessMinRemote(n) { const r = await api('config.set', { sessionMinutes: n }); setSessMin(r.sessionMinutes); setBackupCfg(r.backup); }
+async function saveBackupCfgRemote(on, n) { const r = await api('config.set', { backupOn: !!on, backupSeconds: n }); setBackupCfg(r.backup); }
+async function markBackupRemote() {
+  const r = await api('backup.log'), m = S.accounts[S.me.id];
+  if (r && r.lastBackupAt && m) { S.accounts[S.me.id] = Object.assign({}, m, { lastBackupAt: r.lastBackupAt }); S.me = S.accounts[S.me.id]; cacheAcct(S.me); S.accSig = ''; }
+}
+
+/* ---------- Pembukuan: salinan lokal + antrean offline (backlog) ---------- */
+function rid() { const a = new Uint8Array(15); crypto.getRandomValues(a); return Array.from(a, b => (b % 36).toString(36)).join(''); }
+function qLoad(uid) { try { const a = JSON.parse(store3.get(QKEY + uid) || '[]'); return (Array.isArray(a) ? a : []).filter(o => o && o.k).map(op => ({ op, w: null, deferred: true })); } catch (e) { return []; } }
+function qSave() {
+  const put = () => { if (!Q.ops.length) { store3.del(QKEY + Q.uid); return true; } return store3.set(QKEY + Q.uid, JSON.stringify(Q.ops.map(e => e.op))); };
+  if (put()) return true;
+  wipeCache(); return put();
+}
+function wipeCache() { try { const ks = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(CKEY) === 0) ks.push(k); } ks.forEach(k => localStorage.removeItem(k)); } catch (e) { /* abaikan */ } }
+let cacheT = null;
+function cacheSave() { clearTimeout(cacheT); cacheT = setTimeout(() => { if (S.me) store3.set(CKEY + S.me.id, JSON.stringify({ rev: L.rev, tx: L.tx, settings: L.settings, plan: L.plan })); }, 700); }
+function prepareLedger(uid) {
+  Q.gen++; Q.uid = uid; Q.ops = qLoad(uid); Q.sending = false; Q.solo = false;
+  L.rev = null; L.tx = []; L.settings = {}; L.plan = {}; L.loaded = false; L.errFired = false;
+  try { const c = JSON.parse(store3.get(CKEY + uid) || 'null'); if (c && Array.isArray(c.tx)) { L.rev = c.rev; L.tx = c.tx; L.settings = c.settings || {}; L.plan = c.plan || {}; L.loaded = true; } } catch (e) { /* abaikan */ }
+}
+function viewState() {
+  const map = new Map(L.tx.map(t => [t.id, t])); let settings = L.settings; const plan = {};
+  PLAN_COLS.forEach(c => { plan[c] = ((L.plan && L.plan[c]) || []).slice(); });
+  for (const e of Q.ops) {
+    const o = e.op;
+    if (o.k === 'tx.set') map.set(o.id, Object.assign({ id: o.id, pending: true }, o.data));
+    else if (o.k === 'tx.del') map.delete(o.id);
+    else if (o.k === 'settings.set') settings = o.data || {};
+    else if (o.k === 'settings.del') settings = {};
+    else if (o.k === 'plan.set' && plan[o.c]) { const rec = Object.assign({ id: o.id, pending: true }, o.data), at = plan[o.c].findIndex(x => x.id === o.id); if (at >= 0) plan[o.c][at] = rec; else plan[o.c].push(rec); }
+    else if (o.k === 'plan.del' && plan[o.c]) plan[o.c] = plan[o.c].filter(x => x.id !== o.id);
+  }
+  return { tx: Array.from(map.values()), settings, plan };
+}
+const snapTx = () => ({ docs: viewState().tx.map(t => ({ id: t.id, data: () => { const c = Object.assign({}, t); delete c.id; return c; } })) });
+const snapSet = () => { const s = viewState().settings, ex = Object.keys(s || {}).length > 0; return { exists: ex, data: () => (ex ? Object.assign({}, s) : undefined) }; };
+const snapPlan = c => ({ docs: (viewState().plan[c] || []).map(t => ({ id: t.id, data: () => { const x = Object.assign({}, t); delete x.id; return x; } })) });
+function emitView() { if (!L.loaded) return; L.txCbs.forEach(f => f()); L.setCbs.forEach(f => f()); L.planCbs.forEach(f => f()); }
+function applyLedger(d) {
+  if (!d) return;
+  if (d.same) { if (!L.loaded) { L.loaded = true; emitView(); } return; }
+  L.rev = d.rev; L.tx = d.tx || []; L.settings = d.settings || {}; L.plan = d.plan || {}; L.loaded = true; cacheSave(); emitView();
+}
+function settleQueued(batch) {
+  batch.forEach(e => { e.deferred = true; const w = e.w; e.w = null; if (w) { L.justQueued = Date.now(); w.resolve({ queued: true }); } });
+}
+function queueOp(op) {
+  return new Promise((resolve, reject) => {
+    const e = { op, w: { resolve, reject }, deferred: false };
+    Q.ops.push(e);
+    if (!qSave()) { Q.ops.pop(); reject(netErr('Penyimpanan di perangkat penuh. Sambungkan ke internet dulu agar catatan terunggah, lalu coba lagi.')); return; }
+    emitView(); paintNet(); kick();
+  });
+}
+function kick() { if (Q.sending || !Q.ops.length || !S.token || S.phase !== 'app') return; setTimeout(flushQ, 0); }
+async function flushQ() {
+  if (Q.sending || S.phase !== 'app') return;
+  Q.sending = true; const gen = Q.gen; paintNet();
+  try {
+    while (Q.ops.length && S.token && gen === Q.gen) {
+      const n = Q.solo ? 1 : Math.min(Q.ops.length, 400), batch = Q.ops.slice(0, n);
+      if (netOff()) { settleQueued(batch); setOffline(true); break; }
+      let r;
+      try { r = await api('ledger.write', { ops: batch.map(e => e.op) }); }
+      catch (e) {
+        if (gen !== Q.gen) break;
+        if (e.transient || e.status === 401) { settleQueued(batch); break; }
+        if (batch.length > 1) { Q.solo = true; continue; }
+        Q.ops.shift(); qSave(); emitView();
+        const w = batch[0].w; batch[0].w = null;
+        if (w) w.reject(e); else toast('Satu catatan offline ditolak server: ' + e.userMessage);
+        continue;
+      }
+      if (gen !== Q.gen) break;
+      Q.ops.splice(0, n); qSave(); applyLedger(r);
+      Q.note += batch.filter(e => e.deferred).length;
+      batch.forEach(e => { const w = e.w; e.w = null; if (w) w.resolve({ synced: true }); });
+    }
+    if (gen === Q.gen && !Q.ops.length) {
+      Q.solo = false;
+      if (Q.note) { toast(Q.note === 1 ? '1 catatan offline berhasil diunggah' : Q.note + ' catatan offline berhasil diunggah'); Q.note = 0; }
+    }
+  } finally { if (gen === Q.gen) Q.sending = false; paintNet(); }
+}
+function toastText(msg) {
+  if (L.justQueued && Date.now() - L.justQueued < 6000) {
+    if (msg === 'Transaksi tersimpan') return 'Tersimpan di perangkat. Diunggah otomatis saat online.';
+    if (msg === 'Transaksi diperbarui') return 'Perubahan tersimpan di perangkat. Diunggah otomatis saat online.';
+    if (msg === 'Transaksi dihapus') return 'Dihapus di perangkat. Disinkronkan otomatis saat online.';
+  }
+  return msg;
+}
+async function photoGet(id) {
+  for (let i = Q.ops.length - 1; i >= 0; i--) {
+    const o = Q.ops[i].op; if (o.id !== id) continue;
+    if (o.k === 'photo.set') return { exists: true, data: () => o.data };
+    if (o.k === 'photo.del') return { exists: false, data: () => undefined };
+  }
+  const r = await api('photo.get', { id });
+  return { exists: !!r.exists, data: () => r.doc };
+}
+/* Penyimpanan bergaya Firestore (hanya jalur ledger/{id}) supaya kode bersama tidak perlu diubah */
+const txDoc = id => ({ id, set: data => queueOp({ k: 'tx.set', id, data }), delete: () => queueOp({ k: 'tx.del', id }) });
+const photoDoc = id => ({ id, set: data => queueOp({ k: 'photo.set', id, data }), delete: () => queueOp({ k: 'photo.del', id }), get: () => photoGet(id) });
+const settingsDoc = {
+  set: data => queueOp({ k: 'settings.set', data }), delete: () => queueOp({ k: 'settings.del' }),
+  onSnapshot(cb) { const f = () => cb(snapSet()); L.setCbs.add(f); if (L.loaded) setTimeout(f, 0); return () => { L.setCbs.delete(f); }; }
+};
+const planDoc = (c, id) => ({ id, set: data => queueOp({ k: 'plan.set', c, id, data }), delete: () => queueOp({ k: 'plan.del', c, id }) });
+const planCol = c => ({
+  doc: id => planDoc(c, id || rid()),
+  async get() { return snapPlan(c); },
+  onSnapshot(cb) { const f = () => cb(snapPlan(c)); L.planCbs.add(f); if (L.loaded) setTimeout(f, 0); return () => { L.planCbs.delete(f); }; }
+});
+const txCol = {
+  orderBy() { return txCol; }, limit() { return txCol; },
+  doc: id => txDoc(id || rid()),
+  async get() { return snapTx(); },
+  onSnapshot(cb, errCb) {
+    const f = () => cb(snapTx()); L.txCbs.add(f); if (errCb) L.errCbs.add(errCb);
+    if (L.loaded) setTimeout(f, 0);
+    return () => { L.txCbs.delete(f); if (errCb) L.errCbs.delete(errCb); };
+  }
+};
+S.db = {
+  doc(path) {
+    if (!/^ledger\/[^/]+$/.test(path)) throw new Error('Jalur tidak didukung: ' + path);
+    return { collection(name) { if (name === 'tx') return txCol; if (name === 'photos') return { doc: id => photoDoc(id || rid()) }; if (name === 'meta') return { doc: () => settingsDoc }; if (PLAN_COLS.indexOf(name) >= 0) return planCol(name); throw new Error('Koleksi tidak didukung: ' + name); } };
+  }
+};
+async function addDemo() {
+  if (S.busy.demo) return; S.busy.demo = true;
+  const list = demoTx(), now = new Date().toISOString();
+  try {
+    await Promise.all(list.map(t => queueOp({ k: 'tx.set', id: rid(), data: Object.assign({}, t, { createdAt: now, updatedAt: now }) })));
+    toast('Data contoh siap. Hapus kapan saja di Pengaturan.');
+  } catch (e) { toast(dbErrMsg(e)); }
+  S.busy.demo = false;
+}
+async function delDemo() {
+  const ids = S.tx.filter(t => t.demo).map(t => t.id);
+  try { await Promise.all(ids.map(id => queueOp({ k: 'tx.del', id }))); toast('Data contoh dihapus'); } catch (e) { toast(dbErrMsg(e)); }
+}
+
+/* ---------- Sinkron berkala ---------- */
+function applyAccounts(r) {
+  setBackupCfg(r.backup);
+  if (r.sessionMinutes && cleanMin(r.sessionMinutes) !== S.sessMin) { setSessMin(r.sessionMinutes); if (S.view === 'akun' || S.view === 'admin') VIEWS[S.view].update(); }
+  const list = Array.isArray(r.accounts) ? r.accounts : [r.account], m = {};
+  list.forEach(a => { m[a.id] = a; }); m[r.account.id] = r.account;
+  const sig = JSON.stringify(m); if (sig === S.accSig) return;
+  S.accSig = sig; S.accounts = m; S.accLoaded = true; cacheAcct(r.account); onAccountsChanged();
+}
+async function pollNow() {
+  if (S.phase !== 'app' || !S.token || S.polling) return;
+  S.polling = true; const gen = S.pollGen;
+  try {
+    const r = await api('poll', { rev: L.rev });
+    if (gen !== S.pollGen) return;
+    applyAccounts(r); applyLedger(r.ledger);
+    if (Q.ops.length) kick();
+  } catch (e) {
+    if (gen === S.pollGen && !L.loaded && !L.errFired) { L.errFired = true; L.errCbs.forEach(f => f()); }
+  } finally { S.polling = false; }
+}
+function pollEvery() { return S.offline ? 10000 : 30000; }
+function schedulePoll() {
+  const gen = S.pollGen; clearTimeout(S.pollT);
+  S.pollT = setTimeout(async () => {
+    if (gen !== S.pollGen) return;
+    if (!document.hidden) await pollNow();
+    if (gen === S.pollGen) schedulePoll();
+  }, pollEvery());
+}
+function onEnterApp() {
+  S.pollGen++; S.lastPing = Date.now(); schedulePoll();
+  clearInterval(Q.timer); Q.timer = setInterval(() => { if (Q.ops.length) kick(); }, 15000);
+  setTimeout(paintNet, 0); kick(); pollNow();
+}
+function onLogout() {
+  Q.gen++; Q.ops = []; Q.sending = false; Q.solo = false; Q.note = 0; clearInterval(Q.timer); clearTimeout(cacheT);
+  S.pollGen++; clearTimeout(S.pollT); S.accSig = ''; S.accounts = {};
+  L.rev = null; L.tx = []; L.settings = {}; L.plan = {}; L.loaded = false; L.errFired = false;
+}
+function paintNet() {
+  const el = $('#netbar'); if (!el) return;
+  const n = Q.ops.length, off = S.offline || netOff();
+  let html = '', cls = 'netbar';
+  if (S.phase !== 'app') { el.hidden = true; return; }
+  if (off) { cls += ' off'; html = ic('cloudoff', 18) + '<span>Tidak ada internet. ' + (n ? n + ' catatan menunggu diunggah.' : 'Anda tetap bisa mencatat, nanti diunggah otomatis.') + '</span>'; }
+  else if (n && Q.sending) html = '<span class="spin">' + ic('cloudup', 18) + '</span><span>Mengunggah ' + n + ' catatan…</span>';
+  else if (n) html = ic('cloudup', 18) + '<span>' + n + ' catatan menunggu diunggah.</span><button type="button" class="btn btn-ghost btn-sm" data-act="net-sync">Coba lagi</button>';
+  if (!html) { el.hidden = true; return; }
+  if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; }
+  el.className = cls; el.hidden = false;
+}
+ACT['net-sync'] = () => { kick(); pollNow(); };
+ACT['net-retry'] = () => { S.phase = 'boot'; showPhase(); netBoot(); };
+window.addEventListener('online', () => { setOffline(false); kick(); pollNow(); });
+window.addEventListener('offline', () => { setOffline(true); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.phase === 'app') { kick(); pollNow(); } });
+
+/* ---------- Unduhan & baca foto ---------- */
+const browserDownloads = {
+  async save({ filename, data }) {
+    const types = { json: 'application/json', pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv;charset=utf-8' };
+    const ext = String(filename).split('.').pop().toLowerCase();
+    const blob = data instanceof Blob ? data : new Blob([data], { type: types[ext] || 'application/octet-stream' });
+    // Di dalam aplikasi Android/iOS (Capacitor) tautan unduh biasa tidak berfungsi di WebView:
+    // tulis berkas ke folder sementara lalu buka lembar bagikan/simpan milik sistem.
+    const cap = window.Capacitor, P = cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform() && cap.Plugins;
+    if (P && P.Filesystem && P.Share) {
+      try {
+        const b64 = String(await blobToDataUrl(blob)).split(',')[1] || '';
+        const w = await P.Filesystem.writeFile({ path: String(filename), data: b64, directory: 'CACHE' });
+        await P.Share.share({ title: String(filename), url: w.uri, dialogTitle: 'Simpan atau bagikan berkas' });
+      } catch (e) {
+        if (/cancel|dismiss/i.test(String((e && (e.message || e.code)) || ''))) throw { code: 'declined' };
+        throw e;
+      }
+      return;
+    }
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = filename; a.rel = 'noopener'; document.body.appendChild(a); a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 4000);
+  }
+};
+const blobToDataUrl = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(new Error('baca')); r.readAsDataURL(b); });
+function parseLooseJson(t) {
+  const s = String(t || '').replace(/```(?:json)?/gi, ''), i = s.indexOf('{'), j = s.lastIndexOf('}');
+  if (i < 0 || j <= i) throw { code: 'invalid_json' };
+  try { return JSON.parse(s.slice(i, j + 1)); } catch (e) { throw { code: 'invalid_json' }; }
+}
+const scanSample = {
+  async limits() { return { images: true }; },
+  async json(prompt, opts) {
+    const image = await blobToDataUrl(opts.images);
+    let r;
+    try { r = await api('scan', { prompt, image }, opts.signal); }
+    catch (e) {
+      if (e && e.name === 'AbortError') throw { code: 'cancelled' };
+      throw { code: e.status === 429 ? 'rate_limited' : e.status === 501 ? 'sampling_disabled' : (e.code || 'error') };
+    }
+    return parseLooseJson(r.text);
+  }
+};
+
+/* ---------- Mulai ---------- */
+/* Himbauan verifikasi email (edisi Firebase): tampil di semua halaman sampai email akun terverifikasi */
+function paintMailBar() {
+  const el = $('#mailbar'); if (!el) return;
+  const a = S.mailv && S.phase === 'app' ? me() : null;
+  if (!a || a.emailOk === true) { el.hidden = true; el.innerHTML = ''; return; }
+  const mk = String(a.email || '').replace(/^(.{2}).*(@.*)$/, '$1***$2');
+  el.innerHTML = a.email
+    ? `${ic('info', 18)}<span>Email <b>${esc(mk)}</b> <span>belum diverifikasi. Kirim email verifikasi dan klik tautannya agar akun Anda aman.</span></span><span class="mb-acts"><button type="button" class="btn btn-primary btn-sm" data-act="mail-bar-send">Kirim email verifikasi</button><button type="button" class="btn btn-ghost btn-sm" data-act="mail-bar-change">Ubah email</button></span>`
+    : `${ic('info', 18)}<span>Akun Anda belum punya email. Tambahkan email untuk verifikasi.</span><span class="mb-acts"><button type="button" class="btn btn-primary btn-sm" data-act="mail-bar-change">Tambah email</button></span>`;
+  el.hidden = false;
+}
+ACT['mail-bar-send'] = async () => {
+  try { const r = await api('mail.send'); toast('Email verifikasi dikirim ke ' + (r.email || 'email Anda') + '. Cek kotak masuk dan folder spam.'); }
+  catch (e) { toast(e.userMessage || 'Gagal mengirim email. Coba lagi.'); }
+};
+ACT['mail-bar-change'] = async () => {
+  const a = me(), v = window.prompt(i18nT('Masukkan email baru Anda:'), (a && a.email) || ''); if (v == null || !String(v).trim()) return;
+  try {
+    const r = await api('mail.change', { email: v }); S.accounts[r.account.id] = r.account; cacheAcct(r.account); paintMailBar();
+    toast(r.mail === 'sent' ? 'Email diperbarui. Kami mengirim email verifikasi ke alamat baru.' : r.mail === 'cap' ? 'Email diperbarui. Batas kirim 3 kali per jam tercapai, coba kirim lagi nanti.' : 'Email diperbarui, tetapi email verifikasi belum terkirim. Coba lagi dari himbauan di atas.');
+  } catch (e) { toast(e.userMessage || 'Gagal mengubah email. Coba lagi.'); }
+};
+ACT['mail-change-reg'] = async () => {
+  const err = $('#l-err'), name = $('#l-name').value, pw = $('#l-pw').value, say = m => { err.textContent = m; err.hidden = false; };
+  if (!name || !pw) return say('Isi username dan kata sandi dulu.');
+  const v = window.prompt(i18nT('Masukkan email yang benar:')); if (v == null || !String(v).trim()) return;
+  try { const r = await api('mail.resend', { username: name, password: pw, email: v }); say('Email diganti dan konfirmasi dikirim ke ' + (r.email || 'email baru') + '. Cek kotak masuk dan folder spam.'); }
+  catch (e) { say(e.userMessage || 'Gagal. Coba lagi.'); }
+};
+ACT['mail-resend'] = async () => {
+  const err = $('#l-err'), name = $('#l-name').value, pw = $('#l-pw').value, say = m => { err.textContent = m; err.hidden = false; };
+  if (!name || !pw) return say('Isi username dan kata sandi dulu, lalu kirim ulang.');
+  try { const r = await api('mail.resend', { username: name, password: pw }); say('Email konfirmasi dikirim ulang ke ' + (r.email || 'email Anda') + '. Cek kotak masuk dan folder spam.'); }
+  catch (e) { say(e.userMessage || 'Gagal mengirim email. Coba lagi.'); }
+};
+async function mailVerifyBoot() {
+  let qp; try { qp = new URLSearchParams(location.search); } catch (e) { return; }
+  const code = qp.get('oobCode'); if (!code || qp.get('mode') !== 'signIn') return;
+  let email = ''; try { email = localStorage.getItem('saku.verify.email') || ''; } catch (e) { email = ''; }
+  if (!email) email = String(window.prompt(i18nT('Masukkan email yang Anda pakai saat mendaftar untuk menyelesaikan konfirmasi:')) || '').trim();
+  let msg = '';
+  try { const isPw = qp.get('pw') === '1'; await api('mail.verify', { u: qp.get('u') || '', oobCode: code, email, pw: isPw }); msg = isPw ? 'Email terverifikasi. Buka Pengaturan lalu ganti kata sandi dalam 15 menit.' : 'Email terkonfirmasi. Akun Anda sudah aktif, silakan masuk.'; try { localStorage.removeItem('saku.verify.email'); } catch (e) { /* abaikan */ } }
+  catch (e) { msg = e.userMessage || 'Konfirmasi email gagal. Coba lagi.'; }
+  try { history.replaceState(null, '', location.pathname); } catch (e) { /* abaikan */ }
+  S.loginMsg = msg; setTimeout(() => { try { toast(msg); } catch (e) { /* abaikan */ } }, 600);
+}
+async function netBoot() {
+  await mailVerifyBoot();
+  ROUTE.mode = (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) || location.protocol === 'file:' ? 'hash' : 'path';
+  if (ROUTE.entry == null) ROUTE.entry = viewFromPath(routeCurrent()) || '';
+  showPhase(); S.downloads = browserDownloads; S.canWrite = null; S.isOwner = false;
+  setSessMin(store3.get(SMIN_KEY) || 20);
+  const stored = readStoredToken();
+  let st = null, failure = null;
+  try { st = await api('status'); } catch (e) { failure = e; }
+  if (!st) {
+    const acct = readAcct();
+    if (stored && acct && failure && failure.transient && actFresh()) {   // buka offline dengan sesi yang masih berlaku
+      S.token = stored.t; S.remember = stored.remember; S.accounts = { [acct.id]: acct }; S.accLoaded = true; S.restored = true; S.offline = true;
+      prepareLedger(acct.id); enterApp(acct); return;
+    }
+    S.netErr = failure && failure.userMessage || ''; S.netCode = failure && failure.code || ''; S.phase = 'nodb'; showPhase(); return;
+  }
+  S.mailv = !!st.mailv; S.hasAccounts = !!st.hasAccounts; S.setupReady = !!st.setupReady; setSessMin(st.sessionMinutes); setBackupCfg(st.backup);
+  if (st.aiScan) { S.sample = scanSample; S.canImages = true; }
+  if (stored && st.hasAccounts && actFresh()) {
+    S.token = stored.t; S.remember = stored.remember;
+    try {
+      const r = await api('me'); S.mailv = !!r.mailv; setSessMin(r.sessionMinutes); setBackupCfg(r.backup); cacheAcct(r.account);
+      S.accounts = { [r.account.id]: r.account }; S.accLoaded = true; S.restored = true; S.accSig = '';
+      prepareLedger(r.account.id); enterApp(r.account); return;
+    } catch (e) {
+      if (e.transient && readAcct()) { const acct = readAcct(); S.accounts = { [acct.id]: acct }; S.accLoaded = true; S.restored = true; S.offline = true; prepareLedger(acct.id); enterApp(acct); return; }
+      S.token = null; clearSession(); if (e.code === 'disabled' || e.code === 'expired') S.loginMsg = e.userMessage;
+    }
+  } else if (stored) { S.token = null; clearSession(); }
+  S.phase = 'login'; S.accLoaded = true; S.restored = true; showPhase();
+}
+const inNativeApp = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+if (!inNativeApp && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  const regSw = () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* abaikan */ }); };
+  if (document.readyState === 'complete') regSw(); else window.addEventListener('load', regSw);
+}
+/* ================= Edisi Firebase: penyesuaian tampilan =================
+   Dipasang SETELAH net-client.js. Fungsi bernama sama menggantikan versi sebelumnya
+   (deklarasi terakhir berlaku); build-firebase.js memeriksa bahwa nama-nama ini memang ada.
+   FB_RULES (teks aturan keamanan) disisipkan oleh build-firebase.js. */
+function pollEvery() { return FbEngine.pollMs() || (S.offline ? 10000 : 60000); }
+function dataNote() { return ' Data tersimpan di Firebase milik Anda dan otomatis sinkron di semua perangkat tempat Anda masuk.'; }
+
+/* ---------- Panduan penyiapan (tampil bila Firebase belum terhubung / belum siap) ---------- */
+const FB_TITLES = { nofirebase: 'Hubungkan ke Firebase', authoff: 'Authentication belum aktif', fsoff: 'Firestore belum aktif', nodb: 'Database belum dibuat', rules: 'Aturan keamanan belum dipasang', badkey: 'Konfigurasi tidak cocok' };
+function nodbHTML() {
+  const last = FbEngine.last(), cfg = FbEngine.readCfg(), baked = FbEngine.baked();
+  const code = (last && last.code) || (cfg ? '' : 'nofirebase'), msg = code === 'nofirebase' ? '' : ((last && last.message) || S.netErr || '');
+  const needCfg = !cfg, title = FB_TITLES[code] || 'Firebase tidak terjangkau';
+  const step = (n, t) => `<li><span class="n">${n}</span><div>${t}</div></li>`;
+  const mark = c => (code === c ? ' class="now"' : '');
+  return `<div class="fbwiz"><div class="fbhead">${LOGO}<h2>${esc(title)}</h2></div>
+    ${msg ? `<p class="form-err" id="fb-msg" role="alert">${esc(msg)}</p>` : ''}
+    <p class="sub">SaKu memakai Firebase milik Anda sebagai server: akun dan catatan tersimpan di sana dan sinkron di semua perangkat. Siapkan sekali saja (gratis di paket Spark).</p>
+    <ol class="fbsteps">
+      ${step(1, '<b>Buat proyek</b> di <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer">console.firebase.google.com</a>, lalu tambahkan aplikasi <b>Web</b> (ikon <code>&lt;/&gt;</code>). Salin blok <code>firebaseConfig</code> yang muncul.')}
+      <span${mark('authoff')}>${step(2, '<b>Authentication</b> → Get started → Sign-in method → <b>Email/Password</b> → Enable → Save.')}</span>
+      <span${mark('nodb')}${code === 'fsoff' ? ' class="now"' : ''}>${step(3, '<b>Firestore Database</b> → Create database (lokasi bebas).')}</span>
+      <span${mark('rules')}>${step(4, 'Di tab <b>Rules</b>, ganti seluruh isinya dengan aturan keamanan di bawah, lalu <b>Publish</b>.')}</span>
+      ${step(5, needCfg ? 'Tempel konfigurasi Firebase pada kolom di bawah, lalu tekan <b>Simpan &amp; lanjut</b>.' : 'Setelah selesai, tekan <b>Coba lagi</b>.')}
+    </ol>
+    <div class="fbrow"><button class="btn btn-ghost" data-act="fb-copy" type="button">${ic('file', 18)} Salin aturan keamanan</button></div>
+    <details class="fbrules"><summary>Lihat aturan keamanan</summary><pre>${esc(FB_RULES)}</pre></details>
+    ${baked ? '' : `<div class="field fbcfg"><label for="fb-cfg">Konfigurasi Firebase</label><textarea class="input" id="fb-cfg" rows="7" spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="const firebaseConfig = {\n  apiKey: &quot;AIza…&quot;,\n  authDomain: &quot;…&quot;,\n  projectId: &quot;…&quot;,\n  …\n};">${cfg ? esc(JSON.stringify({ apiKey: cfg.apiKey, projectId: cfg.projectId }, null, 2)) : ''}</textarea><small class="hint">Cukup <b>apiKey</b> dan <b>projectId</b>. Kunci ini memang bukan rahasia; keamanan data dijaga oleh aturan di atas.</small></div>
+    <p class="form-err" id="fb-err" role="alert" hidden></p>`}
+    <div class="fbrow">
+      ${baked ? '' : '<button class="btn btn-primary" data-act="fb-save" type="button">Simpan &amp; lanjut</button>'}
+      ${cfg ? '<button class="btn btn-ghost" data-act="net-retry" type="button">Coba lagi</button>' : ''}
+      ${cfg && !baked ? '<button class="btn btn-ghost" data-act="fb-reset" type="button">Hapus konfigurasi</button>' : ''}
+    </div></div>`;
+}
+ACT['fb-save'] = () => {
+  const ta = $('#fb-cfg'), er = FbEngine.saveCfgText(ta ? ta.value : ''), box = $('#fb-err');
+  if (er) { if (box) { box.textContent = er; box.hidden = false; } return; }
+  S.netErr = ''; S.phase = 'boot'; showPhase(); netBoot();
+};
+ACT['fb-reset'] = () => { FbEngine.clearCfg(); S.netErr = ''; S.mounted = null; showPhase(); };
+ACT['fb-copy'] = async () => {
+  try { await navigator.clipboard.writeText(FB_RULES); toast('Aturan disalin. Tempel di tab Rules, lalu Publish.'); return; } catch (e) { /* lanjut ke cadangan */ }
+  const d = document.querySelector('.fbrules'); if (d) d.open = true;
+  const pre = document.querySelector('.fbrules pre');
+  if (pre) { const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); try { document.execCommand('copy'); toast('Aturan disalin. Tempel di tab Rules, lalu Publish.'); return; } catch (e) { /* abaikan */ } }
+  toast('Salin manual: tekan lama teks aturan di bawah, lalu pilih Salin.');
+};
+
+/* ---------- Akun admin pertama (tanpa kode setup: lindungi dengan segera membuat admin) ---------- */
+function setupHTML() {
+  return `<form id="setup-form" style="display:contents" novalidate><h2>Buat akun admin</h2><p class="sub">Firebase Anda sudah siap dan belum ada akun. Pilih username dan kata sandi administrator. Buat sekarang, karena siapa pun yang membuka alamat ini lebih dulu bisa menjadi admin.</p>
+    <div class="field"><label for="s-user">Username admin</label><input class="input" id="s-user" value="admin" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20"><small class="hint">4–20 huruf kecil atau angka, diawali huruf.</small></div>
+    <div class="field"><label for="s-pw">Kata sandi admin</label><div class="pw"><input class="input" id="s-pw" type="password" autocomplete="new-password" placeholder="Minimal 6 karakter"><button type="button" class="eye" data-act="toggle-pw" data-t="s-pw" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div></div>
+    <p class="form-err" id="s-err" role="alert" hidden></p><button class="btn btn-primary" id="s-btn" type="submit">Buat akun admin</button></form>`;
+}
+async function submitSetup() {
+  const err = $('#s-err'), btn = $('#s-btn'); err.hidden = true;
+  btn.disabled = true; btn.textContent = 'Membuat…';
+  try {
+    const r = await api('setup', { username: $('#s-user').value, password: $('#s-pw').value });
+    setSessMin(r.sessionMinutes); setBackupCfg(r.backup); S.hasAccounts = true; setToken(r.token, true); S.accounts = { [r.account.id]: r.account }; cacheAcct(r.account);
+    prepareLedger(r.account.id); enterApp(r.account);
+  } catch (e) { err.textContent = e.userMessage || 'Gagal membuat akun.'; err.hidden = false; btn.disabled = false; btn.textContent = 'Buat akun admin'; }
+}
+netBoot();
+})();
