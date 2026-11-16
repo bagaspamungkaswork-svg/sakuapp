@@ -49,7 +49,9 @@ jobs:
           # Kunci tanda tangan tetap supaya update bisa dipasang di atas versi lama. Kuncinya tersimpan terenkripsi (AES-256) di
           # signing/saku.keystore.enc; hanya kata sandinya yang menjadi secret (ANDROID_KEYSTORE_PASSWORD). Gagal dibuka: kunci debug sementara.
           SIGNED=0
-          KS_PASS=$(printf '%s' "$KS_PASS" | tr -d ' \n\r\t'); export KS_PASS
+          KS_PASS=$(printf '%s' "$KS_PASS" | tr -d ' \n\r\t')
+          # bila seluruh blok dari berkas kunci ikut tertempel, ambil hanya kata sandinya (32 karakter heksadesimal)
+          KS_HEX=$(printf '%s' "$KS_PASS" | grep -oE '[0-9a-f]{32}' | head -1 || true); [ -n "$KS_HEX" ] && KS_PASS="$KS_HEX"; export KS_PASS
           if [ -n "$KS_PASS" ] && [ -f ../signing/saku.keystore.enc ]; then
             if openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in ../signing/saku.keystore.enc -out app/saku.keystore -pass env:KS_PASS 2>/dev/null && keytool -list -keystore app/saku.keystore -storetype PKCS12 -storepass "$KS_PASS" -alias saku > /dev/null 2>&1; then SIGNED=1; else rm -f app/saku.keystore; fi
           fi
