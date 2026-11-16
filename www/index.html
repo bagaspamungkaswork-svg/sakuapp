@@ -2134,6 +2134,17 @@ h1 { font-weight: 800; letter-spacing: -.04em; color: var(--ink); }
 @keyframes intro-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes intro-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) { .intro-logo, .intro-hi, .intro-wm, .intro-tag, .intro-bar i { animation: none; } .intro { transition: none; } }
+
+/* ---------- Kartu versi baru (aplikasi mobile) ---------- */
+.upd { position: fixed; z-index: 120; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); width: min(440px, calc(100vw - 24px)); box-sizing: border-box; background: var(--surface, #fff); color: var(--ink); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: grid; gap: 10px; box-shadow: 0 24px 50px -20px rgba(14, 35, 71, .55); animation: upd-in .35s ease both; }
+.upd-h { display: flex; gap: 10px; align-items: center; }
+.upd-h b { display: block; font-size: 15px; } .upd-h small { color: var(--ink-3, var(--muted)); font-size: 12.5px; }
+.upd-ic { flex: none; width: 36px; height: 36px; border-radius: 12px; background: var(--accent); color: var(--accent-ink, #fff); display: grid; place-items: center; }
+.upd-l { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; max-height: 30vh; overflow-y: auto; }
+.upd-n { margin: 0; font-size: 12.5px; color: var(--ink-3, var(--muted)); }
+.upd .btn-row { display: flex; gap: 8px; } .upd .btn-row .btn { flex: 1; text-align: center; text-decoration: none; }
+@keyframes upd-in { from { opacity: 0; transform: translateX(-50%) translateY(16px); } to { opacity: 1; transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .upd { animation: none; } }
 /* ---------- panduan penyiapan Firebase ---------- */
 .fbwiz { display: grid; gap: 14px; max-width: 560px; margin: 0 auto; padding: 28px 0 40px; text-align: left; animation: fade .4s both; }
 .fbhead { display: flex; align-items: center; gap: 12px; }
