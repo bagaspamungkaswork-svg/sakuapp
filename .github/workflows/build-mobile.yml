@@ -70,7 +70,8 @@ jobs:
           GRADLE
             echo "Tanda tangan: kunci tetap SaKu"
           else
-            echo "::warning::Kunci tetap tidak bisa dibuka (periksa secret ANDROID_KEYSTORE_PASSWORD: tempel nilai Secret 1 dari berkas kunci, tanpa spasi). APK memakai kunci debug sementara, jadi update tidak bisa dipasang di atas versi lama."
+            if [ -z "$KS_PASS" ]; then WHY="secret ANDROID_KEYSTORE_PASSWORD kosong atau namanya berbeda"; elif [ ${#KS_PASS} -ne 32 ]; then WHY="secret ANDROID_KEYSTORE_PASSWORD berisi ${#KS_PASS} karakter, seharusnya 32 (nilai Secret 1)"; elif [ ! -f ../signing/saku.keystore.enc ]; then WHY="berkas signing/saku.keystore.enc tidak ada"; else WHY="isi secret ANDROID_KEYSTORE_PASSWORD tidak cocok dengan kuncinya (32 karakter tetapi bukan nilai Secret 1)"; fi
+            echo "::warning::Kunci tetap tidak bisa dibuka: $WHY. APK memakai kunci debug sementara, jadi update tidak bisa dipasang di atas versi lama."
           fi
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
