@@ -1,8 +1,9 @@
 {
- "version": "1.8.0",
- "build": 4,
- "date": "2026-11-16",
+ "version": "1.8.1",
+ "build": 5,
+ "date": "2026-11-17",
  "notes": [
-  "Pemberitahuan versi baru dengan tombol Update di aplikasi mobile"
+  "Perapian tampilan Tentang SaKu, Laporan, dan Tanya SaKu",
+  "Maskot Tanya SaKu menyingkir saat halaman digulir"
  ]
 }

@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.8.0', APP_BUILD = 4;
+const APP_VERSION = '1.8.1', APP_BUILD = 5;
 const CHANGELOG = [
+  { v: '1.8.1', d: '2026-11-17', items: ['Perapian tampilan Tentang SaKu, Laporan, dan Tanya SaKu', 'Maskot Tanya SaKu menyingkir saat halaman digulir'] },
   { v: '1.8.0', d: '2026-11-16', items: ['Pemberitahuan versi baru dengan tombol Update di aplikasi mobile'] },
   { v: '1.7.0', d: '2026-11-16', items: ['Tombol mengambang Tanya SaKu dengan maskot dan sapaan', 'Layar sambutan Selamat datang di SaKu setiap kali dibuka'] },
   { v: '1.6.0', d: '2026-11-16', items: ['Catat dengan suara: ucapkan transaksi, formulir terisi otomatis', 'Tanya SaKu: asisten keuangan interaktif dari data Anda sendiri', 'Menu Laporan terpisah: unduh PDF, Excel, dan CSV dengan pilihan periode', 'Nomor versi tampil di bagian bawah aplikasi'] },
@@ -5025,6 +5026,7 @@ const I18N_EN = {
   "Maksimal 60 item.": "Maximum 60 items.",
   "malam": "night",
   "masih": "still",
+  "Maskot Tanya SaKu menyingkir saat halaman digulir": "The Ask SaKu mascot moves aside while the page scrolls",
   "Master Data Akun": "Account Master Data",
   "masuk": "in",
   "Masuk": "In",
@@ -5389,6 +5391,7 @@ const I18N_EN = {
   "Peran administrator {1} dicabut": "Administrator role removed for {1}",
   "Peran administrator Anda dicabut": "Your administrator role has been removed",
   "Peran akun ini tidak bisa diubah. Pastikan akunnya aktif dan perannya berbeda.": "This account's role can't be changed. Make sure the account is active and the role is different.",
+  "Perapian tampilan Tentang SaKu, Laporan, dan Tanya SaKu": "Tidier layout for About SaKu, Reports, and Ask SaKu",
   "Perawatan Diri": "Personal Care",
   "Perawatan Mobil": "Car Maintenance",
   "Perawatan Motor": "Motorcycle Maintenance",
@@ -6223,6 +6226,7 @@ const I18N_EN = {
   "Versi {1} · build {2}": "Version {1} · build {2}",
   "Versi baru tersedia": "New version available",
   "Versi berkas cadangan ini belum didukung.": "This backup file version isn't supported yet.",
+  "Versi ini": "This version",
   "Visa & Paspor": "Visa & Passport",
   "Vitamin & Suplemen": "Vitamins & Supplements",
   "Wajib: berkas kunci yang diunduh saat fitur ini pertama diaktifkan": "Required: the key file downloaded when this feature was first enabled",
@@ -7358,7 +7362,8 @@ function subOpen(k) {
   return !!st[k];
 }
 function verBodyHTML() {
-  return `<p class="desc">Versi ${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p>${typeof updNative === 'function' && updNative() ? `<div class="btn-row"><button type="button" class="btn btn-ghost btn-sm" data-act="upd-check">${ic('download', 16)} Cek pembaruan</button></div>` : ''}<h3 class="t" style="margin-top:12px">Yang baru</h3>` + CHANGELOG.map(c => `<div class="field"><span class="lbl">v${esc(c.v)} · ${esc(c.d)}</span><ul class="desc" style="margin:4px 0 0 18px">${c.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('');
+  const upd = typeof updNative === 'function' && updNative() ? `<div class="btn-row ver-act"><button type="button" class="btn btn-ghost btn-sm" data-act="upd-check">${ic('download', 16)} Cek pembaruan</button></div>` : '';
+  return `${upd}<h3 class="ver-h">Yang baru</h3><ol class="ver-list">` + CHANGELOG.map((c, i) => `<li class="ver-item"><div class="ver-top"><b class="ver-v" translate="no">v${esc(c.v)}</b><span class="ver-d" translate="no">${esc(fmtDateLong(parseYmd(c.d)))}</span>${i === 0 ? '<span class="ver-now">Versi ini</span>' : ''}</div><ul class="ver-notes">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul></li>`).join('') + '</ol>';
 }
 function subMenu(k, title, hint, body) {
   const on = subOpen(k);
@@ -9729,16 +9734,16 @@ function laporanHTML() {
   const off = can && any ? '' : ' disabled';
   const note = !can ? '<p class="form-err" role="status">Unduhan belum tersedia di tampilan ini.</p>' : !any ? '<p class="cat-hint" role="status">Belum ada transaksi. Catat transaksi dulu, lalu laporan bisa diunduh di sini.</p>' : '';
   return `<div class="page-head"><div><p class="hello">Unduh laporan keuangan Anda</p><h1>Laporan</h1></div></div>${note}<div class="stack">
-    <section class="card rep-card" id="rep-pdf"><h2 class="t">${ic('file', 18)} Laporan PDF</h2><p class="desc">Ringkasan satu periode: kesehatan keuangan, budget per kategori, rekening, rencana, dan daftar transaksi. Cocok untuk dibaca atau dicetak.</p>
+    <section class="card rep-card" id="rep-pdf"><h2 class="t">${ic('file', 18)} Laporan PDF</h2><p class="rep-desc">Ringkasan satu periode: kesehatan keuangan, budget per kategori, rekening, rencana, dan daftar transaksi. Cocok untuk dibaca atau dicetak.</p>
       <div class="seg" role="group" aria-label="Periode laporan">${[['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']].map(p => `<button type="button" data-act="rep-period" data-v="${p[0]}" aria-pressed="${R.period === p[0]}">${p[1]}</button>`).join('')}</div>
       ${repNavHTML('rep-shift', rangeLabel(R.period, rg, R.anchor), canNext, isCur)}
-      <p class="cat-hint" id="rep-count">${n} transaksi di periode ini</p>
+      <p class="rep-note" id="rep-count">${n} transaksi di periode ini</p>
       <div class="btn-row"><button type="button" class="btn btn-primary" data-act="dl-pdf"${off}>${ic('download', 18)} Unduh PDF</button></div></section>
-    <section class="card rep-card" id="rep-xlsx"><h2 class="t">${ic('table', 18)} Excel + Grafik</h2><p class="desc">Seluruh catatan dengan 8 grafik dan rumus, plus lembar Transaksi, Rekening, Budget Kategori, dan Rencana. Pilih bulan yang menjadi sorotan laporan.</p>
+    <section class="card rep-card" id="rep-xlsx"><h2 class="t">${ic('table', 18)} Excel + Grafik</h2><p class="rep-desc">Seluruh catatan dengan 8 grafik dan rumus, plus lembar Transaksi, Rekening, Budget Kategori, dan Rencana. Pilih bulan yang menjadi sorotan laporan.</p>
       ${repNavHTML('rep-xshift', rangeLabel('month', xr, R.xa), xNext, xCur)}
       <div class="btn-row"><button type="button" class="btn btn-primary" data-act="dl-xlsx"${off}>${ic('download', 18)} Unduh Excel</button></div></section>
-    <section class="card rep-card" id="rep-csv"><h2 class="t">${ic('list', 18)} Transaksi (CSV)</h2><p class="desc">Daftar semua transaksi dalam bentuk tabel sederhana, untuk dibuka di aplikasi lain atau diolah sendiri.</p>
-      <p class="cat-hint">${S.tx.length} transaksi tersimpan di akun ini</p>
+    <section class="card rep-card" id="rep-csv"><h2 class="t">${ic('list', 18)} Transaksi (CSV)</h2><p class="rep-desc">Daftar semua transaksi dalam bentuk tabel sederhana, untuk dibuka di aplikasi lain atau diolah sendiri.</p>
+      <p class="rep-note">${S.tx.length} transaksi tersimpan di akun ini</p>
       <div class="btn-row"><button type="button" class="btn btn-ghost" data-act="csv"${off}>${ic('download', 18)} Unduh CSV</button></div></section></div>`;
 }
 VIEWS.laporan = {
@@ -9781,7 +9786,7 @@ VIEWS.asisten = {
     v.innerHTML = `<div class="page-head"><div><p class="hello">Asisten keuangan dari catatan Anda sendiri</p><h1>Tanya SaKu</h1></div><button type="button" class="btn btn-ghost btn-sm" data-act="bot-reset">Mulai ulang</button></div>
       <section class="card bot-card"><div class="bot-log" id="bot-log" translate="no" role="log" aria-live="polite" aria-label="Percakapan dengan Tanya SaKu"></div>
       <form id="bot-form" class="bot-form" novalidate><label class="sr-only" for="bot-q">Tulis pertanyaan</label><input class="input" id="bot-q" maxlength="300" autocomplete="off" placeholder="Tanya soal keuangan Anda…"><button class="btn btn-primary" type="submit" aria-label="Kirim">${ic('chevr', 18)}</button></form>
-      <p class="cat-hint bot-note">Jawaban dihitung di perangkat ini dari data SaKu Anda dan tidak dikirim ke pihak lain. Bukan nasihat keuangan profesional.</p></section>`;
+      <p class="bot-note">Jawaban dihitung di perangkat ini dari data SaKu Anda dan tidak dikirim ke pihak lain. Bukan nasihat keuangan profesional.</p></section>`;
     botPaint();
   },
   update() { /* percakapan tidak digambar ulang saat data berubah; jawaban berikutnya memakai data terbaru */ }
@@ -9794,7 +9799,24 @@ document.addEventListener('submit', e => { if (e.target && e.target.id === 'bot-
 function askFabHTML() {
   return `<div class="ask-fab" id="ask-fab"><span class="ask-tip" aria-hidden="true">Ada yang bisa dibantu?</span><button type="button" class="ask-btn" data-act="nav" data-v="asisten" aria-label="Tanya SaKu" title="Tanya SaKu"><span class="ask-face"><svg aria-hidden="true" width="32" height="32" viewBox="0 0 40 40" fill="none"><rect x="4" y="8" width="32" height="24" rx="10" fill="#FFFFFF"/><rect class="ask-eye" x="12" y="15" width="5" height="8" rx="2.5" fill="#0E2347"/><rect class="ask-eye" x="23" y="15" width="5" height="8" rx="2.5" fill="#0E2347"/><path d="M16 26.5c2.4 1.8 5.6 1.8 8 0" stroke="#2F6BED" stroke-width="2" stroke-linecap="round"/><path d="M20 8V4" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/><circle cx="20" cy="3" r="2" fill="#22C08A"/></svg><span class="ask-dot" aria-hidden="true"></span></span></button></div>`;
 }
-function askFabPaint() { const f = $('#ask-fab'); if (f) f.hidden = S.view === 'asisten'; }
+/* Balon sapaan hanya tampil sekali setiap aplikasi dibuka, bukan setiap pindah halaman */
+let ASK_HI = false;
+function askFabPaint() {
+  const f = $('#ask-fab'); if (!f) return;
+  f.hidden = S.view === 'asisten';
+  if (!ASK_HI && !f.hidden) { ASK_HI = true; f.classList.add('hi'); setTimeout(() => { const g = $('#ask-fab'); if (g) g.classList.remove('hi'); }, 9000); }
+}
+
+/* Maskot menyingkir saat halaman digulir ke bawah supaya tidak menutupi isi, dan kembali saat digulir ke atas atau berhenti sebentar */
+(function () {
+  let last = 0, t = 0;
+  window.addEventListener('scroll', () => {
+    const f = document.getElementById('ask-fab'); if (!f) return;
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    if (y > last + 6) f.classList.add('away'); else if (y < last - 6) f.classList.remove('away');
+    last = y; clearTimeout(t); t = setTimeout(() => f.classList.remove('away'), 1600);
+  }, { passive: true });
+})();
 /* ================= Layar sambutan "Selamat datang di SaKu" =================
    Tampil setiap kali SaKu dibuka (situs maupun aplikasi), sebelum layar masuk. Hilang sendiri setelah sekitar 2,4 detik,
    atau langsung saat diketuk / ditekan tombol apa pun. */

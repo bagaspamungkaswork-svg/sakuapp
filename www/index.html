@@ -2108,11 +2108,12 @@ h1 { font-weight: 800; letter-spacing: -.04em; color: var(--ink); }
 .ask-btn:active .ask-face { animation: none; transform: scale(.94); }
 .ask-eye { animation: ask-blink 3.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
 .ask-dot { position: absolute; right: -3px; top: -3px; width: 12px; height: 12px; border-radius: 50%; background: #22C08A; border: 2px solid var(--bg, #F4F7FB); animation: ask-dot 1.6s ease-in-out infinite; }
-.ask-tip { background: #0E2347; color: #fff; font-size: 12.5px; font-weight: 600; padding: 8px 11px; border-radius: 13px 13px 4px 13px; white-space: nowrap; box-shadow: 0 10px 20px -10px rgba(14, 35, 71, .6); opacity: 0; transform-origin: right center; animation: ask-tip 45s ease-in-out 2s infinite; }
+.ask-tip { background: #0E2347; color: #fff; font-size: 12.5px; font-weight: 600; padding: 8px 11px; border-radius: 13px 13px 4px 13px; white-space: nowrap; box-shadow: 0 10px 20px -10px rgba(14, 35, 71, .6); opacity: 0; transform-origin: right center; }
+.ask-fab.hi .ask-tip { animation: ask-tip 7s ease-in-out 1.5s both; }
 @keyframes ask-bob { 0%, 100% { transform: translateY(0) rotate(0deg); } 25% { transform: translateY(-5px) rotate(-4deg); } 75% { transform: translateY(-2px) rotate(4deg); } }
 @keyframes ask-blink { 0%, 44%, 52%, 100% { transform: scaleY(1); } 48% { transform: scaleY(.1); } }
 @keyframes ask-dot { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
-@keyframes ask-tip { 0% { opacity: 0; transform: translateX(10px) scale(.9); } 1.5%, 13% { opacity: 1; transform: none; } 15%, 100% { opacity: 0; transform: translateX(10px) scale(.9); } }
+@keyframes ask-tip { 0% { opacity: 0; transform: translateX(10px) scale(.9); } 8%, 88% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateX(10px) scale(.9); } }
 @media (min-width: 900px) { .ask-fab { right: 32px; bottom: 104px; } }
 @media (max-width: 899px) { html { scroll-padding-bottom: 170px; } }
 @media (prefers-reduced-motion: reduce) { .ask-face, .ask-eye, .ask-dot { animation: none; } .ask-tip { animation: none; } }
@@ -2145,6 +2146,30 @@ h1 { font-weight: 800; letter-spacing: -.04em; color: var(--ink); }
 .upd .btn-row { display: flex; gap: 8px; } .upd .btn-row .btn { flex: 1; text-align: center; text-decoration: none; }
 @keyframes upd-in { from { opacity: 0; transform: translateX(-50%) translateY(16px); } to { opacity: 1; transform: translateX(-50%); } }
 @media (prefers-reduced-motion: reduce) { .upd { animation: none; } }
+
+/* ---------- Perapian: Tentang SaKu, Laporan, Tanya SaKu ---------- */
+.ver-act { margin-bottom: 14px; }
+.ver-h { margin: 0 0 10px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.ver-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.ver-item { display: grid; gap: 6px; padding-left: 14px; border-left: 2px solid var(--line); }
+.ver-item:first-child { border-left-color: var(--accent); }
+.ver-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.ver-v { font-size: 15px; color: var(--ink); }
+.ver-d { font-size: 12.5px; color: var(--ink-3); }
+.ver-now { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.ver-notes { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); text-align: left; }
+.rep-desc { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); text-align: left; }
+.rep-note { margin: 0; font-size: 12.5px; color: var(--ink-3); }
+.bot-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); text-align: left; }
+.voice-txt { text-align: left; }
+.ask-fab { transition: transform .25s ease, opacity .25s ease; }
+.ask-fab.away { transform: translateX(80px); opacity: 0; }
+@media (max-width: 899px) { .bot-log { max-height: max(200px, calc(100dvh - 470px)); } }
+@media (prefers-reduced-motion: reduce) { .ask-fab { transition: none; } }
+.ver-notes { list-style: disc; }
+.ver-notes li { display: list-item; }
+/* teks di ubin sempit: rata kiri, karena rata kanan-kiri membuat jarak antarkata renggang */
+.tile small { text-align: left; hyphens: manual; -webkit-hyphens: manual; }
 /* ---------- panduan penyiapan Firebase ---------- */
 .fbwiz { display: grid; gap: 14px; max-width: 560px; margin: 0 auto; padding: 28px 0 40px; text-align: left; animation: fade .4s both; }
 .fbhead { display: flex; align-items: center; gap: 12px; }
