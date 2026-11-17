@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.8.1', APP_BUILD = 5;
+const APP_VERSION = '1.8.2', APP_BUILD = 6;
 const CHANGELOG = [
+  { v: '1.8.2', d: '2026-11-17', items: ['Pilihan Ingat saya di aplikasi ponsel kini bertahan sampai Anda menekan Keluar', 'Tidak lagi diminta masuk ulang setiap aplikasi ditutup lebih dari batas diam'] },
   { v: '1.8.1', d: '2026-11-17', items: ['Perapian tampilan Tentang SaKu, Laporan, dan Tanya SaKu', 'Maskot Tanya SaKu menyingkir saat halaman digulir'] },
   { v: '1.8.0', d: '2026-11-16', items: ['Pemberitahuan versi baru dengan tombol Update di aplikasi mobile'] },
   { v: '1.7.0', d: '2026-11-16', items: ['Tombol mengambang Tanya SaKu dengan maskot dan sapaan', 'Layar sambutan Selamat datang di SaKu setiap kali dibuka'] },
@@ -4325,6 +4326,7 @@ const I18N_EN = {
   "Di edisi ini pemulihan": "In this edition, restoring",
   "Di luar kategori berbudget: {1}": "Outside budgeted categories: {1}",
   "Di luar kategori berbudget: {1}  ·  Belum dibagi dari batas: {2}": "Outside budgeted categories: {1}  ·  Not yet allocated from the limit: {2}",
+  "Di ponsel ini Anda tetap masuk sampai menekan Keluar (otomatis keluar bila {1} hari tidak dipakai).": "On this phone you stay signed in until you tap Sign out (signed out automatically after {1} days of no use).",
   "di server, jadi cadangan tetap bisa dipulihkan bila server dipindah.": "on the server, so backups can still be restored if the server is moved.",
   "di Supabase), lalu pilih username dan kata sandi administrator.": "in Supabase), then choose an administrator username and password.",
   "Di tab": "In the tab",
@@ -5501,6 +5503,7 @@ const I18N_EN = {
   "Pilih tanggal lahir yang valid.": "Choose a valid birth date.",
   "Pilih tanggal pinjam yang valid.": "Choose a valid borrow date.",
   "Pilih tanggal yang valid.": "Choose a valid date.",
+  "Pilihan Ingat saya di aplikasi ponsel kini bertahan sampai Anda menekan Keluar": "Remember me in the phone app now lasts until you tap Sign out",
   "Pilihan pengingat cadangan tidak valid.": "Invalid backup reminder option.",
   "Pindah saldo": "Transfer",
   "Pindah Saldo Antar Rekening": "Transfer Between Accounts",
@@ -6050,6 +6053,7 @@ const I18N_EN = {
   "Tertinggi (": "High (",
   "Tertinggi ({1} hari bursa)": "High ({1} trading days)",
   "tetap": "fixed",
+  "Tetap masuk di ponsel ini sampai Anda menekan Keluar.": "Stay signed in on this phone until you tap Sign out.",
   "tetapi": "but",
   "Tetapkan tujuan keuangan Anda: dana darurat, tabungan, investasi, atau impian lain. SaKu menghitung berapa yang perlu disetor tiap bulan dan memantau kemajuannya.": "Set your financial goals: an emergency fund, savings, investments, or other dreams. SaKu calculates how much to deposit each month and tracks your progress.",
   "tiap akhir bulan": "at the end of each month",
@@ -6081,6 +6085,7 @@ const I18N_EN = {
   "Tidak bisa menyalin otomatis.": "Couldn't copy automatically.",
   "Tidak bisa menyalin otomatis. Tekan lama pada rincian untuk menyalin.": "Couldn't copy automatically. Press and hold the details to copy.",
   "Tidak bisa terhubung ke server. Periksa koneksi internet.": "Can't connect to the server. Check your internet connection.",
+  "Tidak lagi diminta masuk ulang setiap aplikasi ditutup lebih dari batas diam": "No more signing in again each time the app was closed past the idle limit",
   "Tidak termasuk saldo kas": "Excludes cash balance",
   "Tidak termasuk setoran ke tabungan dan investasi.": "Excludes deposits to savings and investments.",
   "tidak valid": "invalid",
@@ -6291,7 +6296,7 @@ const S = {
   period: 'month', anchor: startOfDay(new Date()), showAll: { out: false, in: false },
   filters: { q: '', type: 'all', cat: 'all', range: 'all' }, shown: 60,
   bk: [], form: null, armed: null, armT: null, busy: {}, wide: false, lastFocus: null,
-  sessMin: 20, lastAct: Date.now(), warned: false, cfgReady: true,
+  sessMin: 20, remember: false, lastAct: Date.now(), warned: false, cfgReady: true,
   backup: { on: true, seconds: 30 }, bkPrev: null, bkNote: null
 };
 const me = () => (S.me && S.accounts[S.me.id]) || S.me;
@@ -6379,6 +6384,7 @@ function tryRestore() {
   let ses = null;
   try { ses = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { ses = null; }
   if (!ses || !ses.id) return;
+  S.remember = true;   /* sesi tersimpan hanya ada bila "Ingat saya" dicentang */
   const acc = S.accounts[ses.id];
   if (!acc || acc.active === false || ses.m !== marker(acc) || !actFresh()) { clearSession(); return; }
   enterApp(acc);
@@ -6458,7 +6464,8 @@ async function doLogin() {
     return fail(acc && acc.status === 'pending' ? 'Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.' : acc && acc.status === 'rejected' ? 'Pendaftaran Anda ditolak admin. Hubungi administrator.' : acc && acc.active === false ? 'Akun ini dinonaktifkan. Hubungi administrator.' : 'Username atau kata sandi salah.');
   }
   S.fails = 0;
-  if ($('#l-rem') && $('#l-rem').checked) saveSession(acc); else clearSession();
+  S.remember = !!($('#l-rem') && $('#l-rem').checked);
+  if (S.remember) saveSession(acc); else clearSession();
   enterApp(acc);
 }
 async function createAccount() {
@@ -6600,6 +6607,7 @@ function loginHTML() {
           <div class="field"><label for="l-name">Username</label><input class="input" id="l-name" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="mis. sifulan12"></div>
           <div class="field"><label for="l-pw">Kata sandi</label><div class="pw"><input class="input" id="l-pw" name="password" type="password" autocomplete="current-password" placeholder="Kata sandi"><button type="button" class="eye" data-act="toggle-pw" data-t="l-pw" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div></div>
           <label class="check"><input type="checkbox" id="l-rem" checked> Ingat saya di perangkat ini</label>
+          ${ownDevice() ? '<small class="hint" id="l-rem-hint">Tetap masuk di ponsel ini sampai Anda menekan Keluar.</small>' : ''}
           <p class="form-err" id="l-err" role="alert" hidden></p>
           <button type="button" class="btn btn-ghost btn-sm" id="l-resend" data-act="mail-resend" hidden>Kirim ulang email konfirmasi</button>
           <button type="button" class="btn btn-ghost btn-sm" id="l-mchg" data-act="mail-change-reg" hidden>Salah email? Ubah email</button>
@@ -6658,7 +6666,16 @@ function updateLogin() {
 /* ================= Batas waktu login (tidak ada aktivitas) ================= */
 const DEFAULT_SESSION_MIN = 20, ACT_KEY = 'catatuang.act.v1';
 const cleanMin = v => { const n = Math.round(Number(v)); return n >= 1 && n <= 1440 ? n : DEFAULT_SESSION_MIN; };
-const sessMs = () => cleanMin(S.sessMin) * 60000;
+/* Di aplikasi ponsel (Capacitor) pilihan "Ingat saya di perangkat ini" berlaku sampai pengguna menekan Keluar;
+   batas diam hanya untuk browser biasa. Batas aman: 30 hari tidak dipakai. Edisi Netlify/Supabase juga membatasi
+   sesi di server, jadi web yang dipasang ke layar utama sengaja tidak ikut. */
+const REMEMBER_DAYS = 30;
+function ownDevice() {
+  try { return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()); }
+  catch (e) { return false; }
+}
+const keepLogin = () => S.remember === true && ownDevice();
+const sessMs = () => keepLogin() ? REMEMBER_DAYS * 86400000 : cleanMin(S.sessMin) * 60000;
 let actSaved = 0;
 function saveAct(force) { const t = Date.now(); if (!force && t - actSaved < 15000) return; actSaved = t; try { localStorage.setItem(ACT_KEY, String(t)); } catch (e) { /* abaikan */ } }
 function readAct() { try { return Number(localStorage.getItem(ACT_KEY)) || 0; } catch (e) { return 0; } }
@@ -7398,7 +7415,9 @@ VIEWS.akun = {
   update() {
     const m = me(); if (!m) return;
     $('#pf-av').textContent = initials(m.name); $('#pf-name').textContent = m.name;
-    $('#sess-note').textContent = 'Keluar otomatis setelah ' + cleanMin(S.sessMin) + ' menit tanpa aktivitas.';
+    $('#sess-note').textContent = keepLogin()
+      ? 'Di ponsel ini Anda tetap masuk sampai menekan Keluar (otomatis keluar bila ' + REMEMBER_DAYS + ' hari tidak dipakai).'
+      : 'Keluar otomatis setelah ' + cleanMin(S.sessMin) + ' menit tanpa aktivitas.';
     $('#pf-user').textContent = 'Nama masuk: ' + m.id + ' · ' + roleName(m.role);
     const ph = $('#sub-hint-pw'); if (ph) ph.textContent = m.isDefault ? 'Anda masih memakai kata sandi awal' : 'Ubah kata sandi akun Anda';
     paintProfile(); paintAvatars();
@@ -12159,6 +12178,7 @@ async function netBoot() {
   showPhase(); S.downloads = browserDownloads; S.canWrite = null; S.isOwner = false;
   setSessMin(store3.get(SMIN_KEY) || 20);
   const stored = readStoredToken();
+  if (stored) S.remember = stored.remember;   /* sebelum actFresh(): batas diam bergantung pada pilihan "Ingat saya" */
   let st = null, failure = null;
   try { st = await api('status'); } catch (e) { failure = e; }
   if (!st) {

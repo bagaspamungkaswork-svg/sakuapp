@@ -1,9 +1,9 @@
 {
- "version": "1.8.1",
- "build": 5,
+ "version": "1.8.2",
+ "build": 6,
  "date": "2026-11-17",
  "notes": [
-  "Perapian tampilan Tentang SaKu, Laporan, dan Tanya SaKu",
-  "Maskot Tanya SaKu menyingkir saat halaman digulir"
+  "Pilihan Ingat saya di aplikasi ponsel kini bertahan sampai Anda menekan Keluar",
+  "Tidak lagi diminta masuk ulang setiap aplikasi ditutup lebih dari batas diam"
  ]
 }
