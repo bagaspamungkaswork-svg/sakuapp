@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.9.0', APP_BUILD = 7;
+const APP_VERSION = '1.9.1', APP_BUILD = 8;
 const CHANGELOG = [
+  { v: '1.9.1', d: '2026-11-19', items: ['Pengenalan SaKu kini tampil seperti website di layar lebar (laptop dan desktop): header Masuk dan Daftar gratis, teks besar, ilustrasi besar, serta panah untuk pindah slide'] },
   { v: '1.9.0', d: '2026-11-19', items: ['Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk', 'Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)', 'Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai', 'Tautkan akun Google ke akun SaKu di Pengaturan (Firebase)'] },
   { v: '1.8.2', d: '2026-11-17', items: ['Pilihan Ingat saya di aplikasi ponsel kini bertahan sampai Anda menekan Keluar', 'Tidak lagi diminta masuk ulang setiap aplikasi ditutup lebih dari batas diam'] },
   { v: '1.8.1', d: '2026-11-17', items: ['Perapian tampilan Tentang SaKu, Laporan, dan Tanya SaKu', 'Maskot Tanya SaKu menyingkir saat halaman digulir'] },
@@ -5402,6 +5403,7 @@ const I18N_EN = {
   "Pengeluaran seluruh data": "All-time expenses",
   "Pengeluaran terbesar": "Largest expense",
   "Pengenalan SaKu": "Introduction to SaKu",
+  "Pengenalan SaKu kini tampil seperti website di layar lebar (laptop dan desktop): header Masuk dan Daftar gratis, teks besar, ilustrasi besar, serta panah untuk pindah slide": "SaKu's introduction now looks like a website on wide screens (laptop and desktop): a header with Sign in and Sign up free, large text, a large illustration, and arrows to switch slides",
   "Pengenalan suara perlu koneksi internet. Periksa koneksi Anda.": "Speech recognition needs an internet connection. Check your connection.",
   "Pengguna": "User",
   "Pengguna otomatis keluar bila tidak ada aktivitas selama waktu ini. Isi dalam menit, antara 1 dan 1440. Bawaannya 20 menit.": "Users are automatically logged out after this period of inactivity. Enter minutes, between 1 and 1440. Default is 20 minutes.",
@@ -5752,6 +5754,7 @@ const I18N_EN = {
   "Sebagian mungkin sudah tercatat; tekan Catat Sekarang lagi untuk melanjutkan tanpa dobel.": "Some may already be recorded; tap Record Now again to continue without duplicates.",
   "sebelum": "before",
   "Sebelum SaKu": "Before SaKu",
+  "Sebelumnya": "Previous",
   "Sedang dikerjakan": "In progress",
   "Sedang menyusun jawaban": "Preparing an answer",
   "Sedekah Jumat": "Friday Charity",
@@ -10210,6 +10213,8 @@ const LD_SLIDES = [
   { t: 'Budget, tagihan, dan cicilan terkendali', p: 'Atur batas tiap kategori dan terima pengingat sebelum tagihan jatuh tempo.', art: landingArt3 },
   { t: 'Laporan rapi + Tanya SaKu', p: 'Unduh laporan PDF atau Excel kapan saja, dan tanyakan apa pun soal uang Anda.', art: landingArt4 }
 ];
+const LD_CHEV_L = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const LD_CHEV_R = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function landingHTML() {
   const slides = LD_SLIDES.map((s, i) => `<section class="ld-slide${i === 0 ? ' on' : ''}" role="group" aria-roledescription="slide" aria-label="Slide ${i + 1} dari ${LD_N}" data-i="${i}">
       <div class="ld-art">${s.art()}</div>
@@ -10218,10 +10223,14 @@ function landingHTML() {
   const dotH = Array.from({ length: LD_N }, (_, i) => `<button type="button" class="ld-dot" data-ld="dot" data-i="${i}" aria-label="Ke slide ${i + 1}"${i === 0 ? ' aria-current="true"' : ''}><i></i></button>`).join('');
   const masuk = LANG === 'en' ? 'Sign in' : 'Masuk';     // "Masuk" di kamus berarti "In" (pemasukan), jadi label tombol ini ditulis langsung
   return `<div class="ld-col">
-    <div class="ld-top"><div class="brand ld-brand">${LOGO}${WM}</div><button type="button" class="ld-skip" id="ld-skip" data-ld="skip">Lewati</button></div>
+    <div class="ld-top"><div class="brand ld-brand">${LOGO}${WM}</div><button type="button" class="ld-skip" id="ld-skip" data-ld="skip">Lewati</button>
+      <div class="ld-hcta"><button type="button" class="btn btn-ghost ld-hbtn" id="ld-hlogin" data-ld="login"><span translate="no">${masuk}</span></button><button type="button" class="btn btn-primary ld-hbtn" id="ld-hsignup" data-ld="signup">Daftar gratis</button></div></div>
     <div class="ld-track" id="ld-track">${slides}</div>
     <div class="ld-foot">
-      <div class="ld-dots" role="group" aria-label="Pilih slide">${dotH}</div>
+      <div class="ld-pager"><button type="button" class="ld-arrow" id="ld-prev" data-ld="prev" aria-label="Sebelumnya" aria-disabled="true">${LD_CHEV_L}</button>
+        <div class="ld-dots" role="group" aria-label="Pilih slide">${dotH}</div>
+        <button type="button" class="ld-arrow" id="ld-nexta" data-ld="next" aria-label="Berikutnya" aria-disabled="false">${LD_CHEV_R}</button>
+        <span class="ld-count" id="ld-count" aria-hidden="true">1 / ${LD_N}</span></div>
       <div class="ld-btns">
         <button type="button" class="btn btn-primary ld-btn" id="ld-next" data-ld="next">Lanjut</button>
         <button type="button" class="btn btn-primary ld-btn" id="ld-login" data-ld="login" hidden><span translate="no">${masuk}</span></button>
@@ -10240,6 +10249,10 @@ function landingSet(i) {
   $$('.ld-dot', L.root).forEach((d, k) => { if (k === i) d.setAttribute('aria-current', 'true'); else d.removeAttribute('aria-current'); });
   const nx = $('#ld-next', L.root), lg = $('#ld-login', L.root), onNx = document.activeElement === nx, onLg = document.activeElement === lg;
   nx.hidden = last; lg.hidden = !last;
+  const pv = $('#ld-prev', L.root), na = $('#ld-nexta', L.root), ct = $('#ld-count', L.root);     // kontrol layar lebar: aria-disabled (bukan disabled) supaya fokus tidak hilang di ujung
+  if (pv) pv.setAttribute('aria-disabled', i === 0 ? 'true' : 'false');
+  if (na) na.setAttribute('aria-disabled', last ? 'true' : 'false');
+  if (ct) ct.textContent = (i + 1) + ' / ' + LD_N;
   const keep = last ? (onNx ? lg : null) : (onLg ? nx : null);     // fokus tidak boleh hilang saat "Lanjut" dan "Masuk" bertukar tempat
   if (keep) { try { keep.focus({ preventScroll: true }); } catch (e) { keep.focus(); } }
   if (changed) {
@@ -10329,7 +10342,9 @@ function landingShow() {
   root.addEventListener('click', e => {
     const b = e.target.closest ? e.target.closest('[data-ld]') : null; if (!b || !root.contains(b)) return;
     const a = b.dataset.ld;
+    if (b.getAttribute('aria-disabled') === 'true') return;
     if (a === 'next') landingGo(L.i + 1);
+    else if (a === 'prev') landingGo(L.i - 1);
     else if (a === 'dot') landingGo(Number(b.dataset.i) || 0);
     else if (a === 'skip') landingClose('skip');
     else if (a === 'login') landingClose('login');

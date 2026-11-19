@@ -1,11 +1,8 @@
 {
- "version": "1.9.0",
- "build": 7,
+ "version": "1.9.1",
+ "build": 8,
  "date": "2026-11-19",
  "notes": [
-  "Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk",
-  "Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)",
-  "Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai",
-  "Tautkan akun Google ke akun SaKu di Pengaturan (Firebase)"
+  "Pengenalan SaKu kini tampil seperti website di layar lebar (laptop dan desktop): header Masuk dan Daftar gratis, teks besar, ilustrasi besar, serta panah untuk pindah slide"
  ]
 }
