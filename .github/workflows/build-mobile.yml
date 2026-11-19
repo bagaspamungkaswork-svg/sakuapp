@@ -2,6 +2,11 @@ name: Bangun Aplikasi Mobile
 
 on:
   workflow_dispatch:
+    inputs:
+      google_web_client_id:
+        description: "Uji Google native dengan Web Client ID ini (kosongkan untuk memakai variabel repositori GOOGLE_WEB_CLIENT_ID)"
+        required: false
+        default: ""
   push:
     branches: [main, master]
 
@@ -12,6 +17,10 @@ jobs:
     permissions:
       contents: write
     timeout-minutes: 40
+    env:
+      # Opsional: Web Client ID Google (dari Google Cloud / Firebase). Bila diisi, "Masuk dengan Google" native dipasang di APK dan
+      # ID-nya ditanam ke www/firebase-config.js. Kosong = APK dibangun persis seperti sebelumnya.
+      GOOGLE_WEB_CLIENT_ID: ${{ inputs.google_web_client_id || vars.GOOGLE_WEB_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -38,6 +47,22 @@ jobs:
             sed -i 's#<uses-permission android:name="android.permission.INTERNET" */>#&\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />#' "$f"
           fi
           grep -q 'android.permission.CAMERA' "$f" || { echo "::error::Gagal menambah izin kamera"; exit 1; }
+          if [ -n "${GOOGLE_WEB_CLIENT_ID:-}" ]; then
+            if printf '%s' "$GOOGLE_WEB_CLIENT_ID" | grep -qE '^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$'; then
+              node -e "
+                const fs = require('fs'), f = 'www/firebase-config.js', id = process.env.GOOGLE_WEB_CLIENT_ID;
+                const w = {}; let cfg = null;
+                try { new Function('window', fs.readFileSync(f, 'utf8'))(w); cfg = w.CATAT_FIREBASE; } catch (e) { console.log('::warning::firebase-config.js tidak terbaca: ' + e.message); }
+                if (!cfg || typeof cfg !== 'object') { console.log('::warning::www/firebase-config.js tidak berisi konfigurasi Firebase; Google Client ID tidak ditanam'); process.exit(0); }
+                cfg.googleClientId = id;
+                fs.writeFileSync(f, 'window.CATAT_FIREBASE = ' + JSON.stringify(cfg) + ';\\n');
+                console.log('Google Client ID ditanam ke www/firebase-config.js');
+              "
+              bash scripts/patch-google-native.sh android || echo "::warning::Google native gagal dipasang; aplikasi dibangun tanpa tombol Google native."
+            else
+              echo "::warning::GOOGLE_WEB_CLIENT_ID bentuknya tidak dikenali (harus berakhiran .apps.googleusercontent.com); diabaikan."
+            fi
+          fi
           npx --yes capacitor-assets generate --android
           npx --yes cap sync android
       - name: Bangun APK
@@ -76,7 +101,17 @@ jobs:
             echo "::warning::Kunci tetap tidak bisa dibuka: $WHY. APK memakai kunci debug sementara, jadi update tidak bisa dipasang di atas versi lama."
           fi
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon
+          if ! ./gradlew assembleDebug --no-daemon; then
+            main=$(find app/src/main/java -name MainActivity.java | head -1)
+            if [ -d ../node_modules/@capgo/capacitor-social-login ]; then
+              echo "::warning::Bangun dengan Google native gagal. Membangun ulang tanpa plugin Google supaya rilis tetap terbit."
+              [ -f "$main.orig" ] && mv "$main.orig" "$main"
+              (cd .. && npm uninstall @capgo/capacitor-social-login --no-audit --no-fund && npx --yes cap sync android)
+              ./gradlew assembleDebug --no-daemon
+            else
+              exit 1
+            fi
+          fi
         env:
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       - name: Siapkan berkas rilis
@@ -93,6 +128,7 @@ jobs:
           cat version.json
           echo "V=$V" >> "$GITHUB_ENV"
       - name: Terbitkan rilis
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
