@@ -56,6 +56,17 @@ Alur kerja GitHub juga punya tugas `iOS (uji bangun simulator)` yang hanya memas
 
 **Tanpa Mac:** buka alamat situs SaKu di Safari iPhone → tombol Bagikan → **Tambah ke Layar Utama**. Hasilnya tampil seperti aplikasi, tanpa biaya.
 
+## Masuk dengan Google di aplikasi Android (opsional)
+
+Tombol "Masuk dengan Google" di aplikasi hanya dipasang bila Anda menyediakan **Web Client ID** Google. Tanpa itu, APK dibangun seperti biasa dan tombolnya tidak muncul.
+
+1. Di Google Cloud Console (proyek yang sama dengan Firebase Anda) buat dua **OAuth client ID**: satu bertipe **Web application** (salin Client ID-nya) dan satu bertipe **Android** dengan nama paket `id.saku.keuangan` dan sidik jari SHA-1 kunci tanda tangan SaKu: `FB:5E:06:5A:DC:83:8B:A7:0C:97:8E:AC:B6:CC:11:DF:02:87:1F:D1`.
+2. Di GitHub: **Settings → Secrets and variables → Actions → Variables → New repository variable**, nama `GOOGLE_WEB_CLIENT_ID`, isi Web Client ID tadi.
+3. Jalankan ulang workflow. Bila plugin Google gagal dikompilasi, workflow otomatis membangun ulang tanpa plugin supaya rilis tetap terbit.
+4. Di Firebase Console aktifkan **Authentication → Sign-in method → Google**, dan terbitkan ulang `firestore.rules` dari paket `saku-firebase`.
+
+Untuk mengujinya tanpa merilis, jalankan workflow secara manual dari cabang lain dan isi kolom "google_web_client_id"; rilis hanya diterbitkan dari cabang `main`/`master`.
+
 ## Memperbarui isi aplikasi
 
 Ganti isi folder `www/` dengan hasil build web terbaru (dari paket `saku-firebase`, tanpa `_headers`, `firestore.rules`, dan `sw.js`), lalu bangun ulang. Di laptop cukup `npx cap sync`.

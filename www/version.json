@@ -1,9 +1,11 @@
 {
- "version": "1.8.2",
- "build": 6,
- "date": "2026-11-17",
+ "version": "1.9.0",
+ "build": 7,
+ "date": "2026-11-19",
  "notes": [
-  "Pilihan Ingat saya di aplikasi ponsel kini bertahan sampai Anda menekan Keluar",
-  "Tidak lagi diminta masuk ulang setiap aplikasi ditutup lebih dari batas diam"
+  "Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk",
+  "Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)",
+  "Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai",
+  "Tautkan akun Google ke akun SaKu di Pengaturan (Firebase)"
  ]
 }

@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.8.2', APP_BUILD = 6;
+const APP_VERSION = '1.9.0', APP_BUILD = 7;
 const CHANGELOG = [
+  { v: '1.9.0', d: '2026-11-19', items: ['Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk', 'Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)', 'Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai', 'Tautkan akun Google ke akun SaKu di Pengaturan (Firebase)'] },
   { v: '1.8.2', d: '2026-11-17', items: ['Pilihan Ingat saya di aplikasi ponsel kini bertahan sampai Anda menekan Keluar', 'Tidak lagi diminta masuk ulang setiap aplikasi ditutup lebih dari batas diam'] },
   { v: '1.8.1', d: '2026-11-17', items: ['Perapian tampilan Tentang SaKu, Laporan, dan Tanya SaKu', 'Maskot Tanya SaKu menyingkir saat halaman digulir'] },
   { v: '1.8.0', d: '2026-11-16', items: ['Pemberitahuan versi baru dengan tombol Update di aplikasi mobile'] },
@@ -3714,16 +3715,23 @@ const I18N_EN = {
   "Akun Anda belum punya email. Tambahkan email untuk verifikasi.": "Your account has no email yet. Add one to verify it.",
   "Akun Anda dinonaktifkan atau dihapus oleh administrator.": "Your account has been disabled or deleted by an administrator.",
   "Akun Anda masih memakai kata sandi awal. Sebaiknya diganti agar catatan keuangan Anda lebih aman.": "Your account is still using the initial password. Change it to keep your financial records safer.",
+  "Akun belum bisa diaktifkan dengan email Google ini. Coba masuk dengan Google lagi.": "The account could not be activated with this Google email. Try signing in with Google again.",
   "Akun Claude Anda hanya bisa melihat. Minta pemilik halaman memberi akses Kontributor.": "Your Claude account is view-only. Ask the page owner to grant you Contributor access.",
   "akun diganti": "accounts replaced",
   "akun dipulihkan": "accounts restored",
+  "Akun Google ini sudah tertaut ke akun SaKu lain. Pakai akun Google yang berbeda.": "This Google account is already linked to another SaKu account. Use a different Google account.",
+  "Akun Google ini tidak bisa ditautkan ke akun ini.": "This Google account cannot be linked to this account.",
+  "Akun Google sudah tertaut.": "Google account is linked.",
+  "Akun Google tertaut. Lain kali Anda bisa masuk dengan Google.": "Google account linked. Next time you can log in with Google.",
   "Akun ini": "This account",
   "Akun ini belum ada di server. Buat akunnya dulu dengan nama yang sama, lalu pulihkan.": "This account doesn't exist on the server yet. Create it first with the same name, then restore.",
   "Akun ini belum ada. Buat akunnya dulu dengan nama yang sama, lalu pulihkan.": "This account doesn't exist yet. Create it first with the same name, then restore.",
   "Akun ini belum ada. Buat akunnya dulu dengan nama yang sama.": "This account doesn't exist yet. Create the account first with the same name.",
+  "Akun ini belum aktif atau sedang dinonaktifkan, jadi tidak bisa direset lewat email. Hubungi administrator.": "This account is not active or is deactivated, so it cannot be reset by email. Contact the administrator.",
   "Akun ini belum aktif.": "This account isn't active yet.",
   "Akun ini belum punya email. Isi email dulu.": "This account has no email yet. Add one first.",
-  "Akun ini dinonaktifkan. Hubungi administrator.": "This account has been disabled. Contact an administrator.",
+  "Akun ini dinonaktifkan. Hubungi administrator.": "This account has been deactivated. Contact the administrator.",
+  "Akun ini tidak bisa direset lewat email. Hubungi administrator.": "This account cannot be reset by email. Contact the administrator.",
   "Akun ini tidak menunggu konfirmasi email.": "This account is not waiting for email confirmation.",
   "Akun ini tidak menunggu persetujuan.": "This account isn't awaiting approval.",
   "Akun sudah ada. Masuk memakai akun yang ada.": "Account already exists. Log in with the existing account.",
@@ -3779,7 +3787,7 @@ const I18N_EN = {
   "Antrean pendaftaran sedang penuh. Coba lagi nanti atau hubungi admin.": "The sign-up queue is full. Try again later or contact an admin.",
   "Apa yang diinginkan": "What do you want",
   "apiKey tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.": "apiKey not found or malformed. Copy the entire firebaseConfig block from the Firebase Console.",
-  "Aplikasi belum disiapkan oleh administrator.": "The app hasn't been set up by the administrator yet.",
+  "Aplikasi belum disiapkan oleh administrator.": "The app has not been set up by the administrator yet.",
   "Apotek": "Pharmacy",
   "Arisan": "Arisan (Rotating Savings)",
   "Arti SaKu": "What SaKu Means",
@@ -3796,6 +3804,7 @@ const I18N_EN = {
   "Atur anggaran": "Set budget",
   "Atur Anggaran Bulanan": "Set Monthly Budget",
   "Atur anggaran, target, simpanan, dan jajan ramean.": "Set budgets, goals, savings, and group treats.",
+  "Atur batas tiap kategori dan terima pengingat sebelum tagihan jatuh tempo.": "Set a limit for each category and get a reminder before a bill is due.",
   "Aturan disalin. Tempel di tab Rules, lalu Publish.": "Rules copied. Paste them in the Rules tab, then Publish.",
   "Aturan keamanan belum dipasang": "Security rules not installed yet",
   "Aturan keamanan Firestore di proyek Anda belum diperbarui untuk fitur ini. Di Firebase Console buka Firestore Database → Rules, tempel isi berkas firebase/firestore.rules dari paket terbaru, lalu klik Publish.": "The Firestore security rules in your project haven't been updated for this feature yet. In the Firebase Console, open Firestore Database → Rules, paste the contents of firebase/firestore.rules from the latest package, then click Publish.",
@@ -3944,6 +3953,7 @@ const I18N_EN = {
   "Belum ada wishlist, target, patungan, perjalanan, atau anggaran yang bisa dibagikan.": "There is no wishlist, goal, split bill, trip, or budget to share yet.",
   "Belum ada yang Anda bagikan. Teman hanya melihat yang Anda pilih.": "You have not shared anything yet. Friends only see what you choose.",
   "Belum ada yang dibagikan teman Anda.": "Nothing has been shared by your friends yet.",
+  "Belum bisa membuat username untuk akun Google ini. Coba lagi sebentar lagi.": "A username could not be created for this Google account yet. Try again in a moment.",
   "belum cukup data": "not enough data yet",
   "Belum diatur": "Not set",
   "Belum dibagi": "Not yet assigned",
@@ -4017,6 +4027,7 @@ const I18N_EN = {
   "Buat akun administrator pertama. Kata sandi awalnya": "Create the first administrator account. Its initial password",
   "Buat Akun Baru": "Create New Account",
   "Buat cadangan seluruh perangkat secara berkala.": "Back up all device data regularly.",
+  "Buat kata sandi baru": "Create a new password",
   "Buat kategori pemasukan atau pengeluaran sendiri dan pilih ikonnya.": "Create your own income or expense categories and choose their icons.",
   "Buat kategori sendiri dan pilih ikonnya": "Create your own category and choose its icon",
   "Buat kode Anda": "Create your code",
@@ -4028,6 +4039,7 @@ const I18N_EN = {
   "Buat sendiri, minimal {1} karakter. Dipakai untuk masuk setelah disetujui admin.": "Create your own, at least {1} characters. Used to log in after admin approval.",
   "Budget (bagian dari batas {1})": "Budget (part of the {1} limit)",
   "Budget {1} terpakai": "Budget {1} used",
+  "Budget bulan ini": "This month's budget",
   "Budget kategori adalah pecahan dari batas pengeluaran. Isi batas pengeluaran di bagian bawah halaman ini dulu, lalu bagi sebagian ke kategori yang ingin Anda jaga.": "Category budgets are a portion of your spending limit. Set the spending limit at the bottom of this page first, then assign part of it to the categories you want to watch.",
   "Budget Kategori Baru": "New Category Budget",
   "Budget kategori dihapus": "Category budget deleted",
@@ -4036,6 +4048,7 @@ const I18N_EN = {
   "Budget per kategori": "Budget per Category",
   "Budget per Kategori": "Budget per Category",
   "Budget per Kategori sebagai pecahan dari batas pengeluaran": "Budget per Category as a share of the spending limit",
+  "Budget, tagihan, dan cicilan terkendali": "Budgets, bills, and installments under control",
   "Buka": "Open",
   "Buka {1}": "Open {1}",
   "Buka di Yahoo Finance": "Open in Yahoo Finance",
@@ -4066,6 +4079,7 @@ const I18N_EN = {
   "Bulan ini: {1} dari": "This month: {1} of",
   "Bulan ini: {1} dari {2}": "This month: {1} of {2}",
   "Bulan ini: {1} dari {2}.": "This month: {1} of {2}.",
+  "Bulan ke-4 dari 12": "Month 4 of 12",
   "bulan lalu": "last month",
   "Bulan lalu": "Last month",
   "Bulan mulai": "Start month",
@@ -4132,6 +4146,7 @@ const I18N_EN = {
   "Catat barang atau kegiatan yang Anda inginkan, lengkap dengan tanggal rencana dan estimasi biayanya. SaKu menghitung berapa yang perlu disisihkan per hari, minggu, atau bulan.": "Note things or activities you want, with a planned date and estimated cost. SaKu works out how much to set aside per day, week, or month.",
   "Catat bunga": "Record interest",
   "Catat cicilan KPR, mobil, HP, atau cicilan lain. SaKu mengingatkan setiap jatuh tempo dan menghitung sisa tagihannya.": "Record KPR, car, phone, or other installments. SaKu reminds you of every due date and calculates the remaining bills.",
+  "Catat dalam hitungan detik": "Record in seconds",
   "Catat dengan suara": "Record by voice",
   "Catat dengan suara: ucapkan transaksi, formulir terisi otomatis": "Record by voice: say the transaction and the form fills in automatically",
   "Catat hasil": "Record income",
@@ -4143,6 +4158,7 @@ const I18N_EN = {
   "Catat transaksi": "Record transaction",
   "Catat Transaksi": "Record Transaction",
   "Catat uang pinjaman ke Transaksi": "Record loan money in Transactions",
+  "Catat, atur, dan pantau keuangan pribadi Anda dengan tenang, di satu tempat.": "Record, organize, and track your personal finances with peace of mind, all in one place.",
   "catatan": "notes",
   "Catatan": "Note",
   "Catatan / barang": "Entry / item",
@@ -4187,6 +4203,7 @@ const I18N_EN = {
   "Cicilan KPR": "Mortgage installment",
   "Cicilan lunas. Terima kasih sudah disiplin.": "Installment paid off. Thanks for staying disciplined.",
   "Cicilan Mobil": "Car Installment",
+  "Cicilan motor": "Motorcycle installment",
   "Cicilan Motor": "Motorcycle Installment",
   "Cicilan Multiguna": "Multipurpose Loan Installment",
   "Cicilan per bulan": "Installment per month",
@@ -4223,6 +4240,7 @@ const I18N_EN = {
   "daftar": "list",
   "Daftar": "Sign up",
   "Daftar Akun": "Account List",
+  "Daftar gratis": "Sign up free",
   "Daftar semua transaksi dalam bentuk tabel sederhana, untuk dibuka di aplikasi lain atau diolah sendiri.": "A simple table of all transactions, to open in other apps or process yourself.",
   "Daftar transaksi": "Transaction list",
   "dalam": "in",
@@ -4396,7 +4414,11 @@ const I18N_EN = {
   "Edisi Firebase hanya bisa mengganti seluruh catatan akun saat memulihkan.": "The Firebase edition can only replace all account entries when restoring.",
   "Edisi ini tidak punya server penjaga rahasia, jadi cadangan dikunci dengan": "This edition doesn't have a secrets server, so backups are locked with",
   "elektronik": "electronics",
-  "Email Anda belum dikonfirmasi. Buka email dari SaKu, klik tautannya (cek folder spam), lalu masuk lagi. Akun langsung aktif tanpa menunggu admin.": "Your email is not confirmed yet. Open the email from SaKu, click its link (check spam), then sign in again. Your account is activated without waiting for an admin.",
+  "Email akun Google ini sudah terhubung ke identitas lain di Firebase, jadi tidak bisa ditautkan ke akun ini. Pakai akun Google dengan email lain.": "This Google account's email is already connected to another identity in Firebase, so it cannot be linked to this account. Use a Google account with a different email.",
+  "Email akun Google ini terlalu panjang untuk SaKu.": "This Google account's email is too long for SaKu.",
+  "Email akun ini belum terverifikasi, jadi belum bisa dipakai untuk reset. Konfirmasi email Anda dulu lewat tautan pendaftaran, atau hubungi administrator.": "This account's email is not verified yet, so it cannot be used for a reset. Confirm your email first through the registration link, or contact the administrator.",
+  "Email Anda": "Your email",
+  "Email Anda belum dikonfirmasi. Buka email dari SaKu, klik tautannya (cek folder spam), lalu masuk lagi. Akun langsung aktif tanpa menunggu admin.": "Your email has not been confirmed yet. Open the email from SaKu, click the link (check your spam folder), then sign in again. Your account is activated right away, with no admin approval needed.",
   "Email Anda sudah terverifikasi.": "Your email is already verified.",
   "Email belum dikonfirmasi": "Email not confirmed",
   "Email belum terverifikasi. Kirim email verifikasi dari himbauan di atas.": "Email not verified yet. Send the verification email from the notice above.",
@@ -4409,8 +4431,10 @@ const I18N_EN = {
   "Email diubah, tetapi email verifikasi belum terkirim. Coba lagi dari himbauan di atas.": "Email changed, but the verification email was not sent. Try again from the notice above.",
   "Email diubah. Batas kirim 3 kali per jam tercapai, kirim verifikasi lagi nanti.": "Email changed. The limit of 3 sends per hour was reached; send verification again later.",
   "Email diubah. Buka tautan verifikasi yang kami kirim ke alamat baru.": "Email changed. Open the verification link we sent to the new address.",
+  "Email Google ini sudah dipakai akun SaKu yang belum ditautkan ke Google. Masuk dengan kata sandi lalu tautkan Google di Pengaturan, atau pakai Lupa kata sandi.": "This Google email is already used by a SaKu account that is not linked to Google. Sign in with your password and link Google in Settings, or use Forgot password.",
   "Email ini sudah dipakai akun Anda.": "This email is already used by your account.",
   "Email ini sudah terverifikasi.": "This email is already verified.",
+  "Email ini tidak cocok dengan akun atau tautannya. Ketik email yang sama dengan yang menerima tautan reset.": "This email does not match the account or the link. Type the same email that received the reset link.",
   "Email ini tidak cocok dengan akun, atau akun sudah diproses admin.": "This email does not match the account, or the account was already handled by an admin.",
   "Email ini tidak cocok dengan akun, atau email belum terverifikasi.": "This email does not match the account, or the email is not verified yet.",
   "Email ini tidak cocok dengan pendaftaran, atau akun sudah diproses admin.": "This email does not match the registration, or the account was already handled by an admin.",
@@ -4425,6 +4449,7 @@ const I18N_EN = {
   "Email tidak valid. Contoh: janedoe@email.com.": "Invalid email. Example: janedoe@email.com.",
   "Email tidak valid. Contoh: sifulan12@email.com.": "Invalid email. Example: sifulan12@email.com.",
   "Email verifikasi dikirim ke {1}. Cek kotak masuk dan folder spam.": "Verification email sent to {1}. Check your inbox and spam folder.",
+  "Email yang menerima tautan reset ini.": "The email that received this reset link.",
   "Es teh": "Iced tea",
   "Estimasi": "Estimate",
   "Estimasi {1} habis sekitar": "{1} estimated to run out around",
@@ -4494,15 +4519,19 @@ const I18N_EN = {
   "Gabungkan": "Merge",
   "Gadget & Elektronik": "Gadgets & Electronics",
   "gagal": "failed",
+  "Gagal masuk dengan Google. Coba lagi.": "Could not log in with Google. Please try again.",
   "Gagal masuk. Coba lagi.": "Couldn't log in. Please try again.",
   "Gagal membaca foto. Coba lagi nanti.": "Couldn't read the photo. Try again later.",
   "Gagal membuat akun.": "Couldn't create account.",
   "Gagal membuat cadangan.": "Failed to create backup.",
   "Gagal memuat data teman.": "Could not load friend data.",
+  "Gagal menautkan akun Google. Coba lagi.": "Could not link the Google account. Please try again.",
   "Gagal mencadangkan.": "Failed to back up.",
   "Gagal mengaktifkan.": "Failed to enable.",
   "Gagal mengirim email. Coba lagi.": "Could not send the email. Try again.",
+  "Gagal mengirim tautan. Coba lagi.": "Could not send the link. Please try again.",
   "Gagal mengubah email. Coba lagi.": "Could not change the email. Try again.",
+  "Gagal menyimpan kata sandi. Coba lagi.": "Could not save the password. Please try again.",
   "Gagal menyimpan. Periksa koneksi lalu coba lagi.": "Couldn't save. Check your connection and try again.",
   "Gagal:": "Failed:",
   "Gagal. Coba lagi.": "Failed. Try again.",
@@ -4527,6 +4556,7 @@ const I18N_EN = {
   "Gaya Hidup & Hiburan": "Lifestyle & Entertainment",
   "Gigi & Kacamata": "Dental & Eyeglasses",
   "Golongan I": "Class I",
+  "Google tidak bisa dibuka. Coba lagi.": "Google could not be opened. Please try again.",
   "Grafik batang pemasukan dan pengeluaran. Total masuk {1}, total keluar {2}.": "Bar chart of income and expenses. Total in {1}, total out {2}.",
   "Grafik dan perubahan: 30 hari terakhir.": "Chart and changes: last 30 days.",
   "Grafik garis pengeluaran kumulatif.": "Cumulative expense line chart.",
@@ -4671,6 +4701,7 @@ const I18N_EN = {
   "Isi data contoh": "Fill in sample data",
   "Isi data diri Anda. Akun aktif setelah Anda mengonfirmasi email.": "Fill in your details. Your account is active once you confirm your email.",
   "Isi data diri Anda. Akun aktif setelah disetujui admin.": "Enter your details. Your account will be active once approved by an admin.",
+  "Isi email yang menerima tautan reset.": "Enter the email that received the reset link.",
   "Isi estimasi biaya.": "Enter the estimated cost.",
   "Isi formulir di atas lalu pilih ikonnya.": "Fill in the form above, then choose its icon.",
   "Isi jarak untuk ruas darat.": "Enter the distance for the land leg.",
@@ -4703,6 +4734,10 @@ const I18N_EN = {
   "Isi tanggal jatuh tempo antara 1 sampai 31.": "Enter a due date between 1 and 31.",
   "Isi tanggal rencana untuk melihat berapa yang perlu dikumpulkan.": "Enter a planned date to see how much you need to save.",
   "Isi total tagihan.": "Enter the total bill.",
+  "Isi username atau email akun Anda. Kami kirim tautan untuk membuat kata sandi baru.": "Enter your account username or email. We will send a link to create a new password.",
+  "Isi username atau email Anda.": "Enter your username or email.",
+  "Isi username dan email Anda.": "Enter your username and email.",
+  "Isi username dan email yang terdaftar di akun Anda. Kami kirim tautan untuk membuat kata sandi baru.": "Enter the username and email registered to your account. We will send a link to create a new password.",
   "Isi username dan kata sandi dulu, lalu kirim ulang.": "Enter your username and password first, then resend.",
   "Isi username dan kata sandi dulu.": "Enter your username and password first.",
   "Isi username dan kata sandi.": "Enter a username and password.",
@@ -4733,6 +4768,7 @@ const I18N_EN = {
   "jatuh": "due",
   "Jatuh tempo": "Due date",
   "Jatuh Tempo": "Due Dates",
+  "Jatuh tempo 3 hari lagi": "Due in 3 days",
   "Jatuh tempo berikutnya": "Next due date",
   "Jatuh tempo pengembalian": "Repayment due date",
   "Jatuh tempo pertama": "First due date",
@@ -4755,6 +4791,7 @@ const I18N_EN = {
   "Jenis transaksi": "Transaction type",
   "Jenis transaksi tidak valid.": "Invalid transaction type.",
   "jika": "if",
+  "Jika data cocok, tautan untuk membuat kata sandi baru sudah dikirim ke email. Cek juga folder spam. Tautan berlaku 30 menit.": "If the details match, a link to create a new password has been sent to the email. Check your spam folder too. The link is valid for 30 minutes.",
   "Jml": "Qty",
   "jual": "sell",
   "Jual Barang Bekas": "Sell Used Items",
@@ -4807,12 +4844,14 @@ const I18N_EN = {
   "Kata sandi baru": "New password",
   "Kata sandi baru minimal": "New password must be at least",
   "Kata sandi baru minimal {1} karakter.": "New password must be at least {1} characters.",
+  "Kata sandi diganti. Anda sudah masuk.": "Password changed. You are signed in.",
   "Kata sandi diganti. Pakai yang baru saat masuk berikutnya.": "Password changed. Use the new one next time you log in.",
   "Kata sandi minimal": "Password must be at least",
   "Kata sandi minimal {1} karakter.": "Password must be at least {1} characters.",
   "Kata sandi minimal 6 karakter.": "Password must be at least 6 characters.",
   "Kata sandi saat ini": "Current password",
   "Kata sandi saat ini salah.": "Current password is incorrect.",
+  "Kata sandi sudah diganti, tetapi masuk otomatis gagal. Silakan masuk dengan kata sandi yang baru.": "Your password was changed, but automatic sign-in failed. Please sign in with your new password.",
   "Kata sandi terlalu lemah. Pakai minimal 6 karakter.": "Password is too weak. Use at least 6 characters.",
   "Kata sandi terlalu panjang (maksimal 100 karakter).": "Password is too long (maximum 100 characters).",
   "kategori": "category",
@@ -4830,6 +4869,7 @@ const I18N_EN = {
   "Kategori terbesar": "Top category",
   "Kategori tidak valid.": "Invalid category.",
   "Ke": "To",
+  "Ke slide {1}": "Go to slide {1}",
   "Kebutuhan Harian": "Daily Needs",
   "Kebutuhan menabung": "Savings needed",
   "Kebutuhan Rumah Tangga": "Household Supplies",
@@ -4846,6 +4886,7 @@ const I18N_EN = {
   "Keluarga & Sosial": "Family & Social",
   "Kemajuan target": "Goal progress",
   "Kemajuan wishlist": "Wishlist progress",
+  "Kemarin": "Yesterday",
   "Kembali": "Back",
   "Kembali ke": "Back to",
   "Kembali ke Masuk": "Back to Log In",
@@ -4867,6 +4908,7 @@ const I18N_EN = {
   "Kesehatan & Obat": "Health & Medicine",
   "Kesehatan keuangan": "Financial Health",
   "Keterangan": "Details",
+  "Ketik atau ucapkan pengeluaran Anda. SaKu yang memilihkan kategorinya.": "Type or say your expense. SaKu picks the category for you.",
   "Ketik ulang kata sandi": "Re-enter password",
   "Ketuk nama kategori untuk melihat isinya. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.": "Tap a category name to see its contents. Deposits and withdrawals to savings aren't counted as expenses.",
   "Ketuk tombol + kapan saja untuk mencatat pemasukan atau pengeluaran.": "Tap the + button any time to record income or an expense.",
@@ -4880,6 +4922,8 @@ const I18N_EN = {
   "Kirim kode lewat chat. Teman memasukkannya di menu Teman pada akun SaKu miliknya.": "Send the code by chat. Your friend enters it in the Friends menu of their own SaKu account.",
   "Kirim pendaftaran": "Submit Sign-Up",
   "Kirim permintaan": "Send request",
+  "Kirim tautan reset": "Send reset link",
+  "Kirim ulang dalam {1} dtk": "Resend in {1}s",
   "Kirim ulang email konfirmasi": "Resend confirmation email",
   "Kiriman Keluarga": "Family Remittances",
   "Kode disalin": "Code copied",
@@ -4976,12 +5020,14 @@ const I18N_EN = {
   "Laporan PDF": "PDF Report",
   "Laporan PDF dan Excel baru dengan logo SaKu, kesehatan keuangan, persentase pemakaian rekening, budget kategori, dan rencana": "New PDF and Excel reports with the SaKu logo, financial health, account usage percentages, category budgets, and plans",
   "Laporan PDF, Excel, dan CSV sekarang diunduh dari menu Laporan.": "PDF, Excel, and CSV reports are now downloaded from the Reports menu.",
+  "Laporan rapi + Tanya SaKu": "Tidy reports + Ask SaKu",
   "laptop": "laptop",
   "Laundry": "Laundry",
   "Laut": "Sea",
   "Layanan baca foto gagal merespons.": "The photo reading service failed to respond.",
   "Layanan baca foto sedang sibuk. Coba lagi nanti.": "The photo reading service is busy. Try again later.",
   "Layanan baca foto tidak bisa dihubungi.": "The photo reading service can't be reached.",
+  "Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk": "SaKu introduction: four swipeable slides before sign-in, which can be reopened from the sign-in screen",
   "Layar sambutan Selamat datang di SaKu setiap kali dibuka": "Welcome to SaKu splash screen every time the app opens",
   "lebih boros": "spending more",
   "lebih hemat": "spending less",
@@ -5002,6 +5048,7 @@ const I18N_EN = {
   "Lihat cara kerja ": "See how it works",
   "Lihat dengan data contoh": "View with sample data",
   "Lihat isi kategori {1}": "View {1} Category",
+  "Lihat pengenalan SaKu": "Take a quick tour of SaKu",
   "Lihat semua": "View All",
   "Lihat semua {1} kategori": "View All {1} Categories",
   "Lihat semua di Transaksi": "View All in Transactions",
@@ -5012,6 +5059,9 @@ const I18N_EN = {
   "Lunas dalam {1} kali bayar.": "Paid off in {1} payments.",
   "Lunas semua": "Mark All Paid Off",
   "Lunasi": "Pay off",
+  "Lupa kata sandi": "Forgot password",
+  "Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai": "Forgot password: a reset link is sent by email, valid for 30 minutes and usable only once",
+  "Lupa kata sandi?": "Forgot password?",
   "Main bareng teman": "Hanging out with friends",
   "makan": "food",
   "Makan": "Meal",
@@ -5022,6 +5072,7 @@ const I18N_EN = {
   "Makan Malam": "Dinner",
   "Makan siang": "Lunch",
   "Makan Siang": "Lunch",
+  "Makan siang 25 ribu": "Lunch 25 thousand",
   "Makan siang bareng teman kantor atau jajan ramai-ramai? Masukkan tagihan dan pesertanya, SaKu membagi bagian tiap orang (rata atau per item, lengkap dengan pajak, ongkir, dan diskon). Bagian teman yang Anda talangi otomatis jadi catatan Memberi Hutang.": "Lunch with office friends or group snacks? Add the bill and participants, and SaKu splits each person's share (evenly or per item, including tax, shipping, and discounts). Friends' shares you advance automatically become Lend Money entries.",
   "Makanan & Minuman": "Food & Drinks",
   "Maksimal 30 peserta.": "Maximum 30 participants.",
@@ -5033,7 +5084,11 @@ const I18N_EN = {
   "masuk": "in",
   "Masuk": "In",
   "Masuk atau daftar": "Log In or Sign Up",
+  "Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)": "Sign in with a Google account (Netlify and Firebase; the site owner needs to enable it)",
   "Masuk dengan Email/Kata sandi belum diaktifkan. Di Firebase Console buka Authentication → Sign-in method → Email/Password → Enable.": "Log in with Email/Password isn't enabled yet. In the Firebase Console, open Authentication → Sign-in method → Email/Password → Enable.",
+  "Masuk dengan Google": "Log in with Google",
+  "Masuk dengan Google belum diaktifkan di Firebase. Buka Authentication → Sign-in method → Google → Enable (dan pastikan Authentication sudah dimulai).": "Sign in with Google is not enabled in Firebase. Open Authentication → Sign-in method → Google → Enable (and make sure Authentication has been started).",
+  "Masuk dengan Google belum diatur di edisi ini.": "Sign in with Google has not been set up in this edition.",
   "Masuk ke": "To account",
   "Masuk ke rekening": "Into account",
   "masuk vs keluar": "in vs out",
@@ -5127,10 +5182,12 @@ const I18N_EN = {
   "Mi instan": "Instant noodles",
   "Mikrofon tidak ditemukan di perangkat ini.": "No microphone was found on this device.",
   "Minggu": "Week",
+  "Minggu ini": "This week",
   "minggu lalu": "last week",
   "Mingguan": "Weekly",
   "Minimal {1} karakter": "At least {1} characters",
   "Minimal 6 karakter": "At least 6 characters",
+  "Minta tautan baru": "Request a new link",
   "Minyak goreng 2 L": "Cooking oil 2 L",
   "mis. Alfamart": "e.g. Alfamart",
   "mis. Ani, Rekan kerja": "e.g. Ani, Coworker",
@@ -5154,6 +5211,7 @@ const I18N_EN = {
   "mis. Mudik Lebaran": "e.g. Eid homecoming trip",
   "mis. Santoso": "e.g. Santoso",
   "mis. sifulan12": "e.g. sifulan12",
+  "mis. sifulan12 atau janedoe@email.com": "e.g. sifulan12 or janedoe@email.com",
   "mis. sifulan12@email.com": "e.g. sifulan12@email.com",
   "mis. Tabungan nikah, DP rumah": "e.g. Wedding savings, home down payment",
   "mis. Tol Trans-Jawa": "e.g. Trans-Java toll road",
@@ -5298,8 +5356,8 @@ const I18N_EN = {
   "Penarikan dicatat": "Withdrawal recorded",
   "Pendaftaran": "Sign-up",
   "Pendaftaran {1} ditolak": "Sign-up {1} declined",
-  "Pendaftaran Anda ditolak admin. Hubungi administrator.": "Your sign-up was declined by the admin. Contact an administrator.",
-  "Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.": "Your sign-up is still awaiting admin approval. Try again later.",
+  "Pendaftaran Anda ditolak admin. Hubungi administrator.": "Your registration was rejected by the admin. Contact the administrator.",
+  "Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.": "Your registration is still waiting for admin approval. Please try again later.",
   "Pendaftaran Menunggu": "Pending Sign-Ups",
   "Pendaftaran Menunggu (": "Pending Sign-Ups (",
   "Pendaftaran Menunggu ({1})": "Pending Sign-Ups ({1})",
@@ -5328,6 +5386,7 @@ const I18N_EN = {
   "Pengeluaran {1} vs {2} (kumulatif)": "Expenses {1} vs {2} (cumulative)",
   "Pengeluaran / hari": "Spending per day",
   "pengeluaran Anda, kategori": "your expenses, category",
+  "Pengeluaran bulan ini?": "Spending this month?",
   "Pengeluaran di luar kategori berbudget": "Spending outside budgeted categories",
   "Pengeluaran di luar kategori berbudget bulan ini: {1}.": "Spending outside budgeted categories this month: {1}.",
   "Pengeluaran di luar kategori berbudget periode ini: {1}.": "Spending outside budgeted categories this period: {1}.",
@@ -5342,6 +5401,7 @@ const I18N_EN = {
   "Pengeluaran per kategori –": "Expenses by category –",
   "Pengeluaran seluruh data": "All-time expenses",
   "Pengeluaran terbesar": "Largest expense",
+  "Pengenalan SaKu": "Introduction to SaKu",
   "Pengenalan suara perlu koneksi internet. Periksa koneksi Anda.": "Speech recognition needs an internet connection. Check your connection.",
   "Pengguna": "User",
   "Pengguna otomatis keluar bila tidak ada aktivitas selama waktu ini. Isi dalam menit, antara 1 dan 1440. Bawaannya 20 menit.": "Users are automatically logged out after this period of inactivity. Enter minutes, between 1 and 1440. Default is 20 minutes.",
@@ -5486,6 +5546,7 @@ const I18N_EN = {
   "Pilih jalur, kendaraan, dan jam berangkat. SaKu menyusun titik isi BBM, makan, dan istirahat, lalu menghitung perkiraan BBM, waktu tiba, dan total biaya.": "Choose the route, vehicle, and departure time. SaKu plans fuel, meal, and rest stops, then estimates fuel, arrival time, and total cost.",
   "Pilih jenis cicilan.": "Select an installment type.",
   "Pilih jenis hutang.": "Select a debt type.",
+  "Pilih kata sandi baru untuk akun Anda. Setelah disimpan, Anda langsung masuk.": "Choose a new password for your account. Once saved, you are signed in right away.",
   "Pilih kata sandi yang berbeda dari kata sandi awal.": "Choose a password different from the initial password.",
   "Pilih kategori pengeluaran.": "Choose an expense category.",
   "Pilih konsep cicilan.": "Select an installment plan.",
@@ -5499,6 +5560,7 @@ const I18N_EN = {
   "Pilih salah satu kategori.": "Choose a category.",
   "Pilih sendiri apa yang dibagikan: anggaran, rencana nikah, wishlist, atau perjalanan.": "Choose what to share: budget, wedding plan, wishlist, or trips.",
   "Pilih siapa saja yang ikut membayar tiap item. Bila tidak dipilih khusus, item dibagi ke semua peserta.": "Choose who shares the cost of each item. If none are selected, the item is split among all participants.",
+  "Pilih slide": "Choose a slide",
   "Pilih tanggal jatuh tempo yang valid.": "Choose a valid due date.",
   "Pilih tanggal lahir yang valid.": "Choose a valid birth date.",
   "Pilih tanggal pinjam yang valid.": "Choose a valid borrow date.",
@@ -5790,6 +5852,7 @@ const I18N_EN = {
   "Simpan anggaran": "Save Budget",
   "Simpan atau bagikan berkas": "Save or Share File",
   "Simpan kata sandi": "Save Password",
+  "Simpan kata sandi baru": "Save new password",
   "Simpan perjalanan": "Save trip",
   "Simpan perubahan": "Save changes",
   "Simpan salinan": "Save a copy",
@@ -5818,6 +5881,8 @@ const I18N_EN = {
   "Sisihkan sekitar {1} per minggu agar terkumpul pada {2}.": "Set aside about {1} per week to reach it by {2}.",
   "Situs web selalu memakai versi terbaru.": "The website always uses the latest version.",
   "Skincare & Kosmetik": "Skincare & Cosmetics",
+  "Slide {1} dari {2}": "Slide {1} of {2}",
+  "Slide {1} dari {2}: {3}": "Slide {1} of {2}: {3}",
   "Soto ayam": "Chicken soto",
   "Sparepart Mobil": "Car Spare Parts",
   "Sparepart Motor": "Motorcycle Spare Parts",
@@ -5973,6 +6038,13 @@ const I18N_EN = {
   "tas": "bag",
   "Tautan konfirmasi tidak lengkap.": "The confirmation link is incomplete.",
   "Tautan konfirmasi tidak valid atau sudah kedaluwarsa. Masuk lalu pilih Kirim ulang email konfirmasi.": "The confirmation link is invalid or has expired. Sign in and choose Resend confirmation email.",
+  "Tautan reset tidak valid, sudah dipakai, atau sudah kedaluwarsa. Minta tautan baru lewat Lupa kata sandi.": "The reset link is invalid, already used, or expired. Request a new link through Forgot password.",
+  "Tautan tidak lengkap. Minta tautan baru.": "The link is incomplete. Request a new one.",
+  "Tautan tidak valid, sudah dipakai, atau sudah kedaluwarsa. Minta tautan baru.": "The link is invalid, already used, or expired. Request a new one.",
+  "Tautan tidak valid, sudah dipakai, atau sudah kedaluwarsa. Pastikan email Anda benar, atau minta tautan baru.": "The link is invalid, already used, or expired. Make sure your email is correct, or request a new link.",
+  "Tautkan akun Google": "Link Google account",
+  "Tautkan akun Google ke akun SaKu di Pengaturan (Firebase)": "Link a Google account to your SaKu account in Settings (Firebase)",
+  "Tautkan akun Google ke akun SaKu ini agar lain kali Anda bisa masuk dengan Google, tanpa mengetik kata sandi.": "Link a Google account to this SaKu account so next time you can log in with Google, without typing a password.",
   "Tekan lama kode lalu pilih Salin.": "Long-press the code, then choose Copy.",
   "Tekan tombol di tiap tagihan bila sudah dibayar, lalu otomatis tercatat di transaksi.": "Tap the button on each bill once paid, and it's automatically recorded in transactions.",
   "telat": "late",
@@ -6099,11 +6171,14 @@ const I18N_EN = {
   "TINGKAT TABUNGAN": "SAVINGS RATE",
   "titik (.)": "period (.)",
   "Titik perjalanan": "Trip stops",
+  "Token Google tidak valid atau sudah kedaluwarsa. Coba masuk dengan Google lagi.": "The Google token is invalid or has expired. Try signing in with Google again.",
+  "Token Google tidak valid, sudah kedaluwarsa, atau email Google belum terverifikasi. Coba masuk dengan Google lagi.": "The Google token is invalid, has expired, or the Google email is not verified. Try signing in with Google again.",
   "Token listrik": "Electricity token",
   "tol": "toll",
   "Tol": "Toll",
   "Tol mobil (Rp)": "Car toll (Rp)",
   "Tolak": "Decline",
+  "Tombol Google tidak bisa dimuat. Periksa koneksi internet.": "The Google button could not be loaded. Check your internet connection.",
   "Tombol mengambang Tanya SaKu dengan maskot dan sapaan": "Floating Ask SaKu button with a mascot and greeting",
   "Topup E-Money (Kartu)": "E-Money Card Top-up",
   "Topup E-Wallet": "E-Wallet Top-up",
@@ -6166,6 +6241,7 @@ const I18N_EN = {
   "Tur & Paket Wisata": "Tours & Travel Packages",
   "turun": "down",
   "Turun": "Down",
+  "Turun 12% dari bulan lalu": "Down 12% from last month",
   "Tutup": "Close",
   "Tutup pengingat": "Close reminder",
   "Uang": "Money",
@@ -6195,6 +6271,7 @@ const I18N_EN = {
   "Ubah Target": "Edit Goal",
   "Ubah Transaksi": "Edit Transaction",
   "Ubah Wishlist": "Edit Wishlist",
+  "Ucapkan atau ketik": "Say or type",
   "Udara": "Air",
   "Ulangi kata sandi": "Repeat password",
   "Ulangi kata sandi baru": "Repeat new password",
@@ -6206,6 +6283,7 @@ const I18N_EN = {
   "Unduh Excel": "Download Excel",
   "Unduh lagi": "Download again",
   "Unduh laporan keuangan Anda": "Download your financial reports",
+  "Unduh laporan PDF atau Excel kapan saja, dan tanyakan apa pun soal uang Anda.": "Download PDF or Excel reports anytime, and ask anything about your money.",
   "Unduh PDF": "Download PDF",
   "Unduh satu berkas berisi seluruh transaksi, foto struk, anggaran, dan rencana milik setiap akun. Isinya": "Download a single file containing all transactions, receipt photos, budgets, and plans for every account. Its contents",
   "Unduhan belum tersedia di tampilan ini.": "Downloads are not available in this view yet.",
@@ -6213,6 +6291,7 @@ const I18N_EN = {
   "untuk": "for",
   "Untuk akun Anda sendiri, pakai menu Pengaturan.": "For your own account, use the Settings menu.",
   "Untuk keamanan, ganti kata sandi memerlukan verifikasi email. Kirim tautan ke email Anda, klik, lalu kembali ke sini.": "For security, changing your password requires email verification. Send a link to your email, click it, then come back here.",
+  "Untuk keamanan, masuk lagi dengan kata sandi lalu ulangi menautkan Google.": "For security, sign in again with your password and then link Google again.",
   "Untuk Login": "For Login",
   "untuk:": "for:",
   "Update": "Update",
@@ -6222,6 +6301,7 @@ const I18N_EN = {
   "Username admin": "Admin username",
   "Username admin 4–20 karakter: huruf kecil dan angka, diawali huruf.": "Admin username must be 4–20 characters: lowercase letters and numbers, starting with a letter.",
   "Username Anda": "Your username",
+  "Username atau email": "Username or email",
   "Username atau kata sandi salah.": "Incorrect username or password.",
   "Username ini sudah dipakai.": "This username is already taken.",
   "Username ini sudah dipakai. Coba tambahkan angka lain.": "This username is already taken. Try adding another number.",
@@ -6612,7 +6692,9 @@ function loginHTML() {
           <button type="button" class="btn btn-ghost btn-sm" id="l-resend" data-act="mail-resend" hidden>Kirim ulang email konfirmasi</button>
           <button type="button" class="btn btn-ghost btn-sm" id="l-mchg" data-act="mail-change-reg" hidden>Salah email? Ubah email</button>
           <button class="btn btn-primary" id="l-btn" type="submit">Masuk</button>
+          ${axForgotLinkHTML()}
         </form>
+        ${axGoogleHTML()}
         <form class="login-form" id="reg-form" novalidate hidden>
           <h2>Daftar Akun</h2>
           <p class="sub">${S.mailv ? 'Isi data diri Anda. Akun aktif setelah Anda mengonfirmasi email.' : 'Isi data diri Anda. Akun aktif setelah disetujui admin.'}</p>
@@ -6631,7 +6713,9 @@ function loginHTML() {
         <div class="login-form reg-done" id="reg-done" role="status" hidden></div>
         <div id="l-wait" class="empty"><div class="dot-pulse"></div><p>Memuat daftar akun…</p></div>
         <div id="l-setup" class="login-form" hidden></div>
+        ${axPanelsHTML()}
         <p class="login-note">Catatan setiap akun disimpan terpisah.</p>
+        <button type="button" class="linkbtn" data-act="landing-open">Lihat pengenalan SaKu</button>
       </div>
     </section>
   </div>`;
@@ -6647,10 +6731,11 @@ function updateLogin() {
   const f = $('#login-form'); if (!f) return;
   const none = noAccounts();
   const ready = S.accLoaded && !none, tab = S.authTab === 'daftar' ? 'daftar' : 'masuk', done = !!S.regDone;
-  f.hidden = !ready || tab !== 'masuk';
-  $('#reg-form').hidden = !ready || tab !== 'daftar' || done;
-  $('#reg-done').hidden = !ready || tab !== 'daftar' || !done;
-  $('#auth-tabs').hidden = !ready;
+  const ext = ready ? axView() : '';   /* auth-ext.js: '' | 'lupa' | 'reset' (panel pengganti tab Masuk/Daftar) */
+  f.hidden = !ready || tab !== 'masuk' || !!ext;
+  $('#reg-form').hidden = !ready || tab !== 'daftar' || done || !!ext;
+  $('#reg-done').hidden = !ready || tab !== 'daftar' || !done || !!ext;
+  $('#auth-tabs').hidden = !ready || !!ext;
   $$('[data-act="auth-tab"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === tab)));
   $('#l-wait').hidden = S.accLoaded; $('#l-setup').hidden = !none;
   if (done) {
@@ -6662,6 +6747,7 @@ function updateLogin() {
   if (none) { const el = $('#l-setup'), html = setupHTML(); if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; } }
   const err = $('#l-err');
   if (S.loginMsg && err) { err.textContent = S.loginMsg; err.hidden = false; S.loginMsg = ''; }
+  axPaint(ext, ready && !ext && tab === 'masuk');
 }
 /* ================= Batas waktu login (tidak ada aktivitas) ================= */
 const DEFAULT_SESSION_MIN = 20, ACT_KEY = 'catatuang.act.v1';
@@ -6887,6 +6973,7 @@ function showPhase() {
     else if (S.phase === 'app') { app.innerHTML = shellHTML(); S.mountedView = null; S.entered = null; }
   }
   if (S.phase === 'login') updateLogin();
+  if (S.phase === 'login' && typeof landingMaybe === 'function') landingMaybe();   /* landing.js: intro pengunjung baru */
   if (S.phase === 'app') renderView();
 }
 /* Transisi halus: animasi hanya saat berpindah halaman / data pertama tampil, tidak tiap data tersinkron */
@@ -9844,6 +9931,8 @@ function introClose() {
   const el = document.getElementById('intro'); if (!el || el.classList.contains('out')) return;
   el.classList.add('out'); document.removeEventListener('keydown', introClose, true);
   setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 420);
+  /* Pengenalan (landing.js) menunggu splash ini selesai. Bila layar masuk belum siap, showPhase() akan memanggilnya nanti. */
+  try { if (typeof landingMaybe === 'function' && typeof S !== 'undefined' && S.phase === 'login') landingMaybe(); } catch (e) { /* abaikan */ }
 }
 function introShow() {
   if (document.getElementById('intro') || !document.body) return;
@@ -9905,6 +9994,713 @@ ACT['upd-later'] = el => { try { localStorage.setItem(UPD_LS, JSON.stringify({ v
 ACT['upd-go'] = () => { setTimeout(updClose, 400); };
 ACT['upd-check'] = () => updCheck(true);
 if (updNative()) setTimeout(() => updCheck(false), 5000);
+/* ================= Intro SaKu: 4 slide geser untuk pengunjung baru =================
+   Overlay layar penuh di atas layar masuk. Tampil SEKALI per perangkat ('saku.landing.v1'), sesudah splash "Selamat datang" selesai
+   (intro.js memanggil landingMaybe() saat splash ditutup; showPhase() memanggilnya tiap layar masuk dirender, jadi harus idempoten).
+   Tidak tampil: bila sudah pernah dilihat, saat membuka tautan reset/verifikasi (?rs, ?oobCode, ?pw), dan pada otomasi (navigator.webdriver)
+   kecuali localStorage 'saku.landing.test' = '1' atau ?intro=1. landingShow() menampilkan paksa (tombol "Lihat pengenalan SaKu").
+   Geser memakai scroll-snap horizontal (tanpa pustaka). Gaya di landing.css. */
+const LD_KEY = 'saku.landing.v1', LD_TEST = 'saku.landing.test', LD_N = 4;
+let LD_done = false;      // sudah ditutup pada sesi ini (jaga-jaga bila localStorage diblokir)
+let LD_cur = null;        // keadaan overlay yang sedang tampil
+const LD_Q0 = (() => { try { return location.search || ''; } catch (e) { return ''; } })();     // query saat aplikasi dibuka: layar reset/verifikasi dapat menghapusnya (replaceState) sebelum splash selesai
+
+/* ---------- Kapan tampil ---------- */
+function landingWanted() {
+  try {
+    if (LD_done || lsGet(LD_KEY)) return false;
+    const qs = [new URLSearchParams(LD_Q0), new URLSearchParams(location.search || '')];
+    if (qs.some(q => q.has('rs') || q.has('oobCode') || q.has('pw'))) return false;          // tautan reset/verifikasi: langsung ke formulirnya
+    if (navigator.webdriver && lsGet(LD_TEST) !== '1' && !qs.some(q => q.get('intro') === '1')) return false;   // otomasi: tes lama tidak terganggu
+    return true;
+  } catch (e) { return false; }
+}
+function landingMaybe() {
+  try {
+    if (document.getElementById('landing')) return;                                           // sudah tampil: jangan ditimpa
+    if (typeof S !== 'undefined' && S.phase !== 'login') return;
+    const sp = document.getElementById('intro');
+    if (sp && !sp.classList.contains('out')) return;                                          // splash masih tampil: introClose() memanggil lagi nanti
+    if (!landingWanted()) return;
+    landingShow();
+  } catch (e) { /* intro tidak boleh menghalangi aplikasi */ }
+}
+const landingReduce = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/* ---------- Ilustrasi (SVG inline; warna lewat token tema di landing.css) ---------- */
+const landingIc = (n, x, y, s, cls) => `<g class="sv-ic ${cls || ''}" transform="translate(${x} ${y}) scale(${(s / 24).toFixed(3)})">${(typeof ICONS !== 'undefined' && ICONS[n]) || ''}</g>`;
+const landingRp = n => 'Rp ' + dots(n);
+const landingShadow = (id) => `<filter id="${id}" x="-25%" y="-25%" width="150%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>`;
+
+/* Slide 1: kartu saldo + grafik */
+function landingArt1() {
+  const hs = [22, 34, 18, 40, 28, 16, 46];
+  const bars = hs.map((h, i) => `<rect class="ld-a ld-growy ${i === hs.length - 1 ? 'sv-bar-hi' : 'sv-bar'}" style="--d:${(4 + i * 0.4).toFixed(1)}" x="${54 + i * 32}" y="${230 - h}" width="22" height="${h}" rx="6"/>`).join('');
+  return `<svg class="ld-svg" viewBox="0 0 320 254" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="ld1-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2F6BED"/><stop offset=".55" stop-color="#1D4BB5"/><stop offset="1" stop-color="#14284A"/></linearGradient>
+    <linearGradient id="ld1-a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    ${landingShadow('ld1-s')}
+    <clipPath id="ld1-c"><rect x="16" y="12" width="288" height="156" rx="24"/></clipPath>
+  </defs>
+  <g class="ld-a ld-rise" style="--d:0">
+    <rect x="26" y="26" width="268" height="146" rx="24" fill="#14284A" opacity=".3" filter="url(#ld1-s)"/>
+    <rect x="16" y="12" width="288" height="156" rx="24" fill="url(#ld1-g)"/>
+    <g clip-path="url(#ld1-c)"><circle cx="272" cy="20" r="56" fill="#fff" opacity=".07"/><circle cx="44" cy="172" r="42" fill="#fff" opacity=".05"/></g>
+    <text x="34" y="44" fill="#CFE0FF" font-size="11.5" font-weight="600">Total saldo</text>
+    <text x="34" y="78" fill="#fff" font-size="28" font-weight="800" letter-spacing="-.6" translate="no">${landingRp(12450000)}</text>
+    <rect x="228" y="29" width="60" height="21" rx="10.5" fill="#fff" opacity=".16"/>
+    <path d="M239 42l4-5 4 5z" fill="#7DE3B0"/>
+    <text x="252" y="43.5" fill="#7DE3B0" font-size="11" font-weight="700" translate="no">12%</text>
+  </g>
+  <path class="ld-a ld-show" style="--d:2" d="M34 134C58 132 70 118 96 122S136 104 160 108S198 92 224 96S262 104 286 86V140H34Z" fill="url(#ld1-a)"/>
+  <path class="ld-a ld-draw" pathLength="1" style="--d:2" d="M34 134C58 132 70 118 96 122S136 104 160 108S198 92 224 96S262 104 286 86" fill="none" stroke="#7DE3B0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle class="ld-a ld-pop" style="--d:4" cx="286" cy="86" r="5" fill="#fff" stroke="#7DE3B0" stroke-width="3"/>
+  <g class="ld-a ld-rise" style="--d:3">
+    <rect x="44" y="154" width="236" height="96" rx="20" fill="#14284A" opacity=".25" filter="url(#ld1-s)"/>
+    <rect x="36" y="142" width="248" height="100" rx="20" class="sv-card"/>
+    <text x="54" y="166" class="sv-t2" font-size="11.5" font-weight="700">Minggu ini</text>
+    <text x="266" y="166" text-anchor="end" class="sv-t3" font-size="10.5" font-weight="600" translate="no">${landingRp(840000)}</text>
+  </g>
+  ${bars}
+  <g class="ld-a ld-pop" style="--d:7"><g class="ld-float">
+    <circle cx="292" cy="150" r="21" fill="#FFC83D"/>
+    <circle cx="292" cy="150" r="15" fill="none" stroke="#C98F00" stroke-width="2" opacity=".55"/>
+    <text x="292" y="154.5" text-anchor="middle" font-size="12" font-weight="800" fill="#6B4700" translate="no">Rp</text>
+  </g></g>
+  <g class="ld-a ld-pop" style="--d:8"><g class="ld-float f2">
+    <circle cx="30" cy="208" r="14" fill="#2DB88E"/>
+    <path d="M23.5 208.5l4.5 4.5 8.5-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></g>
+</svg>`;
+}
+
+/* Slide 2: ketik atau ucapkan (mikrofon + baris transaksi) */
+function landingArt2() {
+  const rows = [
+    { ic: 'utensils', c: 'var(--s2)', t: 'Makan Siang', d: 'Hari ini', a: landingRp(25000), nu: true },
+    { ic: 'taxi', c: 'var(--s1)', t: 'Taksi', d: 'Hari ini', a: landingRp(18000) },
+    { ic: 'coffee', c: 'var(--s4)', t: 'Kopi & Jajan', d: 'Kemarin', a: landingRp(22000) }
+  ].map((r, k) => {
+    const y = 96 + k * 52;
+    return `<g class="ld-a ld-in" style="--d:${3 + k}">
+    <rect x="22" y="${y + 8}" width="276" height="44" rx="16" fill="#14284A" opacity=".16" filter="url(#ld2-s)"/>
+    <rect x="14" y="${y}" width="292" height="44" rx="16" class="sv-card${r.nu ? ' sv-new' : ''}"/>
+    <rect x="24" y="${y + 6}" width="32" height="32" rx="11" fill="${r.c}"/>
+    ${landingIc(r.ic, 31, y + 13, 18, 'on-solid')}
+    <text x="68" y="${y + 19}" class="sv-t1" font-size="13.5" font-weight="700">${esc(r.t)}</text>
+    <text x="68" y="${y + 34}" class="sv-t3" font-size="11" font-weight="500">${r.d}</text>
+    ${r.nu ? `<rect x="158" y="${y + 8}" width="32" height="16" rx="8" class="sv-tag"/><text x="174" y="${y + 19.5}" text-anchor="middle" class="sv-tagt" font-size="9.5" font-weight="800">Baru</text>` : ''}
+    <text x="294" y="${y + 26}" text-anchor="end" class="sv-out" font-size="13.5" font-weight="800" translate="no">-${r.a}</text>
+  </g>`;
+  }).join('');
+  const wave = [10, 18, 26, 16, 8].map((h, i) => `<rect class="ld-wv" style="--k:${i}" x="${266 + i * 8}" y="${45 - h / 2}" width="4" height="${h}" rx="2"/>`).join('');
+  return `<svg class="ld-svg" viewBox="0 0 320 252" aria-hidden="true" focusable="false">
+  <defs>${landingShadow('ld2-s')}</defs>
+  <g class="ld-a ld-rise" style="--d:0">
+    <rect x="22" y="24" width="276" height="62" rx="31" fill="#14284A" opacity=".18" filter="url(#ld2-s)"/>
+    <rect x="14" y="12" width="292" height="66" rx="33" class="sv-card"/>
+    <text x="90" y="37" class="sv-t3" font-size="10.5" font-weight="600">Ucapkan atau ketik</text>
+    <text x="90" y="58" class="sv-t1" font-size="15.5" font-weight="700">Makan siang 25 ribu</text>
+  </g>
+  <g class="ld-a ld-pop" style="--d:1">
+    <circle class="ld-ring" cx="50" cy="45" r="23" fill="none" stroke-width="2"/>
+    <circle class="ld-ring r2" cx="50" cy="45" r="23" fill="none" stroke-width="2"/>
+    <circle cx="50" cy="45" r="23" class="sv-acc"/>
+    ${landingIc('mic', 38, 33, 24, 'on-acc')}
+  </g>
+  <g class="ld-a ld-rise" style="--d:2">${wave}</g>
+  ${rows}
+</svg>`;
+}
+
+/* Slide 3: budget per kategori, tagihan, cicilan */
+function landingArt3() {
+  const cats = [['Makan & Minum', 68, 'sv-fill-acc', 'sv-t2'], ['Transportasi Harian', 45, 'sv-fill-in', 'sv-t2'], ['Gaya Hidup & Hiburan', 92, 'sv-fill-out', 'sv-out']].map((c, i) => {
+    const y = 62 + i * 27;
+    return `<text x="30" y="${y}" class="sv-t2" font-size="11.5" font-weight="600">${esc(c[0])}</text>
+    <text x="290" y="${y}" text-anchor="end" class="${c[3]}" font-size="11.5" font-weight="800" translate="no">${c[1]}%</text>
+    <rect x="30" y="${y + 6}" width="260" height="8" rx="4" class="sv-track"/>
+    <rect class="ld-a ld-growx ${c[2]}" style="--d:${1 + i * 0.7}" x="30" y="${y + 6}" width="${(260 * c[1] / 100).toFixed(1)}" height="8" rx="4"/>`;
+  }).join('');
+  const seg = Array.from({ length: 12 }, (_, i) => `<rect class="${i < 4 ? 'ld-a ld-growy sv-fill-acc' : 'sv-track'}"${i < 4 ? ` style="--d:${6 + i * 0.4}"` : ''} x="${192 + i * 9}" y="222" width="6" height="14" rx="3"/>`).join('');
+  return `<svg class="ld-svg" viewBox="0 0 320 254" aria-hidden="true" focusable="false">
+  <defs>${landingShadow('ld3-s')}</defs>
+  <g class="ld-a ld-rise" style="--d:0">
+    <rect x="22" y="22" width="276" height="130" rx="22" fill="#14284A" opacity=".2" filter="url(#ld3-s)"/>
+    <rect x="14" y="10" width="292" height="132" rx="22" class="sv-card"/>
+    <text x="30" y="35" class="sv-t1" font-size="13" font-weight="800">Budget bulan ini</text>
+    <rect x="236" y="20" width="58" height="20" rx="10" class="sv-tag"/>
+    <text x="265" y="34" text-anchor="middle" class="sv-tagt" font-size="10.5" font-weight="800" translate="no">Rp 5 jt</text>
+  </g>
+  <g>${cats}</g>
+  <g class="ld-a ld-rise" style="--d:4">
+    <rect x="22" y="160" width="276" height="46" rx="16" fill="#14284A" opacity=".16" filter="url(#ld3-s)"/>
+    <rect x="14" y="152" width="292" height="46" rx="16" class="sv-card"/>
+    <rect x="24" y="160" width="30" height="30" rx="10" fill="var(--hero-warn)"/>
+    ${landingIc('bell', 28, 164, 22, 'on-warn')}
+    <text x="66" y="172" class="sv-t1" font-size="13" font-weight="700">Listrik &amp; Air</text>
+    <text x="66" y="187" class="sv-t3" font-size="10.5" font-weight="500">Jatuh tempo 3 hari lagi</text>
+    <text x="294" y="179" text-anchor="end" class="sv-t1" font-size="13" font-weight="800" translate="no">${landingRp(450000)}</text>
+  </g>
+  <g class="ld-a ld-rise" style="--d:5">
+    <rect x="22" y="214" width="276" height="46" rx="16" fill="#14284A" opacity=".16" filter="url(#ld3-s)"/>
+    <rect x="14" y="206" width="292" height="46" rx="16" class="sv-card"/>
+    <rect x="24" y="214" width="30" height="30" rx="10" class="sv-acc"/>
+    ${landingIc('repeat', 29, 219, 20, 'on-acc')}
+    <text x="66" y="226" class="sv-t1" font-size="13" font-weight="700">Cicilan motor</text>
+    <text x="66" y="241" class="sv-t3" font-size="10.5" font-weight="500">Bulan ke-4 dari 12</text>
+  </g>
+  ${seg}
+</svg>`;
+}
+
+/* Slide 4: dokumen PDF/Excel + gelembung maskot Tanya SaKu */
+function landingArt4() {
+  const C = 2 * Math.PI * 19, seg = (p, off, cls) => `<circle class="${cls}" cx="114" cy="96" r="19" fill="none" stroke-width="9" stroke-dasharray="${(C * p).toFixed(1)} ${C.toFixed(1)}" stroke-dashoffset="${(-C * off).toFixed(1)}" transform="rotate(-90 114 96)"/>`;
+  const hl = [1, 2, 3, 4].map(k => `<line x1="164" x2="252" y1="${(56 + 17.6 * k).toFixed(1)}" y2="${(56 + 17.6 * k).toFixed(1)}" class="sv-grid"/>`).join('');
+  const vl = [1, 2].map(k => `<line y1="56" y2="144" x1="${(164 + 29.33 * k).toFixed(1)}" x2="${(164 + 29.33 * k).toFixed(1)}" class="sv-grid"/>`).join('');
+  return `<svg class="ld-svg" viewBox="0 0 320 266" aria-hidden="true" focusable="false">
+  <defs>${landingShadow('ld4-s')}</defs>
+  <g transform="rotate(-6 114 82)"><g class="ld-a ld-rise" style="--d:0">
+    <rect x="66" y="22" width="104" height="138" rx="12" fill="#14284A" opacity=".22" filter="url(#ld4-s)"/>
+    <rect x="58" y="10" width="112" height="142" rx="12" class="sv-card"/>
+    <rect x="70" y="22" width="32" height="16" rx="5" fill="#C23B3B"/>
+    <text x="86" y="33.6" text-anchor="middle" fill="#fff" font-size="9.5" font-weight="800" translate="no">PDF</text>
+    <rect x="70" y="46" width="70" height="5" rx="2.5" class="sv-ln2"/><rect x="70" y="56" width="44" height="4" rx="2" class="sv-ln"/>
+    ${seg(0.52, 0, 'sv-d1')}${seg(0.30, 0.52, 'sv-d2')}${seg(0.18, 0.82, 'sv-d3')}
+    <rect x="70" y="126" width="88" height="5" rx="2.5" class="sv-ln"/><rect x="70" y="137" width="62" height="5" rx="2.5" class="sv-ln"/>
+  </g></g>
+  <g transform="rotate(5 208 89)"><g class="ld-a ld-rise" style="--d:1">
+    <rect x="160" y="30" width="104" height="138" rx="12" fill="#14284A" opacity=".22" filter="url(#ld4-s)"/>
+    <rect x="152" y="18" width="112" height="142" rx="12" class="sv-card"/>
+    <rect x="164" y="30" width="32" height="16" rx="5" fill="#137A57"/>
+    <text x="180" y="41.6" text-anchor="middle" fill="#fff" font-size="9.5" font-weight="800" translate="no">XLS</text>
+    <rect x="164" y="56" width="88" height="17.6" class="sv-xh"/>
+    <rect x="164" y="56" width="88" height="88" rx="4" fill="none" class="sv-grid"/>
+    ${hl}${vl}
+    <rect x="169" y="83" width="18" height="4" rx="2" class="sv-ln2"/><rect x="198" y="83" width="14" height="4" rx="2" class="sv-ln2"/><rect x="228" y="83" width="16" height="4" rx="2" class="sv-in-f"/>
+    <rect x="169" y="100.6" width="14" height="4" rx="2" class="sv-ln2"/><rect x="198" y="100.6" width="20" height="4" rx="2" class="sv-ln2"/><rect x="228" y="100.6" width="12" height="4" rx="2" class="sv-in-f"/>
+    <rect x="169" y="118.2" width="20" height="4" rx="2" class="sv-ln2"/><rect x="198" y="118.2" width="12" height="4" rx="2" class="sv-ln2"/><rect x="228" y="118.2" width="18" height="4" rx="2" class="sv-in-f"/>
+    <rect x="169" y="135.8" width="16" height="4" rx="2" class="sv-ln2"/><rect x="198" y="135.8" width="18" height="4" rx="2" class="sv-ln2"/><rect x="228" y="135.8" width="14" height="4" rx="2" class="sv-in-f"/>
+  </g></g>
+  <g class="ld-a ld-rise" style="--d:3">
+    <rect x="112" y="170" width="194" height="30" rx="15" class="sv-acc"/>
+    <path d="M294 197l10 8-17-3z" class="sv-acc"/>
+    <text x="209" y="189.5" text-anchor="middle" class="sv-accink" font-size="12.5" font-weight="700">Pengeluaran bulan ini?</text>
+  </g>
+  <g class="ld-a ld-rise" style="--d:4">
+    <rect x="72" y="224" width="226" height="40" rx="16" fill="#14284A" opacity=".16" filter="url(#ld4-s)"/>
+    <rect x="66" y="208" width="240" height="54" rx="16" class="sv-card"/>
+    <path d="M68 226L58 233L68 239" class="sv-card"/><rect x="65" y="227" width="4" height="11" class="sv-cardfill"/>
+    <g transform="translate(14 212)"><rect width="44" height="44" rx="15" fill="#0E2347" stroke="#fff" stroke-opacity=".22"/>
+      <g transform="translate(4.4 4.4) scale(.88)"><rect x="4" y="8" width="32" height="24" rx="10" fill="#fff"/><rect class="ld-eye" x="12" y="15" width="5" height="8" rx="2.5" fill="#0E2347"/><rect class="ld-eye" x="23" y="15" width="5" height="8" rx="2.5" fill="#0E2347"/><path d="M16 26.5c2.4 1.8 5.6 1.8 8 0" fill="none" stroke="#2F6BED" stroke-width="2" stroke-linecap="round"/><path d="M20 8V4" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="20" cy="3" r="2" fill="#22C08A"/></g>
+    </g>
+    <text x="80" y="224" class="sv-tagt" font-size="10.5" font-weight="800">Tanya SaKu</text>
+    <text x="80" y="240" class="sv-t1" font-size="15" font-weight="800" translate="no">${landingRp(3150000)}</text>
+    <text x="80" y="254" class="sv-t2" font-size="11" font-weight="500">Turun 12% dari bulan lalu</text>
+  </g>
+</svg>`;
+}
+
+/* ---------- Isi overlay ---------- */
+const LD_SLIDES = [
+  { t: '', p: 'Catat, atur, dan pantau keuangan pribadi Anda dengan tenang, di satu tempat.', art: landingArt1 },
+  { t: 'Catat dalam hitungan detik', p: 'Ketik atau ucapkan pengeluaran Anda. SaKu yang memilihkan kategorinya.', art: landingArt2 },
+  { t: 'Budget, tagihan, dan cicilan terkendali', p: 'Atur batas tiap kategori dan terima pengingat sebelum tagihan jatuh tempo.', art: landingArt3 },
+  { t: 'Laporan rapi + Tanya SaKu', p: 'Unduh laporan PDF atau Excel kapan saja, dan tanyakan apa pun soal uang Anda.', art: landingArt4 }
+];
+function landingHTML() {
+  const slides = LD_SLIDES.map((s, i) => `<section class="ld-slide${i === 0 ? ' on' : ''}" role="group" aria-roledescription="slide" aria-label="Slide ${i + 1} dari ${LD_N}" data-i="${i}">
+      <div class="ld-art">${s.art()}</div>
+      <div class="ld-txt"><h2 class="ld-h"><span class="ld-ht">${i === 0 ? 'Semua uang ada di <span class="ld-mark">SaKu.</span>' : s.t}</span></h2><p class="ld-p">${s.p}</p></div>
+    </section>`).join('');
+  const dotH = Array.from({ length: LD_N }, (_, i) => `<button type="button" class="ld-dot" data-ld="dot" data-i="${i}" aria-label="Ke slide ${i + 1}"${i === 0 ? ' aria-current="true"' : ''}><i></i></button>`).join('');
+  const masuk = LANG === 'en' ? 'Sign in' : 'Masuk';     // "Masuk" di kamus berarti "In" (pemasukan), jadi label tombol ini ditulis langsung
+  return `<div class="ld-col">
+    <div class="ld-top"><div class="brand ld-brand">${LOGO}${WM}</div><button type="button" class="ld-skip" id="ld-skip" data-ld="skip">Lewati</button></div>
+    <div class="ld-track" id="ld-track">${slides}</div>
+    <div class="ld-foot">
+      <div class="ld-dots" role="group" aria-label="Pilih slide">${dotH}</div>
+      <div class="ld-btns">
+        <button type="button" class="btn btn-primary ld-btn" id="ld-next" data-ld="next">Lanjut</button>
+        <button type="button" class="btn btn-primary ld-btn" id="ld-login" data-ld="login" hidden><span translate="no">${masuk}</span></button>
+        <div class="ld-cta2"><div class="ld-in2"><button type="button" class="btn btn-ghost ld-btn" id="ld-signup" data-ld="signup">Daftar gratis</button></div></div>
+      </div>
+    </div>
+    <p class="ld-sr" id="ld-sr" role="status" aria-live="polite"></p>
+  </div>`;
+}
+
+/* ---------- Perilaku ---------- */
+function landingSet(i) {
+  const L = LD_cur; if (!L) return;
+  i = Math.max(0, Math.min(LD_N - 1, i)); const last = i === LD_N - 1, changed = i !== L.i;
+  L.i = i; L.root.classList.toggle('last', last);
+  $$('.ld-dot', L.root).forEach((d, k) => { if (k === i) d.setAttribute('aria-current', 'true'); else d.removeAttribute('aria-current'); });
+  const nx = $('#ld-next', L.root), lg = $('#ld-login', L.root), onNx = document.activeElement === nx, onLg = document.activeElement === lg;
+  nx.hidden = last; lg.hidden = !last;
+  const keep = last ? (onNx ? lg : null) : (onLg ? nx : null);     // fokus tidak boleh hilang saat "Lanjut" dan "Masuk" bertukar tempat
+  if (keep) { try { keep.focus({ preventScroll: true }); } catch (e) { keep.focus(); } }
+  if (changed) {
+    const h = $('.ld-slide[data-i="' + i + '"] .ld-h', L.root), sr = $('#ld-sr', L.root);
+    if (sr && h) sr.textContent = 'Slide ' + (i + 1) + ' dari ' + LD_N + ': ' + h.textContent.replace(/\s+/g, ' ').trim();
+  }
+}
+function landingGo(i) {
+  const L = LD_cur; if (!L) return;
+  i = Math.max(0, Math.min(LD_N - 1, i));
+  L.go = i; L.goUntil = Date.now() + 900;
+  try { L.track.scrollTo({ left: i * L.track.clientWidth, behavior: landingReduce() ? 'auto' : 'smooth' }); } catch (e) { L.track.scrollLeft = i * L.track.clientWidth; }
+  landingSet(i);
+}
+function landingOnScroll() {
+  const L = LD_cur; if (!L || L.raf) return;
+  L.raf = requestAnimationFrame(() => {
+    L.raf = 0; if (LD_cur !== L) return;
+    const w = L.track.clientWidth || 1, idx = Math.max(0, Math.min(LD_N - 1, Math.round(L.track.scrollLeft / w)));
+    if (L.go != null) { if (idx === L.go || Date.now() > L.goUntil) L.go = null; else return; }     // gulir otomatis ke tujuan: abaikan slide yang dilewati
+    if (idx !== L.i) landingSet(idx);
+  });
+}
+function landingFocusWhen(sel, tries) {
+  const el = document.querySelector(sel);
+  if (el && el.offsetParent !== null && !el.disabled) { try { el.focus(); } catch (e) { /* abaikan */ } if (document.activeElement === el) return; }
+  if (tries > 0) setTimeout(() => landingFocusWhen(sel, tries - 1), 150);     // formulir masih memuat daftar akun: coba lagi sebentar
+}
+function landingTab(v) {
+  const b = document.querySelector('[data-act="auth-tab"][data-v="' + v + '"]');
+  if (b) b.click(); else if (typeof ACT !== 'undefined' && ACT['auth-tab']) { try { ACT['auth-tab']({ dataset: { v } }); } catch (e) { /* abaikan */ } }
+}
+function landingClose(how) {
+  const L = LD_cur; if (!L) return;
+  LD_cur = null; LD_done = true; lsSet(LD_KEY, '1');
+  clearInterval(L.poll); if (L.io) L.io.disconnect();
+  document.removeEventListener('keydown', L.onKey, true); document.removeEventListener('focusin', L.onFocus, true); window.removeEventListener('resize', L.onResize);
+  const app = document.getElementById('app');
+  if (app) { try { app.inert = false; } catch (e) { /* abaikan */ } app.removeAttribute('inert'); app.removeAttribute('aria-hidden'); }
+  document.documentElement.classList.remove('ld-lock');
+  L.root.removeAttribute('aria-modal'); L.root.classList.add('out');
+  setTimeout(() => { if (L.root.parentNode) L.root.parentNode.removeChild(L.root); }, landingReduce() ? 0 : 280);
+  if (how === 'auto') return;                          // sesi berpindah dari layar masuk (mis. sudah masuk): tidak perlu mengurus fokus
+  if (how === 'login') {
+    if (typeof S !== 'undefined' && S.authTab === 'daftar') landingTab('masuk');
+    landingFocusWhen('#l-name', 30);
+  } else if (how === 'signup') {
+    landingTab('daftar'); landingFocusWhen('#r-first', 30);
+  } else {                                             // Lewati / Esc: kembali ke tempat semula (mis. tombol "Lihat pengenalan"), bila tidak ada ke tab masuk/daftar
+    const p = L.prev; let back = false;
+    if (p && p !== document.body && p.isConnected && !L.root.contains(p) && typeof p.focus === 'function') { try { p.focus({ preventScroll: true }); } catch (e) { /* abaikan */ } back = document.activeElement === p; }
+    if (!back) landingFocusWhen('#auth-tabs [aria-pressed="true"]', 20);
+  }
+}
+function landingShow() {
+  if (document.getElementById('landing') || !document.body) return;
+  const root = document.createElement('div');
+  root.id = 'landing'; root.className = 'ld'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'Pengenalan SaKu'); root.tabIndex = -1;
+  root.innerHTML = landingHTML();
+  const L = LD_cur = { root, track: $('#ld-track', root), prev: document.activeElement, i: 0, go: null, goUntil: 0, raf: 0, poll: 0, io: null, phase0: (typeof S !== 'undefined' ? S.phase : ''), t0: (window.performance && performance.now) ? performance.now() : 0 };
+  L.onKey = e => {
+    if (LD_cur !== L || e.timeStamp < L.t0 || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;     // timeStamp: abaikan tombol yang baru saja menutup splash
+    const inUpd = !!(e.target && e.target.closest && e.target.closest('#upd')), k = e.key;                            // kartu pembaruan punya tombolnya sendiri: panah/Esc di sana bukan urusan intro
+    if (k === 'Tab') {                                   // fokus berputar di dalam dialog (dan kartu pembaruan bila ada), tidak lari ke layar di belakang
+      const ring = $$('button, a[href]', root).filter(x => x.offsetParent !== null && getComputedStyle(x).visibility !== 'hidden').concat($$('#upd a[href], #upd button'));
+      if (!ring.length) return;
+      const at = ring.indexOf(document.activeElement); let to = null;
+      if (at < 0) to = e.shiftKey ? ring[ring.length - 1] : ring[0];
+      else if (e.shiftKey && at === 0) to = ring[ring.length - 1];
+      else if (!e.shiftKey && at === ring.length - 1) to = ring[0];
+      if (to) { e.preventDefault(); to.focus(); }
+      return;
+    }
+    if (inUpd) return;
+    if (k === 'ArrowRight') { e.preventDefault(); landingGo(L.i + 1); }
+    else if (k === 'ArrowLeft') { e.preventDefault(); landingGo(L.i - 1); }
+    else if (k === 'Home') { e.preventDefault(); landingGo(0); }
+    else if (k === 'End') { e.preventDefault(); landingGo(LD_N - 1); }
+    else if (k === 'Escape') { e.preventDefault(); landingClose('skip'); }
+  };
+  L.onFocus = e => {                                     // pengaman bagi peramban tanpa `inert`: fokus tidak boleh lari ke layar masuk di belakang
+    if (LD_cur !== L || !e.target || !e.target.closest) return;
+    if (root.contains(e.target) || e.target.closest('#upd, #intro')) return;
+    const f = $('.ld-btn:not([hidden])', root) || root; try { f.focus({ preventScroll: true }); } catch (x) { /* abaikan */ }
+  };
+  L.onResize = () => { if (LD_cur === L) { try { L.track.scrollTo({ left: L.i * L.track.clientWidth, behavior: 'auto' }); } catch (e) { /* abaikan */ } } };
+  root.addEventListener('click', e => {
+    const b = e.target.closest ? e.target.closest('[data-ld]') : null; if (!b || !root.contains(b)) return;
+    const a = b.dataset.ld;
+    if (a === 'next') landingGo(L.i + 1);
+    else if (a === 'dot') landingGo(Number(b.dataset.i) || 0);
+    else if (a === 'skip') landingClose('skip');
+    else if (a === 'login') landingClose('login');
+    else if (a === 'signup') landingClose('signup');
+  });
+  L.track.addEventListener('scroll', landingOnScroll, { passive: true });
+  document.addEventListener('keydown', L.onKey, true); document.addEventListener('focusin', L.onFocus, true); window.addEventListener('resize', L.onResize);
+  document.body.appendChild(root);
+  document.documentElement.classList.add('ld-lock');
+  const app = document.getElementById('app'); if (app) { try { app.inert = true; } catch (e) { /* abaikan */ } app.setAttribute('inert', ''); app.setAttribute('aria-hidden', 'true'); }
+  /* ilustrasi masuk berurutan saat slide terlihat; keluar dari layar = animasi diulang saat kembali */
+  const slides = $$('.ld-slide', root);
+  if (typeof IntersectionObserver === 'function') {
+    L.io = new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting && en.intersectionRatio >= 0.05) en.target.classList.add('on'); else if (!en.isIntersecting) en.target.classList.remove('on'); }), { root: L.track, threshold: [0, 0.05] });
+    slides.forEach(s => L.io.observe(s));
+  } else slides.forEach(s => s.classList.add('on'));
+  L.poll = setInterval(() => { if (typeof S !== 'undefined' && S.phase !== L.phase0) landingClose('auto'); }, 1000);     // pengaman: layar di belakang sudah berganti (mis. sudah masuk ke aplikasi)
+  const sr = $('#ld-sr', root); if (sr) sr.textContent = 'Slide 1 dari ' + LD_N;
+  try { root.focus({ preventScroll: true }); } catch (e) { /* abaikan */ }
+}
+ACT['landing-open'] = () => landingShow();
+/* Masuk dengan Google, Lupa kata sandi, Reset sandi (bersama untuk edisi Netlify dan Firebase).
+   Semua bagian ini TERSEMBUNYI TOTAL bila `status` tidak mengirim bendera (edisi Supabase / statis tidak berubah).
+   Bendera dari op `status` (disimpan netBoot lewat axApplyStatus): S.google (Client ID), S.resetMail, S.resetNeedsEmail, S.glink.
+   Titik kait: part2.js (loginHTML, updateLogin) dan net-client.js (mailVerifyBoot, netBoot, loginDone). */
+const AX = { busy: false, forgot: false, gsi: null, gsiInit: false, nativeInit: false, lockUntil: 0, lockT: null, fgBusy: false, rsBusy: false, linked: false, last: undefined, bad: '', rsMsg: '', revealEmail: false, storedEmail: '' };
+const AX_MAIL_KEY = 'saku.verify.email';
+const AX_GSI = 'https://accounts.google.com/gsi/client';
+const AX_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const AX_NEUTRAL = 'Jika data cocok, tautan untuk membuat kata sandi baru sudah dikirim ke email. Cek juga folder spam. Tautan berlaku 30 menit.';
+const AX_G_SVG = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+
+/* ---------- penolong ---------- */
+const axRead = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const axWrite = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* abaikan */ } };
+const axDrop = k => { try { localStorage.removeItem(k); } catch (e) { /* abaikan */ } };
+const axNative = () => { try { return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()); } catch (e) { return false; } };
+const axPlugin = () => { try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SocialLogin) || null; } catch (e) { return null; } };
+const axGsiReady = () => !!(window.google && window.google.accounts && window.google.accounts.id);
+const axDark = () => {
+  try {
+    const t = document.documentElement.getAttribute('data-theme');
+    return t === 'dark' || (t !== 'light' && !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  } catch (e) { return false; }
+};
+const axNorm = v => String(v == null ? '' : v).trim().toLowerCase();
+function axCleanUrl() { try { history.replaceState(null, '', location.pathname); } catch (e) { /* abaikan */ } }
+function axPwField(id, label, ph) {
+  return `<div class="field"><label for="${id}">${label}</label><div class="pw"><input class="input" id="${id}" type="password" autocomplete="new-password" maxlength="100"${ph ? ' placeholder="' + ph + '"' : ''}><button type="button" class="eye" data-act="toggle-pw" data-t="${id}" aria-label="Tampilkan kata sandi">${ic('eye', 20)}</button></div></div>`;
+}
+
+/* ---------- bendera status ---------- */
+function axApplyStatus(st) {
+  st = st || {};
+  S.google = typeof st.google === 'string' ? st.google.trim() : '';
+  S.resetMail = st.resetMail === true;
+  S.resetNeedsEmail = st.resetNeedsEmail === true;
+  S.glink = st.glink === true;
+  if (S.resetFlow && !S.resetMail) { S.resetFlow = null; axCleanUrl(); }   /* edisi tanpa reset email: tautan diabaikan */
+}
+
+/* ---------- potongan HTML layar login (dipanggil loginHTML) ---------- */
+const axGoogleOn = () => !!S.google && (!axNative() || !!axPlugin());
+function axForgotLinkHTML() {
+  return S.resetMail ? '<button type="button" class="linkbtn ax-forgot" id="l-forgot" data-act="forgot-open">Lupa kata sandi?</button>' : '';
+}
+function axGoogleHTML() {
+  if (!axGoogleOn()) return '';
+  const btn = axNative()
+    ? `<button type="button" class="ax-gnative" id="g-native" data-act="g-native">${AX_G_SVG}<span>Masuk dengan Google</span></button>`
+    : '<div class="ax-gbtn" id="g-btn"></div>';
+  return `<div class="ax-or" id="g-wrap" hidden><div class="ax-sep" aria-hidden="true"><span>atau</span></div>${btn}</div>`;
+}
+function axPanelsHTML() {
+  if (!S.resetMail) return '';
+  const two = !!S.resetNeedsEmail;
+  const forgot = `<form class="login-form" id="forgot-form" novalidate hidden>
+      <h2>Lupa kata sandi</h2>
+      <p class="sub">${two ? 'Isi username dan email yang terdaftar di akun Anda. Kami kirim tautan untuk membuat kata sandi baru.' : 'Isi username atau email akun Anda. Kami kirim tautan untuk membuat kata sandi baru.'}</p>
+      ${two
+        ? '<div class="field"><label for="fg-user">Username</label><input class="input" id="fg-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="mis. sifulan12"></div><div class="field"><label for="fg-email">Email</label><input class="input" id="fg-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="80" placeholder="mis. janedoe@email.com"></div>'
+        : '<div class="field"><label for="fg-id">Username atau email</label><input class="input" id="fg-id" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="80" placeholder="mis. sifulan12 atau janedoe@email.com"></div>'}
+      <p class="form-err" id="fg-err" role="alert" hidden></p>
+      <p class="ax-ok" id="fg-ok" role="status" aria-live="polite"></p>
+      <button class="btn btn-primary" id="fg-btn" type="submit">Kirim tautan reset</button>
+      <button type="button" class="btn btn-ghost" data-act="forgot-back">Kembali ke Masuk</button>
+    </form>`;
+  const reset = `<form class="login-form" id="reset-form" novalidate hidden>
+      <h2>Buat kata sandi baru</h2>
+      <p class="sub">Pilih kata sandi baru untuk akun Anda. Setelah disimpan, Anda langsung masuk.</p>
+      <p class="ax-who" id="rs-who" hidden><span>Akun</span> <b id="rs-user" translate="no"></b></p>
+      <div class="ax-fields" id="rs-fields">
+        ${two ? '<div class="field" id="rs-email-f" hidden><label for="rs-email">Email Anda</label><input class="input" id="rs-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="80" placeholder="mis. janedoe@email.com"><small class="hint">Email yang menerima tautan reset ini.</small></div>' : ''}
+        ${axPwField('rs-pw', 'Kata sandi baru', 'Minimal ' + MIN_PW + ' karakter')}
+        ${axPwField('rs-pw2', 'Ulangi kata sandi baru', 'Ketik ulang kata sandi')}
+      </div>
+      <p class="form-err" id="rs-err" role="alert" hidden></p>
+      <button class="btn btn-primary" id="rs-btn" type="submit">Simpan kata sandi baru</button>
+      <button type="button" class="btn btn-primary" id="rs-new" data-act="reset-new" hidden>Minta tautan baru</button>
+      <button type="button" class="btn btn-ghost" data-act="reset-cancel">Kembali ke Masuk</button>
+    </form>`;
+  return forgot + reset;
+}
+
+/* ---------- tampilan (dipanggil updateLogin) ---------- */
+function axView() {
+  if (!S.resetMail) return '';
+  if (S.resetFlow) return 'reset';
+  return AX.forgot ? 'lupa' : '';
+}
+function axPaint(view, showGoogle) {
+  const fg = $('#forgot-form'), rs = $('#reset-form'), gw = $('#g-wrap');
+  if (fg) fg.hidden = view !== 'lupa';
+  if (rs) rs.hidden = view !== 'reset';
+  if (gw) { gw.hidden = !showGoogle; if (showGoogle) axRenderGoogle('login'); }
+  if (view === 'reset') axPaintReset();
+  if (view === 'lupa') axTickLock();
+  if (view !== AX.last) {   /* fokus ke kolom pertama saat pengguna membuka panel (bukan saat halaman pertama dimuat) */
+    const first = AX.last !== undefined && view === 'lupa' ? ($('#fg-id') || $('#fg-user')) : null;
+    AX.last = view;
+    if (first) { try { first.focus(); } catch (e) { /* abaikan */ } }
+  }
+}
+
+/* ---------- Google: memuat GIS malas, tombol resmi ---------- */
+function axLoadGsi() {
+  if (axGsiReady()) return Promise.resolve();
+  if (AX.gsi) return AX.gsi;
+  AX.gsi = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = AX_GSI; s.async = true; s.defer = true;
+    s.onload = () => { if (axGsiReady()) res(); else { AX.gsi = null; rej(new Error('gsi')); } };
+    s.onerror = () => { AX.gsi = null; try { s.remove(); } catch (e) { /* abaikan */ } rej(new Error('gsi')); };
+    document.head.appendChild(s);
+  });
+  return AX.gsi;
+}
+function axInitGsi() {
+  if (AX.gsiInit) return;
+  window.google.accounts.id.initialize({ client_id: S.google, callback: r => axOnCred(r && r.credential), auto_select: false });
+  AX.gsiInit = true;
+}
+/* Satu callback global GIS: di layar login = masuk, di dalam aplikasi = menautkan akun */
+function axOnCred(cred) {
+  if (!cred) return;
+  if (S.phase === 'app') axGlink(cred); else axGoogleLogin(cred);
+}
+function axRenderGoogle(kind) {
+  if (!S.google || axNative()) return;
+  const holder = $(kind === 'glink' ? '#g-link-btn' : '#g-btn');
+  if (!holder || holder.dataset.st === 'load' || holder.dataset.st === 'done') return;
+  holder.dataset.st = 'load';
+  axLoadGsi().then(() => {
+    if (!holder.isConnected) return;
+    axInitGsi();
+    const w = Math.max(200, Math.min(320, Math.floor(holder.clientWidth || 320)));
+    holder.textContent = '';
+    window.google.accounts.id.renderButton(holder, { type: 'standard', theme: axDark() ? 'filled_black' : 'outline', size: 'large', text: kind === 'glink' ? 'continue_with' : 'signin_with', shape: 'pill', logo_alignment: 'left', width: w, locale: LANG === 'en' ? 'en' : 'id' });
+    holder.dataset.st = 'done';
+  }).catch(() => {
+    if (!holder.isConnected) return;
+    holder.dataset.st = '';
+    holder.innerHTML = '<small class="hint ax-gfail">Tombol Google tidak bisa dimuat. Periksa koneksi internet.</small><button type="button" class="linkbtn" data-act="g-retry" data-k="' + kind + '">Coba lagi</button>';
+  });
+}
+function axBusy(on) {
+  AX.busy = on;
+  $$('#g-wrap, #ax-glink').forEach(el => { el.classList.toggle('ax-busy', on); el.setAttribute('aria-busy', String(on)); });
+  $$('#g-native, #g-link-native').forEach(b => { b.disabled = on; });
+}
+function axFail(kind, msg) {
+  const el = $(kind === 'glink' ? '#gl-err' : '#l-err');
+  if (el) { el.textContent = msg; el.hidden = false; } else if (kind === 'glink') toast(msg);
+}
+
+/* ---------- Google: masuk ---------- */
+async function axGoogleLogin(credential) {
+  if (AX.busy || !credential) return;
+  const err = $('#l-err'), rem = $('#l-rem');
+  if (err) err.hidden = true;
+  axBusy(true);
+  try {
+    const r = await api('google', { credential });
+    loginDone(r, !rem || rem.checked);
+  } catch (e) { axFail('login', e.userMessage || 'Gagal masuk dengan Google. Coba lagi.'); }
+  axBusy(false);
+}
+/* ---------- Google: tautkan akun (Pengaturan) ---------- */
+async function axGlink(credential) {
+  if (AX.busy || !credential) return;
+  const err = $('#gl-err'); if (err) err.hidden = true;
+  axBusy(true);
+  try {
+    await api('glink', { credential });
+    AX.linked = true; axPaintGlink();
+    toast('Akun Google tertaut. Lain kali Anda bisa masuk dengan Google.');
+  } catch (e) { axFail('glink', e.userMessage || 'Gagal menautkan akun Google. Coba lagi.'); }
+  axBusy(false);
+}
+/* ---------- Google: aplikasi native (plugin @capgo/capacitor-social-login, bukan GIS) ---------- */
+const axCancelled = e => /cancel|closed|dismiss|12501|user.?abort|not.?selected/i.test(typeof e === 'string' ? e : String((e && (e.message || e.error || e.code)) || ''));
+async function axNativeToken() {
+  const P = axPlugin(); if (!P) throw new Error('noplugin');
+  if (!AX.nativeInit) {
+    if (typeof P.initialize === 'function') await P.initialize({ google: { webClientId: S.google } });
+    AX.nativeInit = true;
+  }
+  const r = await P.login({ provider: 'google', options: {} });
+  const tok = r && r.result && typeof r.result.idToken === 'string' ? r.result.idToken : '';
+  if (!tok) throw new Error('notoken');
+  return tok;
+}
+async function axNativeFlow(kind) {
+  if (AX.busy) return;
+  const errEl = $(kind === 'glink' ? '#gl-err' : '#l-err'); if (errEl) errEl.hidden = true;
+  axBusy(true);
+  let tok = '';
+  try { tok = await axNativeToken(); }
+  catch (e) { axBusy(false); if (!axCancelled(e)) axFail(kind, 'Google tidak bisa dibuka. Coba lagi.'); return; }
+  axBusy(false);
+  return kind === 'glink' ? axGlink(tok) : axGoogleLogin(tok);
+}
+
+/* ---------- Pengaturan: kartu "Masuk dengan Google" ---------- */
+function axGlinkBody() {
+  if (AX.linked) return '<p class="ax-ok ax-linked" role="status">Akun Google sudah tertaut.</p>';
+  return axNative()
+    ? `<button type="button" class="btn btn-ghost ax-gnative" id="g-link-native" data-act="g-link-native">${AX_G_SVG}<span>Tautkan akun Google</span></button>`
+    : '<div class="ax-gbtn" id="g-link-btn" role="group" aria-label="Tautkan akun Google"></div>';
+}
+function axGlinkHTML() {
+  if (!S.glink || S.phase !== 'app' || (axNative() && !axPlugin())) return '';
+  return `<section class="card ax-glink" id="ax-glink"><h2 class="t">Masuk dengan Google</h2><p class="desc">Tautkan akun Google ke akun SaKu ini agar lain kali Anda bisa masuk dengan Google, tanpa mengetik kata sandi.</p><div id="gl-body">${axGlinkBody()}</div><p class="form-err" id="gl-err" role="alert" hidden></p></section>`;
+}
+function axPaintGlink() {
+  const b = $('#gl-body'); if (!b) return;
+  b.innerHTML = axGlinkBody();
+  if (!AX.linked) axRenderGoogle('glink');
+}
+function axMountGlink(root) {
+  const html = axGlinkHTML(); if (!html || !root || !root.querySelector) return;
+  const pw = root.querySelector('[data-sub="pw"]'), st = root.querySelector('.stack');
+  if (pw) pw.insertAdjacentHTML('beforebegin', html); else if (st) st.insertAdjacentHTML('beforeend', html); else return;
+  if (!AX.linked) axRenderGoogle('glink');
+}
+(function () {   /* Pengaturan memanggil mount() sekali per kunjungan; kartu dipasang di luar area yang dicat ulang update() */
+  const v = typeof VIEWS === 'object' && VIEWS.akun;
+  if (!v || v.axWrapped) return;
+  const m = v.mount; v.axWrapped = true;
+  v.mount = function (el) { m.call(this, el); try { axMountGlink(el); } catch (e) { /* kartu tambahan tidak boleh merusak Pengaturan */ } };
+})();
+
+/* ---------- Lupa kata sandi ---------- */
+function axTickLock() {
+  const b = $('#fg-btn');
+  const left = Math.ceil((AX.lockUntil - Date.now()) / 1000);
+  if (left > 0) {
+    if (b) { b.disabled = true; b.textContent = 'Kirim ulang dalam ' + left + ' dtk'; }
+    if (!AX.lockT) AX.lockT = setInterval(axTickLock, 1000);
+    return;
+  }
+  if (AX.lockT) { clearInterval(AX.lockT); AX.lockT = null; }
+  if (b && !AX.fgBusy) { b.disabled = false; b.textContent = 'Kirim tautan reset'; }
+}
+function axOpenForgot(pre) {
+  AX.forgot = true; S.authTab = 'masuk';
+  const l = $('#l-err'); if (l) l.hidden = true;
+  const fe = $('#fg-err'); if (fe) fe.hidden = true;
+  const ok = $('#fg-ok'); if (ok && Date.now() >= AX.lockUntil) ok.textContent = '';
+  const name = axNorm(pre != null ? pre : (($('#l-name') || {}).value || ''));
+  const id = $('#fg-id'), us = $('#fg-user');
+  if (name) { if (id && !id.value) id.value = name; if (us && !us.value) us.value = name; }
+  const em = $('#fg-email'); if (em && !em.value) em.value = axRead(AX_MAIL_KEY);
+  updateLogin();
+}
+async function axForgotSubmit() {
+  if (AX.fgBusy || Date.now() < AX.lockUntil) return;
+  const err = $('#fg-err'), ok = $('#fg-ok'), btn = $('#fg-btn'), two = !!S.resetNeedsEmail;
+  const fail = m => { err.textContent = m; err.hidden = false; ok.textContent = ''; };
+  err.hidden = true; ok.textContent = '';
+  let body;
+  if (two) {
+    const u = axNorm($('#fg-user').value), em = axNorm($('#fg-email').value);
+    if (!u || !em) return fail('Isi username dan email Anda.');
+    if (!AX_EMAIL_RE.test(em)) return fail('Email tidak valid. Contoh: sifulan12@email.com.');
+    body = { id: u, email: em }; axWrite(AX_MAIL_KEY, em);   /* dipakai layar reset di perangkat yang sama */
+  } else {
+    const id = axNorm($('#fg-id').value);
+    if (!id) return fail('Isi username atau email Anda.');
+    body = { id };
+  }
+  AX.fgBusy = true; btn.disabled = true; btn.textContent = 'Mengirim…';
+  try {
+    await api('forgot', body);
+    ok.textContent = AX_NEUTRAL;
+    AX.lockUntil = Date.now() + 30000;
+  } catch (e) { fail(e.userMessage || 'Gagal mengirim tautan. Coba lagi.'); }
+  AX.fgBusy = false; btn.disabled = false; btn.textContent = 'Kirim tautan reset';
+  axTickLock();
+}
+
+/* ---------- Layar "Buat kata sandi baru" (tautan di email) ---------- */
+function axResetBoot(qp) {
+  const code = String(qp.get('oobCode') || qp.get('rs') || '').trim();
+  S.resetFlow = { u: axNorm(qp.get('u')), code };
+  AX.storedEmail = axRead(AX_MAIL_KEY); AX.bad = ''; AX.rsMsg = ''; AX.revealEmail = false;
+  if (!code) { AX.bad = 'hard'; AX.rsMsg = 'Tautan tidak lengkap. Minta tautan baru.'; }
+}
+function axPaintReset() {
+  const f = S.resetFlow; if (!f) return;
+  const who = $('#rs-who'), us = $('#rs-user'); if (who && us) { us.textContent = f.u; who.hidden = !f.u; }
+  const ef = $('#rs-email-f'), em = $('#rs-email');
+  if (ef && em) { ef.hidden = !(S.resetNeedsEmail && (!AX.storedEmail || AX.revealEmail)); if (!em.value && AX.storedEmail) em.value = AX.storedEmail; }
+  const hard = AX.bad === 'hard';
+  $('#rs-fields').hidden = hard; $('#rs-btn').hidden = hard; $('#rs-new').hidden = !AX.bad;
+  const err = $('#rs-err'); if (err) { if (AX.rsMsg) { err.textContent = AX.rsMsg; err.hidden = false; } else err.hidden = true; }
+}
+function axPwProblem(a, b) {
+  if (String(a || '').length < MIN_PW) return 'Kata sandi minimal ' + MIN_PW + ' karakter.';
+  if (a.length > 100) return 'Kata sandi terlalu panjang (maksimal 100 karakter).';
+  if (a === DEFAULT_PW) return 'Pilih kata sandi yang berbeda dari kata sandi awal.';
+  if (a !== b) return 'Konfirmasi kata sandi tidak sama.';
+  return '';
+}
+async function axResetSubmit() {
+  const f = S.resetFlow; if (AX.rsBusy || !f || AX.bad === 'hard') return;
+  const btn = $('#rs-btn'), two = !!S.resetNeedsEmail;
+  const fail = m => { AX.rsMsg = m; axPaintReset(); };
+  AX.rsMsg = ''; axPaintReset();
+  const pw = $('#rs-pw').value, pw2 = $('#rs-pw2').value, emEl = $('#rs-email');
+  const email = two ? axNorm(emEl ? emEl.value : '') || axNorm(AX.storedEmail) : '';
+  if (two && !AX_EMAIL_RE.test(email)) { AX.revealEmail = true; fail('Isi email yang menerima tautan reset.'); const x = $('#rs-email'); if (x) x.focus(); return; }
+  const bad = axPwProblem(pw, pw2); if (bad) return fail(bad);
+  AX.rsBusy = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try {
+    const body = { u: f.u, code: f.code, password: pw }; if (two) body.email = email;
+    const r = await api('reset', body);
+    S.resetFlow = null; AX.bad = ''; AX.rsMsg = ''; axCleanUrl(); if (two) axDrop(AX_MAIL_KEY);
+    loginDone(r, axNative());
+    toast('Kata sandi diganti. Anda sudah masuk.');
+  } catch (e) {
+    if (e.code === 'badlink') {
+      if (two && !AX.storedEmail && !AX.revealEmail) { AX.bad = 'hard'; AX.rsMsg = 'Tautan tidak valid, sudah dipakai, atau sudah kedaluwarsa. Minta tautan baru.'; }
+      else if (two && !AX.revealEmail) { AX.revealEmail = true; AX.bad = 'soft'; AX.rsMsg = 'Tautan tidak valid, sudah dipakai, atau sudah kedaluwarsa. Pastikan email Anda benar, atau minta tautan baru.'; }
+      else { AX.bad = 'hard'; AX.rsMsg = 'Tautan tidak valid, sudah dipakai, atau sudah kedaluwarsa. Minta tautan baru.'; }
+    } else { AX.rsMsg = e.userMessage || 'Gagal menyimpan kata sandi. Coba lagi.'; if (two && e.code === 'mismatch') AX.revealEmail = true; }
+    axPaintReset();
+  }
+  AX.rsBusy = false;
+  if (btn) { btn.disabled = false; btn.textContent = 'Simpan kata sandi baru'; }
+}
+
+/* ---------- aksi & kirim formulir ---------- */
+Object.assign(ACT, {
+  'forgot-open'() { axOpenForgot(); },
+  'forgot-back'() { AX.forgot = false; updateLogin(); const l = $('#l-forgot'); if (l) l.focus(); },
+  'reset-new'() {
+    const u = S.resetFlow ? S.resetFlow.u : '';
+    S.resetFlow = null; AX.bad = ''; AX.rsMsg = ''; AX.revealEmail = false; axCleanUrl();
+    axOpenForgot(u);
+  },
+  'reset-cancel'() { S.resetFlow = null; AX.bad = ''; AX.rsMsg = ''; AX.revealEmail = false; AX.forgot = false; axCleanUrl(); updateLogin(); },
+  'g-native'() { axNativeFlow('login'); },
+  'g-link-native'() { axNativeFlow('glink'); },
+  'g-retry'(el) { const h = el.parentNode; if (h) { h.dataset.st = ''; h.textContent = ''; } axRenderGoogle(el.dataset.k === 'glink' ? 'glink' : 'login'); }
+});
+document.addEventListener('submit', e => {
+  const id = e.target && e.target.id;
+  if (id === 'forgot-form') axForgotSubmit();
+  else if (id === 'reset-form') axResetSubmit();
+});
 /* ================= Rekening bank & e-wallet, pindah saldo, dan kategori buatan sendiri =================
    Rekening disimpan di pengaturan akun: settings.accts = [{ id, kind: 'bank'|'ewallet'|'cash', brand, name, open }], settings.payDefault = id rekening bawaan.
    Setiap transaksi boleh membawa acc (rekening yang dipakai). Topup e-wallet dan Pindah Saldo membawa acc (asal) dan to (tujuan):
@@ -10628,7 +11424,7 @@ function mkPaint() {
 
 /* Terjemahan layar: terapkan bahasa tersimpan saat aplikasi dibuka */
 if (typeof document !== 'undefined') { if (document.body) i18nSync(); else document.addEventListener('DOMContentLoaded', i18nSync); }
-const FB_RULES = "rules_version = '2';\n\n// Saku: aturan keamanan Firestore.\n// Tempel seluruh isi file ini di Firebase Console -> Firestore Database -> Rules -> Publish.\nservice cloud.firestore {\n  match /databases/{database}/documents {\n\n    function signedIn() {\n      return request.auth != null;\n    }\n\n    // Administrator = punya dokumen admins/{uid}\n    function isAdmin() {\n      return signedIn()\n        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));\n    }\n\n    // Admin pembantu = punya dokumen helpers/{uid}. Pengguna biasa dengan catatan sendiri, ditambah menu Admin\n    // untuk pekerjaan rutin: menyetujui/menolak pendaftar, membuat akun pengguna, mengaktifkan/menonaktifkan pengguna.\n    function isHelper() {\n      return signedIn()\n        && exists(/databases/$(database)/documents/helpers/$(request.auth.uid));\n    }\n\n    function isStaff() {\n      return isAdmin() || isHelper();\n    }\n\n    function profileOf(u) {\n      return get(/databases/$(database)/documents/profiles/$(u)).data;\n    }\n\n    // Pemilik username u = akun login ini (profiles/{u}.uid sama dengan uid yang masuk)\n    function isMe(u) {\n      return signedIn() && profileOf(u).uid == request.auth.uid;\n    }\n\n    // Pemilik yang akunnya sudah disetujui dan tidak dinonaktifkan\n    function isActiveMe(u) {\n      let p = profileOf(u);\n      return signedIn()\n        && p.uid == request.auth.uid\n        && p.status == 'active'\n        && p.active == true;\n    }\n\n    // Pembuatan admin pertama: hanya selama config/public belum ada, dan harus dalam\n    // satu penulisan yang sama dengan pembuatan config/public + admins/{uid} sendiri.\n    function bootstrapping() {\n      return signedIn()\n        && !exists(/databases/$(database)/documents/config/public)\n        && existsAfter(/databases/$(database)/documents/config/public)\n        && existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));\n    }\n\n    // Bentuk dokumen profil yang boleh dibuat pendaftar sendiri (dibatasi ukuran dan isinya)\n    function regShape(u) {\n      let d = request.resource.data;\n      return d.id == u\n        && d.keys().hasOnly(['id', 'uid', 'name', 'first', 'last', 'role', 'status', 'active', 'isDefault', 'birth', 'phone', 'email', 'emailOk', 'requestedAt', 'createdAt', 'createdBy'])\n        && (!('emailOk' in d) || d.emailOk == false)\n        && d.name is string && d.name.size() <= 70\n        && d.first is string && d.first.size() <= 30\n        && d.last is string && d.last.size() <= 30\n        && d.email is string && d.email.size() <= 80 && d.email == d.email.lower()\n        && d.phone is string && d.phone.size() <= 20\n        && d.birth is string && (d.birth.size() == 10 || d.birth.size() == 0);\n    }\n\n    // Pendaftaran sendiri: selalu menunggu persetujuan admin, peran pengguna biasa\n    function selfRegister(u) {\n      return signedIn()\n        && exists(/databases/$(database)/documents/config/public)\n        && request.resource.data.uid == request.auth.uid\n        && request.resource.data.role == 'user'\n        && request.resource.data.status == 'pending'\n        && request.resource.data.active == false\n        && existsAfter(/databases/$(database)/documents/hints/$(u))\n        && regShape(u);\n    }\n\n    function bootstrapProfile(u) {\n      return bootstrapping()\n        && request.resource.data.id == u\n        && request.resource.data.uid == request.auth.uid\n        && request.resource.data.role == 'admin'\n        && request.resource.data.status == 'active';\n    }\n\n    // Penanda publik: apakah aplikasi sudah disiapkan + batas waktu login (menit)\n    // + pengingat cadangan akhir pekan (aktif atau tidak, lama tampil dalam detik)\n    // + kunci PUBLIK pemulihan untuk cadangan tertutup (hanya bisa dipasang sekali; kunci privatnya tidak pernah disimpan di sini)\n    match /config/public {\n      allow get: if true;\n      allow create: if bootstrapping();\n      allow update: if isAdmin()\n        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionMinutes', 'backupOn', 'backupSeconds', 'vaultPub', 'vaultKid'])\n        && request.resource.data.sessionMinutes is int\n        && request.resource.data.sessionMinutes >= 1\n        && request.resource.data.sessionMinutes <= 1440\n        && (!('backupOn' in request.resource.data) || request.resource.data.backupOn is bool)\n        && (!('backupSeconds' in request.resource.data)\n            || (request.resource.data.backupSeconds is int\n                && request.resource.data.backupSeconds >= 5\n                && request.resource.data.backupSeconds <= 600))\n        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['vaultPub', 'vaultKid'])\n            || (!('vaultPub' in resource.data)\n                && request.resource.data.vaultPub is string && request.resource.data.vaultPub.size() <= 900\n                && request.resource.data.vaultKid is string && request.resource.data.vaultKid.size() <= 20));\n    }\n\n    match /admins/{uid} {\n      allow create: if isAdmin() || (signedIn() && request.auth.uid == uid && bootstrapping());\n      allow delete: if isAdmin();\n    }\n\n    // Penanda admin pembantu: hanya administrator yang boleh menunjuk atau mencabutnya\n    match /helpers/{uid} {\n      allow create: if isAdmin();\n      allow delete: if isAdmin();\n    }\n\n    // Bentuk profil yang boleh dibuat admin pembantu: selalu pengguna biasa yang langsung aktif\n    function helperNewUser(u) {\n      let d = request.resource.data;\n      return isHelper()\n        && d.id == u\n        && d.role == 'user'\n        && d.status == 'active'\n        && d.active == true\n        && d.keys().hasOnly(['id', 'uid', 'name', 'role', 'status', 'active', 'isDefault', 'createdAt', 'createdBy']);\n    }\n\n    // Statistik yang boleh ditulis pemilik akun untuk pemantauan admin: hanya jumlah dan waktu, tidak pernah isi catatan\n    function statsOk() {\n      let d = request.resource.data;\n      return (!('txCount' in d) || (d.txCount is int && d.txCount >= 0 && d.txCount <= 100000))\n        && (!('lastTxAt' in d) || (d.lastTxAt is string && d.lastTxAt.size() <= 40))\n        && (!('lastBackupAt' in d) || (d.lastBackupAt is string && d.lastBackupAt.size() <= 40))\n        && (!('lastLoginAt' in d) || (d.lastLoginAt is string && d.lastLoginAt.size() <= 40));\n    }\n\n    match /profiles/{u} {\n      allow get: if isStaff() || isMe(u);\n      allow list: if isStaff();\n      allow create: if isAdmin() || helperNewUser(u) || selfRegister(u) || bootstrapProfile(u);\n      allow update: if isAdmin()\n        || (isHelper()\n            && resource.data.role == 'user'\n            && request.resource.data.role == 'user'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'active', 'approvedAt', 'approvedBy', 'rejectedAt', 'rejectedBy']))\n        // Konfirmasi email: pemilik email yang terverifikasi (lewat tautan dari Firebase) mengaktifkan pendaftarannya sendiri.\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'pending'\n            && resource.data.emailOk == false\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.status == 'active'\n            && request.resource.data.active == true\n            && request.resource.data.emailOk == true\n            && request.resource.data.role == 'user'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'active', 'emailOk', 'verifiedAt', 'approvedAt', 'approvedBy']))\n        // Akun lama yang sudah aktif: verifikasi ulang email lewat tautan (hanya menandai emailOk).\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'active'\n            && (!('emailOk' in resource.data) || resource.data.emailOk == false)\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.emailOk == true\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailOk', 'verifiedAt']))\n        // Verifikasi email untuk ganti kata sandi: hanya menandai pwOkAt.\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'active'\n            && resource.data.emailOk == true\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.pwOkAt is string && request.resource.data.pwOkAt.size() <= 40\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pwOkAt']))\n        // Pendaftar yang belum konfirmasi boleh mengganti email-nya.\n        || (isMe(u)\n            && resource.data.status == 'pending'\n            && resource.data.emailOk == false\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email'])\n            && request.resource.data.email is string && request.resource.data.email.size() <= 80\n            && request.resource.data.email == request.resource.data.email.lower())\n        || (isActiveMe(u)\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDefault', 'txCount', 'lastTxAt', 'lastBackupAt', 'lastLoginAt', 'email', 'emailOk', 'birth', 'photo', 'pwOkAt'])\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['photo']) || (request.resource.data.photo is string && request.resource.data.photo.size() <= 40000))\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['birth']) || (request.resource.data.birth is string && (request.resource.data.birth.size() == 10 || request.resource.data.birth.size() == 0)))\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pwOkAt']) || request.resource.data.pwOkAt == '')\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['email', 'emailOk'])\n                || (request.resource.data.emailOk == false && request.resource.data.email is string && request.resource.data.email.size() <= 80 && request.resource.data.email == request.resource.data.email.lower()))\n            && (request.resource.data.isDefault == false || request.resource.data.isDefault == resource.data.isDefault)\n            && statsOk());\n      allow delete: if isAdmin();\n    }\n\n    // Kode pembeda login (dipakai untuk reset sandi oleh admin). Hanya berisi huruf acak.\n    match /hints/{u} {\n      allow get: if true;\n      allow create: if isAdmin()\n        || (isHelper()\n            && existsAfter(/databases/$(database)/documents/profiles/$(u))\n            && getAfter(/databases/$(database)/documents/profiles/$(u)).data.role == 'user')\n        || (signedIn()\n            && existsAfter(/databases/$(database)/documents/profiles/$(u))\n            && getAfter(/databases/$(database)/documents/profiles/$(u)).data.uid == request.auth.uid);\n      allow update, delete: if isAdmin();\n    }\n\n    // Buku catatan satu pengguna + foto-fotonya. Hanya pemilik yang aktif yang bisa MEMBACA.\n    // Administrator tidak bisa membaca, tetapi boleh menulis: dipakai pemulihan cadangan tertutup (isinya hasil buka berkas\n    // yang disegel dengan kunci pemulihan) dan membersihkan data akun yang dihapus.\n    match /books/{u} {\n      allow get: if isActiveMe(u);\n      allow create, update: if isActiveMe(u) || (isAdmin() && request.resource.data.keys().hasOnly(['rev', 'json']));\n      allow delete: if isAdmin();\n\n      match /photos/{id} {\n        allow get: if isActiveMe(u);\n        allow create, update: if isActiveMe(u) || (isAdmin() && request.resource.data.keys().hasOnly(['data', 'createdAt']));\n        allow delete: if isActiveMe(u) || isAdmin();\n        allow list: if isAdmin();\n      }\n    }\n\n    // Salinan tersegel (cadangan tertutup). Aplikasi pengguna menyegel salinan bukunya dengan kunci publik pemulihan;\n    // administrator hanya bisa mengunduh teks acak ini dan tidak bisa membukanya tanpa berkas kunci pemulihan.\n    function sealOk(u, allowed) {\n      let d = request.resource.data;\n      return isActiveMe(u)\n        && d.keys().hasOnly(allowed)\n        && d.kid is string && d.kid.size() <= 20\n        && d.kid == get(/databases/$(database)/documents/config/public).data.vaultKid\n        && d.at is string && d.at.size() <= 40\n        && d.w is string && d.w.size() <= 600\n        && d.i is string && d.i.size() <= 40\n        && d.c is string && d.c.size() <= 900000\n        && (!('z' in d) || d.z == 1);\n    }\n    match /vault/{u} {\n      allow get: if isActiveMe(u) || isAdmin();\n      allow list: if isAdmin();\n      allow create, update: if sealOk(u, ['rev', 'kid', 'at', 'n', 'z', 'w', 'i', 'c'])\n        && request.resource.data.rev is int\n        && request.resource.data.n is int && request.resource.data.n >= 0 && request.resource.data.n <= 100000;\n      allow delete: if isAdmin();\n\n      match /photos/{id} {\n        allow get: if isActiveMe(u) || isAdmin();\n        allow list: if isActiveMe(u) || isAdmin();\n        allow create, update: if sealOk(u, ['kid', 'at', 'z', 'w', 'i', 'c']);\n        allow delete: if isActiveMe(u) || isAdmin();\n      }\n    }\n\n    // ---------- Teman: kode teman, permintaan, pertemanan, dan rencana yang dibagikan ----------\n    // Kode teman (SAKU-XXXX-XXXX) hanya menunjuk ke username pemiliknya; tidak membuka data apa pun.\n    match /fme/{u} {\n      allow get: if isActiveMe(u);\n      allow create: if isActiveMe(u) && request.resource.data.keys().hasOnly(['code']) && request.resource.data.code is string && request.resource.data.code.size() == 8;\n      allow update, delete: if false;\n    }\n    match /fcodes/{code} {\n      allow get: if signedIn();\n      allow create: if signedIn() && isActiveMe(request.resource.data.u)\n        && request.resource.data.keys().hasOnly(['u', 'name'])\n        && request.resource.data.name is string && request.resource.data.name.size() <= 60;\n      allow update, delete: if false;\n    }\n    // Kotak masuk permintaan: pengirim membuat, penerima membaca; keduanya boleh menghapus.\n    match /fin/{to}/from/{from} {\n      allow get: if isMe(to) || isMe(from);\n      allow list: if isMe(to);\n      allow create: if isActiveMe(from) && from != to\n        && request.resource.data.keys().hasOnly(['at', 'name'])\n        && request.resource.data.name is string && request.resource.data.name.size() <= 60;\n      allow update: if false;\n      allow delete: if isMe(to) || isMe(from);\n    }\n    // Catatan permintaan keluar milik pengirim\n    match /fout/{u}/to/{o} {\n      allow get, list: if isMe(u);\n      allow create: if isActiveMe(u) && request.resource.data.keys().hasOnly(['at', 'name']);\n      allow update: if false;\n      allow delete: if isMe(u) || isMe(o);\n    }\n    // Daftar teman: satu entri per sisi; dibuat saat permintaan disetujui oleh penerima.\n    match /fship/{u}/with/{o} {\n      allow get, list: if isMe(u);\n      allow create: if request.resource.data.keys().hasOnly(['at', 'name'])\n        && ((isActiveMe(u) && exists(/databases/$(database)/documents/fin/$(u)/from/$(o)))\n            || (isActiveMe(o) && exists(/databases/$(database)/documents/fin/$(o)/from/$(u))));\n      allow update: if false;\n      allow delete: if isMe(u) || isMe(o);\n    }\n    // Rencana yang dibagikan: pemilik menulis salinannya; pemilik dan penerima membaca.\n    match /fsh/{owner}/to/{r}/items/{key} {\n      allow get, list: if isMe(owner) || isMe(r);\n      allow create, update: if isActiveMe(owner)\n        && exists(/databases/$(database)/documents/fship/$(owner)/with/$(r))\n        && request.resource.data.keys().hasOnly(['kind', 'itemId', 'name', 'at', 'j'])\n        && request.resource.data.j is string && request.resource.data.j.size() <= 40000\n        && request.resource.data.name is string && request.resource.data.name.size() <= 80;\n      allow delete: if isMe(owner) || isMe(r);\n    }\n  }\n}\n";
+const FB_RULES = "rules_version = '2';\n\n// Saku: aturan keamanan Firestore.\n// Tempel seluruh isi file ini di Firebase Console -> Firestore Database -> Rules -> Publish.\nservice cloud.firestore {\n  match /databases/{database}/documents {\n\n    function signedIn() {\n      return request.auth != null;\n    }\n\n    // Administrator = punya dokumen admins/{uid}\n    function isAdmin() {\n      return signedIn()\n        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));\n    }\n\n    // Admin pembantu = punya dokumen helpers/{uid}. Pengguna biasa dengan catatan sendiri, ditambah menu Admin\n    // untuk pekerjaan rutin: menyetujui/menolak pendaftar, membuat akun pengguna, mengaktifkan/menonaktifkan pengguna.\n    function isHelper() {\n      return signedIn()\n        && exists(/databases/$(database)/documents/helpers/$(request.auth.uid));\n    }\n\n    function isStaff() {\n      return isAdmin() || isHelper();\n    }\n\n    function profileOf(u) {\n      return get(/databases/$(database)/documents/profiles/$(u)).data;\n    }\n\n    // Pemilik username u = akun login ini (profiles/{u}.uid sama dengan uid yang masuk)\n    function isMe(u) {\n      return signedIn() && profileOf(u).uid == request.auth.uid;\n    }\n\n    // Pemilik yang akunnya sudah disetujui dan tidak dinonaktifkan\n    function isActiveMe(u) {\n      let p = profileOf(u);\n      return signedIn()\n        && p.uid == request.auth.uid\n        && p.status == 'active'\n        && p.active == true;\n    }\n\n    // Pembuatan admin pertama: hanya selama config/public belum ada, dan harus dalam\n    // satu penulisan yang sama dengan pembuatan config/public + admins/{uid} sendiri.\n    function bootstrapping() {\n      return signedIn()\n        && !exists(/databases/$(database)/documents/config/public)\n        && existsAfter(/databases/$(database)/documents/config/public)\n        && existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));\n    }\n\n    // Bentuk dokumen profil yang boleh dibuat pendaftar sendiri (dibatasi ukuran dan isinya)\n    function regShape(u) {\n      let d = request.resource.data;\n      return d.id == u\n        && d.keys().hasOnly(['id', 'uid', 'name', 'first', 'last', 'role', 'status', 'active', 'isDefault', 'birth', 'phone', 'email', 'emailOk', 'requestedAt', 'createdAt', 'createdBy'])\n        && (!('emailOk' in d) || d.emailOk == false)\n        && d.name is string && d.name.size() <= 70\n        && d.first is string && d.first.size() <= 30\n        && d.last is string && d.last.size() <= 30\n        && d.email is string && d.email.size() <= 80 && d.email == d.email.lower()\n        && d.phone is string && d.phone.size() <= 20\n        && d.birth is string && (d.birth.size() == 10 || d.birth.size() == 0);\n    }\n\n    // Pendaftaran sendiri: selalu menunggu persetujuan admin, peran pengguna biasa\n    function selfRegister(u) {\n      return signedIn()\n        && exists(/databases/$(database)/documents/config/public)\n        && request.resource.data.uid == request.auth.uid\n        && request.resource.data.role == 'user'\n        && request.resource.data.status == 'pending'\n        && request.resource.data.active == false\n        && existsAfter(/databases/$(database)/documents/hints/$(u))\n        && regShape(u);\n    }\n\n    function bootstrapProfile(u) {\n      return bootstrapping()\n        && request.resource.data.id == u\n        && request.resource.data.uid == request.auth.uid\n        && request.resource.data.role == 'admin'\n        && request.resource.data.status == 'active';\n    }\n\n    // Penanda publik: apakah aplikasi sudah disiapkan + batas waktu login (menit)\n    // + pengingat cadangan akhir pekan (aktif atau tidak, lama tampil dalam detik)\n    // + kunci PUBLIK pemulihan untuk cadangan tertutup (hanya bisa dipasang sekali; kunci privatnya tidak pernah disimpan di sini)\n    match /config/public {\n      allow get: if true;\n      allow create: if bootstrapping();\n      allow update: if isAdmin()\n        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionMinutes', 'backupOn', 'backupSeconds', 'vaultPub', 'vaultKid'])\n        && request.resource.data.sessionMinutes is int\n        && request.resource.data.sessionMinutes >= 1\n        && request.resource.data.sessionMinutes <= 1440\n        && (!('backupOn' in request.resource.data) || request.resource.data.backupOn is bool)\n        && (!('backupSeconds' in request.resource.data)\n            || (request.resource.data.backupSeconds is int\n                && request.resource.data.backupSeconds >= 5\n                && request.resource.data.backupSeconds <= 600))\n        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['vaultPub', 'vaultKid'])\n            || (!('vaultPub' in resource.data)\n                && request.resource.data.vaultPub is string && request.resource.data.vaultPub.size() <= 900\n                && request.resource.data.vaultKid is string && request.resource.data.vaultKid.size() <= 20));\n    }\n\n    match /admins/{uid} {\n      allow create: if isAdmin() || (signedIn() && request.auth.uid == uid && bootstrapping());\n      allow delete: if isAdmin();\n    }\n\n    // Penanda admin pembantu: hanya administrator yang boleh menunjuk atau mencabutnya\n    match /helpers/{uid} {\n      allow create: if isAdmin();\n      allow delete: if isAdmin();\n    }\n\n    // Bentuk profil yang boleh dibuat admin pembantu: selalu pengguna biasa yang langsung aktif\n    function helperNewUser(u) {\n      let d = request.resource.data;\n      return isHelper()\n        && d.id == u\n        && d.role == 'user'\n        && d.status == 'active'\n        && d.active == true\n        && d.keys().hasOnly(['id', 'uid', 'name', 'role', 'status', 'active', 'isDefault', 'createdAt', 'createdBy']);\n    }\n\n    // Statistik yang boleh ditulis pemilik akun untuk pemantauan admin: hanya jumlah dan waktu, tidak pernah isi catatan\n    function statsOk() {\n      let d = request.resource.data;\n      return (!('txCount' in d) || (d.txCount is int && d.txCount >= 0 && d.txCount <= 100000))\n        && (!('lastTxAt' in d) || (d.lastTxAt is string && d.lastTxAt.size() <= 40))\n        && (!('lastBackupAt' in d) || (d.lastBackupAt is string && d.lastBackupAt.size() <= 40))\n        && (!('lastLoginAt' in d) || (d.lastLoginAt is string && d.lastLoginAt.size() <= 40));\n    }\n\n    match /profiles/{u} {\n      // Baca satu profil: staf, pemilik (uid sama), atau pemegang email terverifikasi yang sama dengan email profil\n      // (reset kata sandi lewat email: tautan email menghasilkan identitas dengan email terverifikasi).\n      allow get: if isStaff() || isMe(u)\n        || (signedIn() && request.auth.token.email_verified == true && resource.data.email == request.auth.token.email);\n      // Query daftar profil: staf bebas. Pengguna lain hanya lewat query yang memuat filter uid == uid sendiri\n      // (profil milik identitas ini), atau email == email terverifikasinya DAN emailOk == true (masuk dengan Google).\n      allow list: if isStaff()\n        || (signedIn()\n            && (resource.data.uid == request.auth.uid\n                || (request.auth.token.email_verified == true\n                    && resource.data.email == request.auth.token.email\n                    && resource.data.emailOk == true)));\n      allow create: if isAdmin() || helperNewUser(u) || selfRegister(u) || bootstrapProfile(u);\n      allow update: if isAdmin()\n        || (isHelper()\n            && resource.data.role == 'user'\n            && request.resource.data.role == 'user'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'active', 'approvedAt', 'approvedBy', 'rejectedAt', 'rejectedBy']))\n        // Konfirmasi email: pemilik email yang terverifikasi (lewat tautan dari Firebase) mengaktifkan pendaftarannya sendiri.\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'pending'\n            && resource.data.emailOk == false\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.status == 'active'\n            && request.resource.data.active == true\n            && request.resource.data.emailOk == true\n            && request.resource.data.role == 'user'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'active', 'emailOk', 'verifiedAt', 'approvedAt', 'approvedBy']))\n        // Akun lama yang sudah aktif: verifikasi ulang email lewat tautan (hanya menandai emailOk).\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'active'\n            && (!('emailOk' in resource.data) || resource.data.emailOk == false)\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.emailOk == true\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailOk', 'verifiedAt']))\n        // Verifikasi email untuk ganti kata sandi: hanya menandai pwOkAt.\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.status == 'active'\n            && resource.data.emailOk == true\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.pwOkAt is string && request.resource.data.pwOkAt.size() <= 40\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pwOkAt']))\n        // Pendaftar yang belum konfirmasi boleh mengganti email-nya.\n        || (isMe(u)\n            && resource.data.status == 'pending'\n            && resource.data.emailOk == false\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email'])\n            && request.resource.data.email is string && request.resource.data.email.size() <= 80\n            && request.resource.data.email == request.resource.data.email.lower())\n        // Pemulihan akses (reset kata sandi lewat email): pemegang email terverifikasi yang sama dengan email profil\n        // memindahkan profil pengguna biasa yang aktif ke identitas Auth baru. Hanya field uid yang boleh berubah;\n        // admin dan admin pembantu (role bukan 'user') tidak bisa dipulihkan lewat jalur ini.\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && resource.data.role == 'user'\n            && resource.data.status == 'active'\n            && resource.data.emailOk == true\n            && request.auth.token.email == resource.data.email\n            && request.resource.data.uid is string\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid']))\n        || (isActiveMe(u)\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDefault', 'txCount', 'lastTxAt', 'lastBackupAt', 'lastLoginAt', 'email', 'emailOk', 'birth', 'photo', 'pwOkAt'])\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['photo']) || (request.resource.data.photo is string && request.resource.data.photo.size() <= 40000))\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['birth']) || (request.resource.data.birth is string && (request.resource.data.birth.size() == 10 || request.resource.data.birth.size() == 0)))\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pwOkAt']) || request.resource.data.pwOkAt == '')\n            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['email', 'emailOk'])\n                || (request.resource.data.emailOk == false && request.resource.data.email is string && request.resource.data.email.size() <= 80 && request.resource.data.email == request.resource.data.email.lower()))\n            && (request.resource.data.isDefault == false || request.resource.data.isDefault == resource.data.isDefault)\n            && statsOk());\n      allow delete: if isAdmin();\n    }\n\n    // Kode pembeda login (dipakai untuk reset sandi oleh admin). Hanya berisi huruf acak.\n    match /hints/{u} {\n      allow get: if true;\n      allow create: if isAdmin()\n        || (isHelper()\n            && existsAfter(/databases/$(database)/documents/profiles/$(u))\n            && getAfter(/databases/$(database)/documents/profiles/$(u)).data.role == 'user')\n        || (signedIn()\n            && existsAfter(/databases/$(database)/documents/profiles/$(u))\n            && getAfter(/databases/$(database)/documents/profiles/$(u)).data.uid == request.auth.uid);\n      // Ubah kode: administrator, atau (pemulihan akses lewat email) pemegang email terverifikasi yang sama dengan\n      // email profil pengguna biasa yang emailnya sudah terverifikasi; dokumen hints hanya berisi kunci g.\n      allow update: if isAdmin()\n        || (signedIn()\n            && request.auth.token.email_verified == true\n            && profileOf(u).email == request.auth.token.email\n            && profileOf(u).emailOk == true\n            && profileOf(u).role == 'user'\n            && request.resource.data.keys().hasOnly(['g']));\n      allow delete: if isAdmin();\n    }\n\n    // Buku catatan satu pengguna + foto-fotonya. Hanya pemilik yang aktif yang bisa MEMBACA.\n    // Administrator tidak bisa membaca, tetapi boleh menulis: dipakai pemulihan cadangan tertutup (isinya hasil buka berkas\n    // yang disegel dengan kunci pemulihan) dan membersihkan data akun yang dihapus.\n    match /books/{u} {\n      allow get: if isActiveMe(u);\n      allow create, update: if isActiveMe(u) || (isAdmin() && request.resource.data.keys().hasOnly(['rev', 'json']));\n      allow delete: if isAdmin();\n\n      match /photos/{id} {\n        allow get: if isActiveMe(u);\n        allow create, update: if isActiveMe(u) || (isAdmin() && request.resource.data.keys().hasOnly(['data', 'createdAt']));\n        allow delete: if isActiveMe(u) || isAdmin();\n        allow list: if isAdmin();\n      }\n    }\n\n    // Salinan tersegel (cadangan tertutup). Aplikasi pengguna menyegel salinan bukunya dengan kunci publik pemulihan;\n    // administrator hanya bisa mengunduh teks acak ini dan tidak bisa membukanya tanpa berkas kunci pemulihan.\n    function sealOk(u, allowed) {\n      let d = request.resource.data;\n      return isActiveMe(u)\n        && d.keys().hasOnly(allowed)\n        && d.kid is string && d.kid.size() <= 20\n        && d.kid == get(/databases/$(database)/documents/config/public).data.vaultKid\n        && d.at is string && d.at.size() <= 40\n        && d.w is string && d.w.size() <= 600\n        && d.i is string && d.i.size() <= 40\n        && d.c is string && d.c.size() <= 900000\n        && (!('z' in d) || d.z == 1);\n    }\n    match /vault/{u} {\n      allow get: if isActiveMe(u) || isAdmin();\n      allow list: if isAdmin();\n      allow create, update: if sealOk(u, ['rev', 'kid', 'at', 'n', 'z', 'w', 'i', 'c'])\n        && request.resource.data.rev is int\n        && request.resource.data.n is int && request.resource.data.n >= 0 && request.resource.data.n <= 100000;\n      allow delete: if isAdmin();\n\n      match /photos/{id} {\n        allow get: if isActiveMe(u) || isAdmin();\n        allow list: if isActiveMe(u) || isAdmin();\n        allow create, update: if sealOk(u, ['kid', 'at', 'z', 'w', 'i', 'c']);\n        allow delete: if isActiveMe(u) || isAdmin();\n      }\n    }\n\n    // ---------- Teman: kode teman, permintaan, pertemanan, dan rencana yang dibagikan ----------\n    // Kode teman (SAKU-XXXX-XXXX) hanya menunjuk ke username pemiliknya; tidak membuka data apa pun.\n    match /fme/{u} {\n      allow get: if isActiveMe(u);\n      allow create: if isActiveMe(u) && request.resource.data.keys().hasOnly(['code']) && request.resource.data.code is string && request.resource.data.code.size() == 8;\n      allow update, delete: if false;\n    }\n    match /fcodes/{code} {\n      allow get: if signedIn();\n      allow create: if signedIn() && isActiveMe(request.resource.data.u)\n        && request.resource.data.keys().hasOnly(['u', 'name'])\n        && request.resource.data.name is string && request.resource.data.name.size() <= 60;\n      allow update, delete: if false;\n    }\n    // Kotak masuk permintaan: pengirim membuat, penerima membaca; keduanya boleh menghapus.\n    match /fin/{to}/from/{from} {\n      allow get: if isMe(to) || isMe(from);\n      allow list: if isMe(to);\n      allow create: if isActiveMe(from) && from != to\n        && request.resource.data.keys().hasOnly(['at', 'name'])\n        && request.resource.data.name is string && request.resource.data.name.size() <= 60;\n      allow update: if false;\n      allow delete: if isMe(to) || isMe(from);\n    }\n    // Catatan permintaan keluar milik pengirim\n    match /fout/{u}/to/{o} {\n      allow get, list: if isMe(u);\n      allow create: if isActiveMe(u) && request.resource.data.keys().hasOnly(['at', 'name']);\n      allow update: if false;\n      allow delete: if isMe(u) || isMe(o);\n    }\n    // Daftar teman: satu entri per sisi; dibuat saat permintaan disetujui oleh penerima.\n    match /fship/{u}/with/{o} {\n      allow get, list: if isMe(u);\n      allow create: if request.resource.data.keys().hasOnly(['at', 'name'])\n        && ((isActiveMe(u) && exists(/databases/$(database)/documents/fin/$(u)/from/$(o)))\n            || (isActiveMe(o) && exists(/databases/$(database)/documents/fin/$(o)/from/$(u))));\n      allow update: if false;\n      allow delete: if isMe(u) || isMe(o);\n    }\n    // Rencana yang dibagikan: pemilik menulis salinannya; pemilik dan penerima membaca.\n    match /fsh/{owner}/to/{r}/items/{key} {\n      allow get, list: if isMe(owner) || isMe(r);\n      allow create, update: if isActiveMe(owner)\n        && exists(/databases/$(database)/documents/fship/$(owner)/with/$(r))\n        && request.resource.data.keys().hasOnly(['kind', 'itemId', 'name', 'at', 'j'])\n        && request.resource.data.j is string && request.resource.data.j.size() <= 40000\n        && request.resource.data.name is string && request.resource.data.name.size() <= 80;\n      allow delete: if isMe(owner) || isMe(r);\n    }\n  }\n}\n";
 /* ================= Edisi Firebase: mesin =================
    Panggilan ke alamat /api dari net-client.js dialihkan ke sini dan dijalankan langsung ke
    Firebase lewat REST: Authentication (identitytoolkit/securetoken) dan Firestore.
@@ -10640,12 +11436,15 @@ const FB_RULES = "rules_version = '2';\n\n// Saku: aturan keamanan Firestore.\n/
      (kode acak 6 karakter disimpan di hints/<username> yang bisa dibaca publik).
    - Reset sandi oleh admin = admin membuat identitas baru (kode baru) dengan sandi awal lalu
      mengarahkan profiles/<username>.uid ke identitas baru. Sandi lama tidak perlu diketahui.
+   - Masuk dengan Google, tautan Google, dan lupa kata sandi (v1.9.0): satu profil tetap = satu uid. Google memakai
+     accounts:signInWithIdp; reset sandi lewat email membuat identitas Auth BARU lalu memindahkan profiles/<u>.uid dan
+     hints/<u>.g dalam satu penulisan (aturan "pemulihan akses" di firestore.rules). Rancangan lengkap: bagian 6 kontrak.
    - Token yang dipegang aplikasi: "<username>~<refreshToken Firebase>".
    - Buku catatan satu pengguna = satu dokumen books/<username> (rev + JSON), foto di books/<username>/photos/<id>. */
 const FB_CFG_KEY = 'catatuang.fbcfg.v1';
 const FbEngine = (function () {
   const REAL = window.fetch.bind(window);
-  const MIN_PW = 5, FB_MIN_PW = 6, BACKUP_DEFAULT_SEC = 30, MAX_TX = 3000, MAX_OPS = 600, MAX_PHOTO = 450000, MAX_BOOK = 900000, ID_RE = /^[a-z0-9]{8,32}$/, MAIL_DOMAIN = 'catatuang.app';
+  const MIN_PW = 5, FB_MIN_PW = 6, BACKUP_DEFAULT_SEC = 30, MAX_TX = 3000, MAX_OPS = 600, MAX_PHOTO = 450000, MAX_BOOK = 900000, ID_RE = /^[a-z0-9]{8,32}$/, MAIL_DOMAIN = 'catatuang.app', GID_RE = /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/;
   class FbErr extends Error { constructor(status, message, code) { super(message); this.status = status; this.code = code || ''; } }
   const bad = (m, code) => new FbErr(400, m, code || 'invalid');
   const SESSION_ERR = () => new FbErr(401, 'Sesi berakhir. Silakan masuk lagi.', 'session');
@@ -10661,6 +11460,8 @@ const FbEngine = (function () {
     const c = { apiKey: pick('apiKey'), projectId: pick('projectId') };
     if (!/^AIza[\w-]{20,}$/.test(c.apiKey)) return { error: 'apiKey tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.' };
     if (!/^[a-z][a-z0-9-]{4,29}$/.test(c.projectId)) return { error: 'projectId tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.' };
+    const g = pick('googleClientId');   // opsional: ID klien OAuth Web untuk "Masuk dengan Google"
+    if (g) { if (!GID_RE.test(g)) return { error: 'googleClientId tidak valid. Contoh: 1234567890-abc123.apps.googleusercontent.com' }; c.googleClientId = g; }
     return { cfg: c };
   }
   function readCfg() {
@@ -10668,6 +11469,8 @@ const FbEngine = (function () {
     if (!c || !c.apiKey || !c.projectId) { try { c = JSON.parse(localStorage.getItem(FB_CFG_KEY) || 'null'); } catch (e) { c = null; } }
     return c && c.apiKey && c.projectId ? c : null;
   }
+  /* ID klien Google OAuth (opsional). Kosong = "Masuk dengan Google" dimatikan (op google/glink membalas gdisabled). */
+  function googleId() { const c = readCfg(), g = c && typeof c.googleClientId === 'string' ? c.googleClientId.trim() : ''; return GID_RE.test(g) ? g : ''; }
   const baked = () => !!(window.CATAT_FIREBASE && window.CATAT_FIREBASE.apiKey && window.CATAT_FIREBASE.projectId);
   function saveCfgText(text) {
     const r = parseCfg(text); if (r.error) return r.error;
@@ -10697,7 +11500,9 @@ const FbEngine = (function () {
       case 'INVALID_OOB_CODE': case 'EXPIRED_OOB_CODE': return new FbErr(400, 'Tautan konfirmasi tidak valid atau sudah kedaluwarsa. Masuk lalu pilih Kirim ulang email konfirmasi.', 'badlink');
       case 'INVALID_EMAIL': return new FbErr(400, 'Email tidak valid.', 'bademail');
       case 'TOO_MANY_ATTEMPTS_TRY_LATER': return new FbErr(429, 'Terlalu banyak percobaan. Coba lagi beberapa menit lagi.', 'locked');
-      case 'EMAIL_EXISTS': return new FbErr(409, 'Username ini sudah dipakai.', 'exists');
+      case 'EMAIL_EXISTS': return new FbErr(409, 'Username ini sudah dipakai.', 'exists');   // pada signInWithIdp diubah oleh idp() menjadi gexists
+      case 'INVALID_IDP_RESPONSE': case 'MISSING_OR_INVALID_NONCE': case 'INVALID_IDP_RESPONSE_ID_TOKEN': return new FbErr(401, 'Token Google tidak valid atau sudah kedaluwarsa. Coba masuk dengan Google lagi.', 'gbad');
+      case 'FEDERATED_USER_ID_ALREADY_LINKED': return new FbErr(409, 'Akun Google ini sudah tertaut ke akun SaKu lain. Pakai akun Google yang berbeda.', 'glinked');
       case 'INVALID_LOGIN_CREDENTIALS': case 'EMAIL_NOT_FOUND': case 'INVALID_PASSWORD': return new FbErr(401, 'Username atau kata sandi salah.', 'badlogin');
       case 'USER_DISABLED': return new FbErr(403, 'Akun ini dinonaktifkan. Hubungi administrator.', 'disabled');
       case 'WEAK_PASSWORD': return bad('Kata sandi terlalu lemah. Pakai minimal 6 karakter.');
@@ -10723,7 +11528,7 @@ const FbEngine = (function () {
     if (!/^https?:$/.test(location.protocol)) throw new FbErr(400, 'Email konfirmasi hanya tersedia di versi web.', 'mailweb');
     const kk = ['u:' + username, 'e:' + email]; kk.forEach(k => { try { const a = JSON.parse(localStorage.getItem('saku.mailq.' + k) || '[]'), n = Date.now(); if (Array.isArray(a) && a.filter(t => n - t < MAIL_WIN).length >= MAIL_MAX) mailQuota(k); } catch (e) { if (e instanceof FbErr) throw e; } });
     kk.forEach(mailQuota);
-    await auth('sendOobCode', { requestType: 'EMAIL_SIGNIN', email, continueUrl: location.origin + '/?u=' + encodeURIComponent(username) + (purpose === 'pw' ? '&pw=1' : ''), canHandleCodeInApp: true }, signal);
+    await auth('sendOobCode', { requestType: 'EMAIL_SIGNIN', email, continueUrl: location.origin + '/?u=' + encodeURIComponent(username) + (purpose === 'pw' ? '&pw=1' : purpose === 'rs' ? '&rs=1' : ''), canHandleCodeInApp: true }, signal);
     try { localStorage.setItem('saku.verify.email', email); } catch (e) { /* abaikan */ }
   }
   const T = new Map();   // token yang dipegang aplikasi -> { id, exp, uid }
@@ -10795,6 +11600,13 @@ const FbEngine = (function () {
       token = r.j.nextPageToken || ''; if (!token) break;
     }
     return out;
+  }
+  /* Query terstruktur (runQuery): semua filter bertanda sama (==), paling banyak `limit` dokumen. Aturan list profiles menuntut filter persis. */
+  async function queryDocs(coll, filters, tok, signal, limit) {
+    const fl = filters.map(f => ({ fieldFilter: { field: { fieldPath: f[0] }, op: 'EQUAL', value: enc(f[1]) } }));
+    const r = await fsReq('POST', ':runQuery', { structuredQuery: { from: [{ collectionId: coll }], where: fl.length === 1 ? fl[0] : { compositeFilter: { op: 'AND', filters: fl } }, limit: limit || 1 } }, tok, signal);
+    if (!r.ok) throw fsErr(r);
+    return (Array.isArray(r.j) ? r.j : []).filter(x => x && x.document).map(x => ({ id: String(x.document.name).split('/').pop(), data: decDoc(x.document), updateTime: x.document.updateTime }));
   }
   async function commit(writes, tok, signal, per) {
     const n = per || 400;   // aturan keamanan dibatasi 20 pembacaan dokumen per permintaan, jadi penulisan banyak dipecah
@@ -11214,13 +12026,115 @@ const FbEngine = (function () {
   const needStaff = a => { if (!isStaff(a)) throw new FbErr(403, 'Hanya administrator atau admin pembantu yang boleh melakukan ini.', 'forbidden'); };
   async function session(prof, refresh, signal) { return { mailv: true, token: prof.id + '~' + refresh, account: pubProfile(prof), sessionMinutes: await sessMin(signal), backup: await backupCfg(signal) }; }
 
+  /* ---------- status akun, Google, dan pemulihan akses (v1.9.0) ---------- */
+  const maskMail = e => String(e).replace(/^(.{2}).*(@.*)$/, '$1***$2');
+  /* Galat status akun yang SAMA untuk masuk dengan kata sandi dan masuk dengan Google (null = boleh masuk) */
+  function statusErr(prof) {
+    if (prof.status === 'pending' && prof.emailOk === false) return new FbErr(403, 'Email Anda belum dikonfirmasi. Buka email dari SaKu, klik tautannya (cek folder spam), lalu masuk lagi. Akun langsung aktif tanpa menunggu admin.', 'unverified');
+    if (prof.status === 'pending') return new FbErr(403, 'Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.', 'pending');
+    if (prof.status === 'rejected') return new FbErr(403, 'Pendaftaran Anda ditolak admin. Hubungi administrator.', 'rejected');
+    if (prof.active === false) return new FbErr(403, 'Akun ini dinonaktifkan. Hubungi administrator.', 'disabled');
+    return null;
+  }
+  const GOFF = () => new FbErr(503, 'Masuk dengan Google belum diatur di edisi ini.', 'gdisabled');
+  const GBAD = m => new FbErr(401, m || 'Token Google tidak valid, sudah kedaluwarsa, atau email Google belum terverifikasi. Coba masuk dengan Google lagi.', 'gbad');
+  const GEXISTS = () => new FbErr(409, 'Email Google ini sudah dipakai akun SaKu yang belum ditautkan ke Google. Masuk dengan kata sandi lalu tautkan Google di Pengaturan, atau pakai Lupa kata sandi.', 'gexists');
+  const BADLINK = () => new FbErr(400, 'Tautan reset tidak valid, sudah dipakai, atau sudah kedaluwarsa. Minta tautan baru lewat Lupa kata sandi.', 'badlink');
+  const MISMATCH = () => new FbErr(403, 'Email ini tidak cocok dengan akun atau tautannya. Ketik email yang sama dengan yang menerima tautan reset.', 'mismatch');
+  const NORESET = m => new FbErr(403, m || 'Akun ini tidak bisa direset lewat email. Hubungi administrator.', 'noreset');
+  /* Bentuk ID token Google (JWT) yang wajar; tanda tangannya diperiksa Firebase, bukan di sini */
+  function cleanCred(raw) {
+    const t = typeof raw === 'string' ? raw.trim() : '';
+    if (t.length < 20 || t.length > 5000 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(t)) throw GBAD();
+    return t;
+  }
+  /* Membaca klaim JWT TANPA memverifikasi: hanya untuk mengisi nama dan menyamarkan email. Keputusan keamanan memakai balasan signInWithIdp. */
+  function jwtClaims(jwt) { try { const o = JSON.parse(new TextDecoder().decode(b64u8(String(jwt).split('.')[1]))); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+  /* accounts:signInWithIdp dengan ID token Google. Dengan idToken = menautkan ke akun yang sedang masuk (uid tidak berubah). */
+  async function idp(cred, idToken, signal) {
+    const body = { postBody: 'id_token=' + encodeURIComponent(cred) + '&providerId=google.com', requestUri: /^https?:$/.test(location.protocol) ? location.origin : 'http://localhost', returnSecureToken: true, returnIdpCredential: true };
+    if (idToken) body.idToken = idToken;
+    let r;
+    try { r = await auth('signInWithIdp', body, signal); }
+    catch (e) {
+      if (!(e instanceof FbErr)) throw e;
+      if (e.code === 'authoff') throw new FbErr(503, 'Masuk dengan Google belum diaktifkan di Firebase. Buka Authentication → Sign-in method → Google → Enable (dan pastikan Authentication sudah dimulai).', 'gdisabled');
+      if (e.code === 'exists') throw idToken
+        ? new FbErr(409, 'Email akun Google ini sudah terhubung ke identitas lain di Firebase, jadi tidak bisa ditautkan ke akun ini. Pakai akun Google dengan email lain.', 'gexists')
+        : GEXISTS();
+      if (e.code === 'session' && idToken) throw new FbErr(401, 'Untuk keamanan, masuk lagi dengan kata sandi lalu ulangi menautkan Google.', 'session');
+      throw e;
+    }
+    if (r && r.needConfirmation) throw GEXISTS();
+    if (!r || !r.localId || !r.idToken || !r.refreshToken) throw GBAD();
+    return r;
+  }
+  const digits = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b % 10).join('');
+  /* Username dari bagian lokal email: huruf kecil a-z0-9, diawali huruf, 4-20 karakter; percobaan ke-i>0 menambah akhiran angka acak */
+  function gUserName(email, i) {
+    let s = String(email).split('@')[0].normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!/^[a-z]/.test(s)) s = 'u' + s;
+    if (s.length < 4) s += digits(4 - s.length);
+    s = s.slice(0, 20);
+    if (!i) return s;
+    const x = digits(Math.min(4, 1 + i));
+    return s.slice(0, 20 - x.length) + x;
+  }
+  function gNames(cl, r, email) {
+    const s = (v, n) => clean(v).slice(0, n);
+    let first = s(cl.given_name || r.firstName, 30), last = s(cl.family_name || r.lastName, 30);
+    const full = s(cl.name || r.fullName || r.displayName, 70);
+    if (!first) { const parts = full.split(' '); first = (parts.shift() || '').slice(0, 30); if (!last) last = parts.join(' ').slice(0, 30); }
+    if (!first) first = s(String(email).split('@')[0], 30) || 'Pengguna';
+    return { first, last, name: clean(first + ' ' + last).slice(0, 70) };
+  }
+  /* Mengaktifkan pendaftaran lewat aturan "Konfirmasi email" (token Google membawa email_verified=true dan email yang sama) */
+  async function gActivate(id, tok, signal) {
+    const at = iso(), patch = { status: 'active', active: true, emailOk: true, verifiedAt: at, approvedAt: at, approvedBy: 'google' };
+    try { await commit([wSet('profiles/' + id, patch, { mask: Object.keys(patch), pre: { exists: true } })], tok, signal); }
+    catch (e) { if (e.code === 'rules' || e.code === 'conflict' || e.code === 'notfound') throw new FbErr(403, 'Akun belum bisa diaktifkan dengan email Google ini. Coba masuk dengan Google lagi.', 'unverified'); throw e; }
+    return patch;
+  }
+  async function gFinish(prof, r, c) {
+    const at = iso();
+    try { await commit([wSet('profiles/' + prof.id, { lastLoginAt: at }, { mask: ['lastLoginAt'], pre: { exists: true } })], r.idToken, c.sig); } catch (e) { if (e.fbNet) throw e; }   // statistik, bukan syarat masuk
+    return session(Object.assign({}, prof, { lastLoginAt: at }), r.refreshToken, c.sig);
+  }
+  /* Profil milik identitas Google ini sudah ada (tertaut lewat glink atau dibuat lewat Google) */
+  async function gEnter(p, r, c) {
+    const prof = Object.assign({}, p.data, { id: p.id });
+    if (prof.status === 'pending' && prof.emailOk === false) {   // pendaftaran Google yang terhenti di tengah jalan: selesaikan sekarang
+      const em = String(r.email || '').toLowerCase();
+      if (r.emailVerified === true && em && em === prof.email) Object.assign(prof, await gActivate(prof.id, r.idToken, c.sig));
+    }
+    const se = statusErr(prof); if (se) throw se;
+    return gFinish(prof, r, c);
+  }
+  /* Akun BARU dari Google: profil pending + hints dalam satu penulisan (seperti register), lalu aktif lewat aturan konfirmasi email */
+  async function gCreate(email, cl, r, c) {
+    if (!(await getDoc('config/public', null, c.sig))) throw new FbErr(409, 'Aplikasi belum disiapkan oleh administrator.', 'noadmin');
+    if (email.length > 80) throw GBAD('Email akun Google ini terlalu panjang untuk SaKu.');
+    const nm = gNames(cl, r, email), t = iso(); let prof = null;
+    for (let i = 0; i < 6 && !prof; i++) {
+      const id = gUserName(email, i);
+      if (await getDoc('hints/' + id, null, c.sig)) continue;   // sudah dipakai (hints dibuat bersama profil di semua jalur pendaftaran)
+      const p = { id, uid: r.localId, name: nm.name, first: nm.first, last: nm.last, role: 'user', status: 'pending', active: false, isDefault: false, birth: '', phone: '', email, emailOk: false, requestedAt: t, createdAt: t, createdBy: 'google' };
+      try { await commit([wSet('profiles/' + id, p, { pre: { exists: false } }), wSet('hints/' + id, { g: rgen() }, { pre: { exists: false } })], r.idToken, c.sig); prof = p; }
+      catch (e) { if (e.code === 'exists' || e.code === 'conflict') continue; if (e.code === 'rules') throw RULES_OLD(); throw e; }
+    }
+    if (!prof) throw new FbErr(503, 'Belum bisa membuat username untuk akun Google ini. Coba lagi sebentar lagi.', 'busy');
+    Object.assign(prof, await gActivate(prof.id, r.idToken, c.sig));
+    return gFinish(prof, r, c);
+  }
+
   /* ---------- operasi ---------- */
   const ops = {
     async status(b, c) {
       needCfg();
       const d = await getDoc('config/public', null, c.sig);
       cfgCache = cfgFrom(d);
-      return { mailv: true, hasAccounts: !!d, setupReady: !d, aiScan: false, sessionMinutes: cfgCache.v, backup: cfgCache.backup };
+      const g = googleId();   // bendera masuk dengan Google / lupa kata sandi (kontrak v1.9.0, bagian 1)
+      return { mailv: true, hasAccounts: !!d, setupReady: !d, aiScan: false, sessionMinutes: cfgCache.v, backup: cfgCache.backup, google: g, resetMail: true, resetNeedsEmail: true, glink: !!g };
     },
 
     /* ---- Konfirmasi email: tautan masuk-tanpa-sandi dikirim Firebase ke email pendaftar; mengkliknya mengaktifkan akun ---- */
@@ -11250,10 +12164,7 @@ const FbEngine = (function () {
       let p; try { p = await getDoc('profiles/' + id, r.idToken, c.sig); } catch (e) { if (e.code === 'rules') throw wrong(); throw e; }
       if (!p || p.data.uid !== r.localId) throw wrong();
       const prof = p.data;
-      if (prof.status === 'pending' && prof.emailOk === false) throw new FbErr(403, 'Email Anda belum dikonfirmasi. Buka email dari SaKu, klik tautannya (cek folder spam), lalu masuk lagi. Akun langsung aktif tanpa menunggu admin.', 'unverified');
-      if (prof.status === 'pending') throw new FbErr(403, 'Pendaftaran Anda masih menunggu persetujuan admin. Coba lagi nanti.', 'pending');
-      if (prof.status === 'rejected') throw new FbErr(403, 'Pendaftaran Anda ditolak admin. Hubungi administrator.', 'rejected');
-      if (prof.active === false) throw new FbErr(403, 'Akun ini dinonaktifkan. Hubungi administrator.', 'disabled');
+      const se = statusErr(prof); if (se) throw se;
       const at = iso();
       try { await commit([wSet('profiles/' + id, { lastLoginAt: at }, { mask: ['lastLoginAt'], pre: { exists: true } })], r.idToken, c.sig); } catch (e) { if (e.fbNet) throw e; }   // statistik, bukan syarat masuk
       return session(Object.assign({}, prof, { lastLoginAt: at }), r.refreshToken, c.sig);
@@ -11344,6 +12255,76 @@ const FbEngine = (function () {
         catch (e2) { if (miss(e2)) throw new FbErr(403, 'Email ini tidak cocok dengan akun, atau akun sudah diproses admin.', 'mismatch'); throw e2; }
       }
       return { ok: true };
+    },
+
+    /* ---- Masuk dengan Google (kontrak 6.1): a) profil milik identitas ini, b) email terverifikasi milik profil lain -> gexists, c) akun baru ---- */
+    async google(b, c) {
+      needCfg();
+      if (!googleId()) throw GOFF();
+      const cred = cleanCred(b.credential), cl = jwtClaims(cred), r = await idp(cred, null, c.sig);
+      const q = (f) => queryDocs('profiles', f, r.idToken, c.sig, 1).catch(e => { if (e.code === 'rules') throw RULES_OLD(); throw e; });
+      const mine = await q([['uid', r.localId]]);
+      if (mine.length) return gEnter(mine[0], r, c);
+      const email = String(r.email || cl.email || '').trim().toLowerCase();
+      const verified = r.emailVerified === true || (r.emailVerified === undefined && (cl.email_verified === true || cl.email_verified === 'true'));
+      if (!email || !verified) throw GBAD();
+      if ((await q([['email', email], ['emailOk', true]])).length) throw GEXISTS();   // JANGAN memindahkan profil diam-diam: itu mematikan login kata sandinya
+      return gCreate(email, cl, r, c);
+    },
+
+    /* Menautkan Google ke akun yang sedang masuk (uid tidak berubah, jadi aturan Firestore tetap cocok) */
+    async glink(b, c) {
+      needCfg();
+      if (!googleId()) throw GOFF();
+      const a = await authed(c.req, true), cred = cleanCred(b.credential), cl = jwtClaims(cred);
+      const r = await idp(cred, a.tok.id, c.sig);
+      if (r.localId !== a.prof.uid) throw new FbErr(409, 'Akun Google ini tidak bisa ditautkan ke akun ini.', 'glinked');
+      return { ok: true, email: maskMail(String(cl.email || '***@***')) };
+    },
+
+    /* Lupa kata sandi: tautan masuk-tanpa-sandi ke email yang diketik. Balasan selalu sama (tidak membocorkan akun), tanpa membaca profil. */
+    async forgot(b, c) {
+      needCfg();
+      const id = fbSlug(b.id), raw = String(b.email == null ? '' : b.email).trim();
+      if (!id || !raw) throw new FbErr(400, 'Isi username dan email Anda.', 'bad');
+      let email; try { email = cleanEmail(raw); } catch (e) { throw new FbErr(400, e.message, 'bad'); }
+      try { await sendVerifyMail(id, email, c.sig, 'rs'); }
+      catch (e) { if (e.code === 'mailcap' || e.code === 'locked') throw new FbErr(429, e.message, 'rate'); throw e; }
+      return { ok: true };
+    },
+
+    /* Reset kata sandi (kontrak 6.3): identitas E (email terverifikasi) -> identitas Auth BARU -> satu penulisan uid+hints sebagai E -> masuk.
+       Urutannya menjamin profil tidak kehilangan akses: bila langkah mana pun sebelum penulisan gagal, tidak ada yang berubah. */
+    async reset(b, c) {
+      needCfg();
+      const id = fbSlug(b.u), code = String(b.code || ''), email = String(b.email == null ? '' : b.email).trim().toLowerCase();
+      if (!id || !code || code.length > 300) throw BADLINK();
+      let pw; try { pw = cleanNewPw(b.password); } catch (e) { throw new FbErr(400, e.message, 'weak'); }   // diperiksa SEBELUM tautan dipakai, supaya sandi lemah tidak menghanguskan tautan
+      if (!email || email.length > 80 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw MISMATCH();
+      let e1;
+      try { e1 = await auth('signInWithEmailLink', { email, oobCode: code }, c.sig); }
+      catch (e) { if (e.code === 'badlink') throw BADLINK(); if (e.code === 'bademail') throw MISMATCH(); throw e; }
+      let p; try { p = await getDoc('profiles/' + id, e1.idToken, c.sig); } catch (e) { if (e.code === 'rules') throw MISMATCH(); throw e; }   // aturan: hanya profil ber-email sama yang terbaca
+      if (!p || String(p.data.email || '').toLowerCase() !== email) throw MISMATCH();
+      const d = p.data;
+      if (d.role !== 'user') throw NORESET('Akun ini tidak bisa direset lewat email. Hubungi administrator.');
+      if (d.emailOk !== true) throw NORESET('Email akun ini belum terverifikasi, jadi belum bisa dipakai untuk reset. Konfirmasi email Anda dulu lewat tautan pendaftaran, atau hubungi administrator.');
+      if (d.status !== 'active' || d.active === false) throw NORESET('Akun ini belum aktif atau sedang dinonaktifkan, jadi tidak bisa direset lewat email. Hubungi administrator.');
+      const gen = rgen(), nu = await auth('signUp', { email: emailFor(id, gen), password: fbPw(pw), returnSecureToken: true }, c.sig);   // identitas baru; yang lama dibiarkan yatim
+      try { await commit([wSet('profiles/' + id, { uid: nu.localId }, { mask: ['uid'], pre: { exists: true } }), wSet('hints/' + id, { g: gen }, { mask: ['g'] })], e1.idToken, c.sig); }
+      catch (e) { if (e.code === 'rules' || e.code === 'conflict') throw NORESET(); throw e; }
+      try {   // sejak di sini sandi baru sudah berlaku: kegagalan selanjutnya tidak boleh menyisakan kesan "belum berubah"
+        const pr = await getDoc('profiles/' + id, nu.idToken, c.sig);
+        if (!pr || pr.data.uid !== nu.localId) throw new Error('uid');
+        const prof = Object.assign({}, pr.data, { id }), patch = Object.assign({ lastLoginAt: iso() }, prof.isDefault !== false ? { isDefault: false } : {});
+        try { await commit([wSet('profiles/' + id, patch, { mask: Object.keys(patch), pre: { exists: true } })], nu.idToken, c.sig); Object.assign(prof, patch); }
+        catch (e) { if (e && e.name === 'AbortError') throw e; /* statistik, bukan syarat masuk */ }
+        AC.clear();
+        return await session(prof, nu.refreshToken, c.sig);
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw e;
+        throw new FbErr(503, 'Kata sandi sudah diganti, tetapi masuk otomatis gagal. Silakan masuk dengan kata sandi yang baru.', 'upstream');
+      }
     },
 
     async me(b, c) { const a = await authed(c.req, true); return { mailv: true, account: pubProfile(a.prof), sessionMinutes: await sessMin(c.sig), backup: await backupCfg(c.sig) }; },
@@ -11836,6 +12817,12 @@ async function setupAdmin() { /* tidak dipakai di edisi Netlify */ }
 function subscribeAccounts() { /* tidak dipakai di edisi Netlify */ }
 
 /* ---------- Masuk / daftar / admin ---------- */
+/* Jalur sukses masuk yang dipakai bersama: kata sandi, Google (auth-ext.js), dan reset kata sandi */
+function loginDone(r, remember) {
+  S.mailv = !!r.mailv; setSessMin(r.sessionMinutes); setBackupCfg(r.backup); setToken(r.token, !!remember); cacheAcct(r.account);
+  S.accounts = { [r.account.id]: r.account }; S.accLoaded = true; S.accSig = '';
+  prepareLedger(r.account.id); enterApp(r.account);
+}
 async function doLogin() {
   const err = $('#l-err'), btn = $('#l-btn'), name = $('#l-name').value, pw = $('#l-pw').value;
   const fail = m => { err.textContent = m; err.hidden = false; };
@@ -11844,9 +12831,7 @@ async function doLogin() {
   btn.disabled = true; btn.textContent = 'Memeriksa…';
   try {
     const r = await api('login', { username: name, password: pw });
-    S.mailv = !!r.mailv; setSessMin(r.sessionMinutes); setBackupCfg(r.backup); setToken(r.token, !!($('#l-rem') && $('#l-rem').checked)); cacheAcct(r.account);
-    S.accounts = { [r.account.id]: r.account }; S.accLoaded = true; S.accSig = '';
-    prepareLedger(r.account.id); enterApp(r.account);
+    loginDone(r, !!($('#l-rem') && $('#l-rem').checked));
   } catch (e) { fail(e.userMessage || 'Gagal masuk. Coba lagi.'); const rs = $('#l-resend'); if (rs) rs.hidden = e.code !== 'unverified'; const rc = $('#l-mchg'); if (rc) rc.hidden = e.code !== 'unverified'; }
   btn.disabled = false; btn.textContent = 'Masuk';
 }
@@ -12162,6 +13147,7 @@ ACT['mail-resend'] = async () => {
 };
 async function mailVerifyBoot() {
   let qp; try { qp = new URLSearchParams(location.search); } catch (e) { return; }
+  if (qp.has('rs')) { if (typeof axResetBoot === 'function') axResetBoot(qp); return; }   /* tautan reset kata sandi (auth-ext.js): BUKAN konfirmasi email */
   const code = qp.get('oobCode'); if (!code || qp.get('mode') !== 'signIn') return;
   let email = ''; try { email = localStorage.getItem('saku.verify.email') || ''; } catch (e) { email = ''; }
   if (!email) email = String(window.prompt(i18nT('Masukkan email yang Anda pakai saat mendaftar untuk menyelesaikan konfirmasi:')) || '').trim();
@@ -12190,8 +13176,9 @@ async function netBoot() {
     S.netErr = failure && failure.userMessage || ''; S.netCode = failure && failure.code || ''; S.phase = 'nodb'; showPhase(); return;
   }
   S.mailv = !!st.mailv; S.hasAccounts = !!st.hasAccounts; S.setupReady = !!st.setupReady; setSessMin(st.sessionMinutes); setBackupCfg(st.backup);
+  if (typeof axApplyStatus === 'function') axApplyStatus(st);   /* bendera Google / reset kata sandi / tautan Google (auth-ext.js) */
   if (st.aiScan) { S.sample = scanSample; S.canImages = true; }
-  if (stored && st.hasAccounts && actFresh()) {
+  if (stored && st.hasAccounts && actFresh() && !S.resetFlow) {   /* tautan reset yang dibuka: layar reset didahulukan, sesi lama tidak dipulihkan */
     S.token = stored.t; S.remember = stored.remember;
     try {
       const r = await api('me'); S.mailv = !!r.mailv; setSessMin(r.sessionMinutes); setBackupCfg(r.backup); cacheAcct(r.account);
@@ -12201,7 +13188,7 @@ async function netBoot() {
       if (e.transient && readAcct()) { const acct = readAcct(); S.accounts = { [acct.id]: acct }; S.accLoaded = true; S.restored = true; S.offline = true; prepareLedger(acct.id); enterApp(acct); return; }
       S.token = null; clearSession(); if (e.code === 'disabled' || e.code === 'expired') S.loginMsg = e.userMessage;
     }
-  } else if (stored) { S.token = null; clearSession(); }
+  } else if (stored && !S.resetFlow) { S.token = null; clearSession(); }
   S.phase = 'login'; S.accLoaded = true; S.restored = true; showPhase();
 }
 const inNativeApp = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
@@ -12236,7 +13223,7 @@ function nodbHTML() {
     </ol>
     <div class="fbrow"><button class="btn btn-ghost" data-act="fb-copy" type="button">${ic('file', 18)} Salin aturan keamanan</button></div>
     <details class="fbrules"><summary>Lihat aturan keamanan</summary><pre>${esc(FB_RULES)}</pre></details>
-    ${baked ? '' : `<div class="field fbcfg"><label for="fb-cfg">Konfigurasi Firebase</label><textarea class="input" id="fb-cfg" rows="7" spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="const firebaseConfig = {\n  apiKey: &quot;AIza…&quot;,\n  authDomain: &quot;…&quot;,\n  projectId: &quot;…&quot;,\n  …\n};">${cfg ? esc(JSON.stringify({ apiKey: cfg.apiKey, projectId: cfg.projectId }, null, 2)) : ''}</textarea><small class="hint">Cukup <b>apiKey</b> dan <b>projectId</b>. Kunci ini memang bukan rahasia; keamanan data dijaga oleh aturan di atas.</small></div>
+    ${baked ? '' : `<div class="field fbcfg"><label for="fb-cfg">Konfigurasi Firebase</label><textarea class="input" id="fb-cfg" rows="7" spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="const firebaseConfig = {\n  apiKey: &quot;AIza…&quot;,\n  authDomain: &quot;…&quot;,\n  projectId: &quot;…&quot;,\n  …\n};">${cfg ? esc(JSON.stringify(Object.assign({ apiKey: cfg.apiKey, projectId: cfg.projectId }, cfg.googleClientId ? { googleClientId: cfg.googleClientId } : {}), null, 2)) : ''}</textarea><small class="hint">Cukup <b>apiKey</b> dan <b>projectId</b>. Kunci ini memang bukan rahasia; keamanan data dijaga oleh aturan di atas.</small></div>
     <p class="form-err" id="fb-err" role="alert" hidden></p>`}
     <div class="fbrow">
       ${baked ? '' : '<button class="btn btn-primary" data-act="fb-save" type="button">Simpan &amp; lanjut</button>'}
