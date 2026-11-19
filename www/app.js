@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.9.1', APP_BUILD = 8;
+const APP_VERSION = '1.9.2', APP_BUILD = 9;
 const CHANGELOG = [
+  { v: '1.9.2', d: '2026-11-19', items: ['Perbaikan Masuk dengan Google di edisi Firebase: permintaan ke Firebase kini memakai alamat resmi (localhost) sehingga tidak ditolak karena domain situs, dan pesan galat menjelaskan penyebab sebenarnya (Client ID tidak cocok atau domain belum diizinkan)'] },
   { v: '1.9.1', d: '2026-11-19', items: ['Pengenalan SaKu kini tampil seperti website di layar lebar (laptop dan desktop): header Masuk dan Daftar gratis, teks besar, ilustrasi besar, serta panah untuk pindah slide'] },
   { v: '1.9.0', d: '2026-11-19', items: ['Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk', 'Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)', 'Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai', 'Tautkan akun Google ke akun SaKu di Pengaturan (Firebase)'] },
   { v: '1.8.2', d: '2026-11-17', items: ['Pilihan Ingat saya di aplikasi ponsel kini bertahan sampai Anda menekan Keluar', 'Tidak lagi diminta masuk ulang setiap aplikasi ditutup lebih dari batas diam'] },
@@ -4219,6 +4220,7 @@ const I18N_EN = {
   "Cicilan: {1}": "Installment: {1}",
   "Ciutkan": "Collapse",
   "Ciutkan menu": "Collapse menu",
+  "Client ID Google di konfigurasi tidak cocok dengan proyek Firebase ini. Di Firebase Console buka Authentication → Sign-in method → Google, salin Web client ID di sana ke googleClientId (firebase-config.js), atau daftarkan Client ID Anda di \"Safelist client IDs from external projects\".": "The Google Client ID in the configuration does not match this Firebase project. In the Firebase Console open Authentication → Sign-in method → Google, copy the Web client ID shown there into googleClientId (firebase-config.js), or register your Client ID under \"Safelist client IDs from external projects\".",
   "Cloud Firestore belum diaktifkan di proyek Firebase Anda. Buka Firestore Database lalu klik Create database.": "Cloud Firestore isn't enabled in your Firebase project. Open Firestore Database and click Create database.",
   "Coba kata lain atau tekan Tambah Kategori.": "Try another word or tap Add Category.",
   "Coba lagi": "Try again",
@@ -4406,6 +4408,7 @@ const I18N_EN = {
   "Dokter & Rumah Sakit": "Doctor & Hospital",
   "dolar Amerika Serikat": "US dollar",
   "Dolar Amerika Serikat": "US Dollar",
+  "Domain situs ini belum diizinkan di Firebase. Buka Authentication → Settings → Authorized domains, lalu tambahkan domain situs Anda.": "This site's domain is not yet authorized in Firebase. Open Authentication → Settings → Authorized domains, then add your site's domain.",
   "dompet": "wallet",
   "Dompet": "Wallet",
   "Dompet yang dijaga hari ini, hati yang tenang esok hari. Semangat!": "A wallet guarded today, a calm heart tomorrow. You've got this!",
@@ -5461,6 +5464,7 @@ const I18N_EN = {
   "Perawatan Motor": "Motorcycle Maintenance",
   "perbaikan": "repairs",
   "Perbaikan & Perabot": "Repairs & Furniture",
+  "Perbaikan Masuk dengan Google di edisi Firebase: permintaan ke Firebase kini memakai alamat resmi (localhost) sehingga tidak ditolak karena domain situs, dan pesan galat menjelaskan penyebab sebenarnya (Client ID tidak cocok atau domain belum diizinkan)": "Fixed Sign in with Google on the Firebase edition: the request to Firebase now uses the official address (localhost) so it is no longer rejected because of the site domain, and error messages explain the real cause (Client ID mismatch or domain not authorized)",
   "Perbaikan Mobil": "Car Repairs",
   "Perbaikan Motor": "Motorcycle Repairs",
   "Perbarui": "Update",
@@ -11527,7 +11531,7 @@ const FbEngine = (function () {
   }
   async function auth(method, body, signal) {
     const c = needCfg(), r = await http(hosts().auth + '/v1/accounts:' + method + '?key=' + encodeURIComponent(c.apiKey), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, signal);
-    if (!r.ok) throw authErr(r);
+    if (!r.ok) { const e = authErr(r); e.raw = String((r.j && r.j.error && r.j.error.message) || ''); throw e; }
     return r.j;
   }
   /* Batas kirim email konfirmasi: maksimal 3 kali per jam untuk satu alamat (dicatat di perangkat; Firebase juga membatasi dari sisi server). */
@@ -12065,9 +12069,11 @@ const FbEngine = (function () {
   }
   /* Membaca klaim JWT TANPA memverifikasi: hanya untuk mengisi nama dan menyamarkan email. Keputusan keamanan memakai balasan signInWithIdp. */
   function jwtClaims(jwt) { try { const o = JSON.parse(new TextDecoder().decode(b64u8(String(jwt).split('.')[1]))); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
-  /* accounts:signInWithIdp dengan ID token Google. Dengan idToken = menautkan ke akun yang sedang masuk (uid tidak berubah). */
+  /* accounts:signInWithIdp dengan ID token Google. Dengan idToken = menautkan ke akun yang sedang masuk (uid tidak berubah).
+     requestUri sengaja KONSTAN 'http://localhost' seperti SDK resmi Firebase: localhost selalu ada di Authorized domains,
+     sedangkan origin situs yang belum didaftarkan di sana membuat Firebase menolak token Google yang sebenarnya sah. */
   async function idp(cred, idToken, signal) {
-    const body = { postBody: 'id_token=' + encodeURIComponent(cred) + '&providerId=google.com', requestUri: /^https?:$/.test(location.protocol) ? location.origin : 'http://localhost', returnSecureToken: true, returnIdpCredential: true };
+    const body = { postBody: 'id_token=' + encodeURIComponent(cred) + '&providerId=google.com', requestUri: 'http://localhost', returnSecureToken: true, returnIdpCredential: true };
     if (idToken) body.idToken = idToken;
     let r;
     try { r = await auth('signInWithIdp', body, signal); }
@@ -12078,6 +12084,11 @@ const FbEngine = (function () {
         ? new FbErr(409, 'Email akun Google ini sudah terhubung ke identitas lain di Firebase, jadi tidak bisa ditautkan ke akun ini. Pakai akun Google dengan email lain.', 'gexists')
         : GEXISTS();
       if (e.code === 'session' && idToken) throw new FbErr(401, 'Untuk keamanan, masuk lagi dengan kata sandi lalu ulangi menautkan Google.', 'session');
+      if (e.code === 'gbad' || e.code === 'auth') {
+        const raw = String(e.raw || '');
+        if (/audience|not allowed to be used with this application|not authorized to be used/i.test(raw)) throw new FbErr(401, 'Client ID Google di konfigurasi tidak cocok dengan proyek Firebase ini. Di Firebase Console buka Authentication → Sign-in method → Google, salin Web client ID di sana ke googleClientId (firebase-config.js), atau daftarkan Client ID Anda di "Safelist client IDs from external projects".', 'gbad');
+        if (/INVALID_REQUEST_URI|UNAUTHORIZED_DOMAIN|unauthorized domain|not a valid continue uri|domain/i.test(raw)) throw new FbErr(403, 'Domain situs ini belum diizinkan di Firebase. Buka Authentication → Settings → Authorized domains, lalu tambahkan domain situs Anda.', 'auth');
+      }
       throw e;
     }
     if (r && r.needConfirmation) throw GEXISTS();
