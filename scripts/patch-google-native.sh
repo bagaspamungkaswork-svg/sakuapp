@@ -16,6 +16,24 @@ npm install "@capgo/capacitor-social-login@^7.0.0" --no-audit --no-fund
 src=node_modules/@capgo/capacitor-social-login/android/src
 [ -d "$src" ] || { echo "Sumber Android plugin tidak ditemukan di $src" >&2; exit 1; }
 
+# Plugin terbaru menarik androidx.browser 1.9.x yang menuntut compileSdk 36 dan AGP 8.9.1, sedangkan proyek Capacitor 7 memakai compileSdk 35 / AGP 8.7.
+# Kunci ke 1.8.0 (API yang dipakai plugin sama) supaya kompilasi tetap berjalan tanpa menaikkan SDK atau Gradle.
+root=android/build.gradle
+[ -f "$root" ] || { echo "android/build.gradle tidak ditemukan." >&2; exit 1; }
+if ! grep -q "SaKu: kunci androidx.browser" "$root"; then
+  cat >> "$root" <<'GRADLE'
+
+// SaKu: kunci androidx.browser ke 1.8.0 (1.9.x butuh compileSdk 36 dan AGP 8.9.1).
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.browser:browser:1.8.0'
+        }
+    }
+}
+GRADLE
+fi
+
 # Versi plugin tertentu mewajibkan MainActivity mengimplementasikan antarmuka khusus. Kalau antarmukanya tidak ada, tidak perlu menambal.
 iface=$(grep -rl "interface ModifiedMainActivityForSocialLoginPlugin" "$src" | head -1 || true)
 if [ -z "$iface" ]; then
