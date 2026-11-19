@@ -1,8 +1,8 @@
 {
- "version": "1.9.1",
- "build": 8,
+ "version": "1.9.2",
+ "build": 9,
  "date": "2026-11-19",
  "notes": [
-  "Pengenalan SaKu kini tampil seperti website di layar lebar (laptop dan desktop): header Masuk dan Daftar gratis, teks besar, ilustrasi besar, serta panah untuk pindah slide"
+  "Perbaikan Masuk dengan Google di edisi Firebase: permintaan ke Firebase kini memakai alamat resmi (localhost) sehingga tidak ditolak karena domain situs, dan pesan galat menjelaskan penyebab sebenarnya (Client ID tidak cocok atau domain belum diizinkan)"
  ]
 }
