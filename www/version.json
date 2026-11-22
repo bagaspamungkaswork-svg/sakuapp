@@ -1,8 +1,12 @@
 {
- "version": "1.9.2",
- "build": 9,
- "date": "2026-11-19",
+ "version": "1.10.0",
+ "build": 10,
+ "date": "2026-11-21",
  "notes": [
-  "Perbaikan Masuk dengan Google di edisi Firebase: permintaan ke Firebase kini memakai alamat resmi (localhost) sehingga tidak ditolak karena domain situs, dan pesan galat menjelaskan penyebab sebenarnya (Client ID tidak cocok atau domain belum diizinkan)"
+  "Tampilan baru: Beranda lebih ringkas (saldo keseluruhan, pemasukan, pengeluaran, anggaran, transaksi terbaru) dengan warna biru bersentuhan hijau logo dan huruf Plus Jakarta Sans",
+  "Menu Analisis baru dengan empat tab: Wawasan (skor keuangan, proyeksi akhir bulan, kebiasaan belanja), Kategori, Tren, dan Rincian",
+  "Menu bawah berbentuk pil melayang: Beranda, Transaksi, tombol tambah, Analisis, dan Lainnya; Tagihan kini ada di Lainnya dengan pintasan lonceng di atas",
+  "Submenu baru: menu Lainnya bergaya bento, serta submenu Tagihan, Rencana, dan Kurs dengan gaya berbeda dan sidebar web dengan garis alur",
+  "Pengantar Tampilan baru yang tampil sekali setelah masuk, dengan animasi empat layar dan tombol Lewati"
  ]
 }

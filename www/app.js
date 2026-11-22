@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.9.2', APP_BUILD = 9;
+const APP_VERSION = '1.10.0', APP_BUILD = 10;
 const CHANGELOG = [
+  { v: '1.10.0', d: '2026-11-21', items: ['Tampilan baru: Beranda lebih ringkas (saldo keseluruhan, pemasukan, pengeluaran, anggaran, transaksi terbaru) dengan warna biru bersentuhan hijau logo dan huruf Plus Jakarta Sans', 'Menu Analisis baru dengan empat tab: Wawasan (skor keuangan, proyeksi akhir bulan, kebiasaan belanja), Kategori, Tren, dan Rincian', 'Menu bawah berbentuk pil melayang: Beranda, Transaksi, tombol tambah, Analisis, dan Lainnya; Tagihan kini ada di Lainnya dengan pintasan lonceng di atas', 'Submenu baru: menu Lainnya bergaya bento, serta submenu Tagihan, Rencana, dan Kurs dengan gaya berbeda dan sidebar web dengan garis alur', 'Pengantar Tampilan baru yang tampil sekali setelah masuk, dengan animasi empat layar dan tombol Lewati'] },
   { v: '1.9.2', d: '2026-11-19', items: ['Perbaikan Masuk dengan Google di edisi Firebase: permintaan ke Firebase kini memakai alamat resmi (localhost) sehingga tidak ditolak karena domain situs, dan pesan galat menjelaskan penyebab sebenarnya (Client ID tidak cocok atau domain belum diizinkan)'] },
   { v: '1.9.1', d: '2026-11-19', items: ['Pengenalan SaKu kini tampil seperti website di layar lebar (laptop dan desktop): header Masuk dan Daftar gratis, teks besar, ilustrasi besar, serta panah untuk pindah slide'] },
   { v: '1.9.0', d: '2026-11-19', items: ['Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk', 'Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)', 'Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai', 'Tautkan akun Google ke akun SaKu di Pengaturan (Firebase)'] },
@@ -203,6 +204,9 @@ const ICONS = {
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  bulb: '<path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/><path d="M10 21h4"/>',
+  trendup: '<path d="M3 17 9 11l4 4 8-8M15 7h6v6"/>',
+  trenddn: '<path d="M3 7l6 6 4-4 8 8M15 17h6v-6"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   cloudoff: '<path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6"/><path d="M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><path d="M1 1l22 22"/>',
   cloudup: '<path d="M16 16l-4-4-4 4"/><path d="M12 12v9"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>',
@@ -1026,6 +1030,138 @@ function reportHealth(items, tin, tout, rg, now, prevOut) {
   const perDay = el > 0 ? tout / el : 0, top = dow.indexOf(Math.max.apply(null, dow));
   return { rate: tin > 0 ? (tin - tout) / tin * 100 : null, perDay, prevPerDay: null, N, el, cur, proj: cur && el > 0 ? Math.round(perDay * N) : null, spendDays: Object.keys(days).length, topDay: Math.max.apply(null, dow) > 0 ? top : -1, topDayV: Math.max.apply(null, dow) };
 }
+
+/* ================= Analisis: skor keuangan, wawasan, kategori, tren =================
+   Fungsi murni (tanpa S) supaya bisa diuji. Setoran/penarikan simpanan dan pindah saldo bukan pemasukan/pengeluaran (isXfer). */
+const anaCl = (v, a, b) => Math.max(a, Math.min(b, v));
+/* nilai 0..100 dari laju pemakaian anggaran (persen): aman sampai 85%, turun pelan sampai 100%, lalu lebih cepat */
+function anaPaceScore(p) { return Math.round(p <= 85 ? 100 : p <= 100 ? 100 - (p - 85) * 4 / 3 : Math.max(0, 80 - (p - 100) * 2.5)); }
+const anaSum = (list, a, b, type) => { let s = 0; for (const t of list) if (t.type === (type || 'out') && !isXfer(t) && t.date >= a && t.date <= b) s += Number(t.amount) || 0; return s; };
+/* Total pengeluaran per grup kategori, urut terbesar */
+function anaGroups(items) {
+  const m = {};
+  for (const t of items) {
+    if (t.type !== 'out' || isXfer(t)) continue;
+    const id = CATS[t.cat] ? t.cat : 'lain', g = catOf(id).group, o = m[g] || (m[g] = { id: g, label: (GROUPS_OUT.filter(x => x.id === g)[0] || { label: g }).label, v: 0, n: 0 });
+    o.v += Number(t.amount) || 0; o.n++;
+  }
+  return Object.keys(m).map(k => m[k]).sort((a, b) => b.v - a.v || (a.id < b.id ? -1 : 1));
+}
+/* Perbandingan pengeluaran per grup: rentang s..e (dipotong sampai hari ini) lawan rentang sebelumnya dengan jumlah hari sama.
+   cycle = true: rentang itu satu periode, pembandingnya periode sebelumnya sejak tanggal mulainya (mis. 1–21 Nov lawan 1–21 Okt). */
+function anaCompare(list, s, e, now, cycle) {
+  now = now || new Date(); const today = ymd(startOfDay(now)), ce = e < today ? e : today;
+  const empty = { has: false, rows: [], cur: 0, prev: 0, diff: 0, pct: null, s, e: ce, ps: '', pe: '', len: 0, plabel: '', pshort: '' };
+  if (ce < s) return empty;
+  const cs = parseYmd(s), len = dayDiff(cs, parseYmd(ce)) + 1; let ps, pe, plabel = '', pshort = '';
+  if (cycle) { const pc = cycleOf(addDays(cs, -1)); ps = pc.start; pe = addDays(ps, len - 1); if (pe > pc.end) pe = pc.end; plabel = cycleLabel(pc); pshort = CYCLE.day > 1 ? cycleName(pc, false) : MONTHS_S[pc.start.getMonth()]; }
+  else { pe = addDays(cs, -1); ps = addDays(pe, -(len - 1)); }
+  const a = anaGroups(list.filter(t => t.date >= s && t.date <= ce)), b = anaGroups(list.filter(t => t.date >= ymd(ps) && t.date <= ymd(pe))), m = {};
+  a.forEach(g => { m[g.id] = { id: g.id, label: g.label, cur: g.v, prev: 0 }; });
+  b.forEach(g => { (m[g.id] || (m[g.id] = { id: g.id, label: g.label, cur: 0, prev: 0 })).prev = g.v; });
+  const rows = Object.keys(m).map(k => m[k]).sort((x, y) => y.cur - x.cur || y.prev - x.prev || (x.id < y.id ? -1 : 1));
+  rows.forEach(r => { r.diff = r.cur - r.prev; r.pct = r.prev > 0 ? r.diff / r.prev * 100 : null; });
+  const cur = rows.reduce((x, r) => x + r.cur, 0), prev = rows.reduce((x, r) => x + r.prev, 0);
+  return { has: cur > 0 || prev > 0, rows, cur, prev, diff: cur - prev, pct: prev > 0 ? (cur - prev) / prev * 100 : null, s, e: ce, ps: ymd(ps), pe: ymd(pe), len, plabel, pshort };
+}
+/* nada perubahan untuk tabel/lencana: naik (merah/kuning), turun (hijau), datar, baru (tidak ada pembanding) */
+function anaTone(pct, cur) { return pct == null ? (cur > 0 ? 'new' : 'flat') : Math.abs(pct) < 3 ? 'flat' : pct > 0 ? 'up' : 'down'; }
+/* Ringkasan satu periode (bulan atau periode gajian) untuk tab Wawasan */
+function anaPeriod(list, A, settings, now) {
+  settings = settings || {}; now = now || new Date();
+  const rg = cycleOf(A), s = ymd(rg.start), e = ymd(rg.end), N = dayDiff(rg.start, rg.end) + 1, today = startOfDay(now);
+  const isCur = today >= rg.start && today <= rg.end, el = today < rg.start ? 0 : today > rg.end ? N : dayDiff(rg.start, today) + 1;
+  const items = list.filter(t => t.date >= s && t.date <= e && !isXfer(t));
+  const tin = sumType(items, 'in'), tout = sumType(items, 'out'), dayOut = new Array(N).fill(0), dow = [0, 0, 0, 0, 0, 0, 0], dowN = [0, 0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < el; i++) dowN[addDays(rg.start, i).getDay()]++;
+  items.forEach(t => { if (t.type !== 'out') return; const d = parseYmd(t.date), i = dayDiff(rg.start, d), a = Number(t.amount) || 0; if (i >= 0 && i < N) { dayOut[i] += a; dow[d.getDay()] += a; } });
+  const perDay = el > 0 ? tout / el : 0, bm = budgetModel(list, A, settings, now), cum = []; let c = 0;
+  for (let i = 0; i < N; i++) { c += dayOut[i]; cum.push(i < el ? c : null); }
+  const cumToday = el > 0 ? cum[el - 1] : 0, proj = isCur && el >= 3 && el < N ? (bm.proj != null ? bm.proj : Math.round(cumToday + perDay * (N - el))) : null;
+  const rate = isCur && bm.cap > 0 && bm.rate > 0 ? bm.rate : perDay;
+  const cmp = anaCompare(list, s, e, now, true), prevPerDay = el > 0 && cmp.len > 0 ? cmp.prev / cmp.len : 0;
+  const saveRate = tin > 0 ? (tin - tout) / tin * 100 : null;
+  const pace = bm.cap > 0 ? (proj != null ? proj / bm.cap * 100 : bm.used) : null;
+  let ok = 0; if (el >= 5 && tout > 0) for (let i = 0; i < el; i++) if (dayOut[i] <= perDay * 2) ok++;
+  const subs = [['Tabungan', saveRate == null ? null : Math.round(anaCl(saveRate / 30 * 100, 0, 100))], ['Anggaran', pace == null ? null : anaPaceScore(pace)], ['Konsistensi', el >= 5 && tout > 0 ? Math.round(ok / el * 100) : null]].filter(x => x[1] != null);
+  const score = subs.length ? Math.round(subs.reduce((a, x) => a + x[1], 0) / subs.length) : null;
+  const wk = [1, 2, 3, 4, 5, 6, 0].map(i => ({ dow: i, v: dowN[i] ? dow[i] / dowN[i] : 0, n: dowN[i] }));
+  const wmax = Math.max.apply(null, wk.map(x => x.v)), wmin = Math.min.apply(null, wk.filter(x => x.n > 0).map(x => x.v).concat([Infinity]));
+  return {
+    rg, s, e, N, el, isCur, tin, tout, net: tin - tout, perDay, prevPerDay, perDayPct: prevPerDay > 0 ? (perDay - prevPerDay) / prevPerDay * 100 : null, saveRate, bm, proj, rate, cum, cumToday, cmp, subs, score,
+    weekday: wk, wmax, wmin: wmin === Infinity ? 0 : wmin, wTop: wmax > 0 ? wk.filter(x => x.v === wmax).map(x => x.dow) : [], wLow: wmax > 0 && wk.filter(x => x.n > 0).length > 1 ? wk.filter(x => x.n > 0 && x.v === wmin).map(x => x.dow) : [],
+    has: items.length > 0
+  };
+}
+/* Skor periode sebelumnya (periode penuh) untuk kalimat "naik N poin dari ..." */
+function anaPrevScore(list, A, settings, now) { const pc = cycleOf(addDays(cycleOf(A).start, -1)); return anaPeriod(list, pc.start, settings, now).score; }
+/* Wawasan berurutan menurut kepentingan; teks disusun di tampilan. */
+function anaInsights(P) {
+  const out = [], bm = P.bm, r = Math.round;
+  if (P.isCur && bm.cap > 0) {
+    if (bm.left < 0) out.push({ k: 'over', tone: 'bad', over: Math.abs(bm.left), cap: bm.cap, date: bm.eta && bm.eta.date });
+    else if (P.proj != null && P.proj > bm.cap) { const days = Math.max(1, P.N - P.el); out.push({ k: 'projOver', tone: 'warn', over: P.proj - bm.cap, date: P.rg.end, rate: r(P.rate), cut: Math.ceil((P.proj - bm.cap) / days) }); }
+    else if (P.proj != null) out.push({ k: 'projOk', tone: 'good', proj: P.proj, room: bm.cap - P.proj, rate: r(P.rate) });
+  }
+  const C = P.cmp, tot = C.prev || 0;
+  if (C.has && C.prev > 0) {
+    const up = C.rows.filter(x => x.prev > 0 && x.pct >= 15 && x.diff >= tot * 0.03).sort((a, b) => b.diff - a.diff)[0];
+    const dn = C.rows.filter(x => x.prev > 0 && x.pct <= -10 && -x.diff >= tot * 0.03).sort((a, b) => a.diff - b.diff)[0];
+    if (up) out.push({ k: 'up', tone: 'bad', label: up.label, pct: r(up.pct), cur: up.cur, prev: up.prev, ref: C.plabel });
+    if (dn) out.push({ k: 'down', tone: 'good', label: dn.label, pct: r(-dn.pct), cur: dn.cur, prev: dn.prev, save: -dn.diff, ref: C.plabel });
+  }
+  if (P.saveRate != null && P.saveRate < 0) out.push({ k: 'deficit', tone: 'bad', gap: -P.net });
+  else if (P.saveRate != null && P.saveRate >= 20 && out.length < 3) out.push({ k: 'save', tone: 'good', rate: r(P.saveRate), keep: P.net });
+  return out.slice(0, 4);
+}
+/* Tab Tren: per minggu (7 hari sejak awal periode), 6 periode, kalender harian, lonjakan */
+function anaTrend(list, A, settings, now) {
+  now = now || new Date();
+  const rg = cycleOf(A), pc = cycleOf(addDays(rg.start, -1)), today = startOfDay(now), N = dayDiff(rg.start, rg.end) + 1;
+  const isCur = today >= rg.start && today <= rg.end, el = today < rg.start ? 0 : today > rg.end ? N : dayDiff(rg.start, today) + 1;
+  const weeks = [];
+  for (let i = 0; i * 7 < N; i++) {
+    const a = addDays(rg.start, i * 7); if (a > today) break;
+    const b0 = addDays(a, 6), b = b0 > rg.end ? rg.end : b0, bc = b > today ? today : b, partial = b > today, nd = dayDiff(a, bc) + 1;
+    const pa = addDays(pc.start, i * 7), pb0 = addDays(pa, (partial ? nd : dayDiff(a, b) + 1) - 1), pb = pb0 > pc.end ? pc.end : pb0;
+    weeks.push({ from: a, to: b, cur: anaSum(list, ymd(a), ymd(bc)), prev: pa <= pc.end ? anaSum(list, ymd(pa), ymd(pb)) : 0, partial, days: nd });
+  }
+  const months = monthsModel(list, A, 6).map((m, i, arr) => {
+    const mon = (Number(m.key.slice(5, 7)) - 1 + (CYCLE.day > 1 ? 1 : 0)) % 12;
+    return Object.assign({ short: MONTHS_S[mon], partial: isCur && i === arr.length - 1 }, m);
+  });
+  const dayOut = new Array(N).fill(0);
+  list.forEach(t => { if (t.type !== 'out' || isXfer(t) || t.date < ymd(rg.start) || t.date > ymd(rg.end)) return; const i = dayDiff(rg.start, parseYmd(t.date)); if (i >= 0 && i < N) dayOut[i] += Number(t.amount) || 0; });
+  const tout = dayOut.reduce((a, v) => a + v, 0), perDay = el > 0 ? dayOut.slice(0, el).reduce((a, v) => a + v, 0) / el : 0, max = Math.max.apply(null, dayOut.slice(0, Math.max(el, 0)).concat([0]));
+  const days = dayOut.map((v, i) => { const d = addDays(rg.start, i); return { d, n: d.getDate(), v, future: i >= el, today: isCur && i === el - 1, lv: v <= 0 || max <= 0 ? 0 : v <= max * 0.25 ? 1 : v <= max * 0.5 ? 2 : v <= max * 0.75 ? 3 : 4 }; });
+  const spikes = el >= 7 && perDay > 0 ? days.filter(x => !x.future && x.v >= perDay * 2).sort((a, b) => b.v - a.v).slice(0, 2).map(x => ({ d: x.d, v: x.v, mult: x.v / perDay })) : [];
+  return { rg, N, el, isCur, weeks, months, days, lead: rg.start.getDay(), max, perDay, spikes, tout };
+}
+/* Tagihan rutin terdeteksi: pengeluaran yang berulang di beberapa periode dengan kategori dan catatan sama, nominal mirip, tanggal berdekatan */
+function anaRecurring(list, A) {
+  const cur = cycleOf(A), D = CYCLE.day, fk = ymd(cycleStart(cur.start.getFullYear(), cur.start.getMonth() - 3, D)), ek = ymd(cur.end), g = {};
+  for (const t of list) {
+    if (t.type !== 'out' || isXfer(t) || !t.date || t.date < fk || t.date > ek) continue;
+    const raw = String(t.note || '').trim(), cid = CATS[t.cat] ? t.cat : 'lain', grp = catOf(cid).group;
+    if (!raw && grp !== 'rumah' && grp !== 'cicil') continue;   // tanpa catatan, hanya kategori tagihan (rumah, cicilan, pajak) yang dihitung rutin
+    const key = cid + '|' + raw.toLowerCase().replace(/[0-9]+/g, '').replace(/\s+/g, ' ').trim();
+    const o = g[key] || (g[key] = { cat: CATS[t.cat] ? t.cat : 'lain', note: raw, per: {} }), k = cycleKey(cycleOf(parseYmd(t.date)));
+    (o.per[k] || (o.per[k] = [])).push({ a: Number(t.amount) || 0, i: dayDiff(cycleOf(parseYmd(t.date)).start, parseYmd(t.date)), d: parseYmd(t.date).getDate() });
+  }
+  const rows = [];
+  Object.keys(g).forEach(key => {
+    const o = g[key], ks = Object.keys(o.per); if (ks.length < 2 || ks.some(k => o.per[k].length > 2)) return;
+    const all = ks.map(k => o.per[k][0]), am = all.map(x => x.a).sort((a, b) => a - b), med = am[Math.floor(am.length / 2)], is = all.map(x => x.i);
+    if (med <= 0 || am.some(a => Math.abs(a - med) > med * 0.2) || Math.max.apply(null, is) - Math.min.apply(null, is) > 4) return;
+    const ds = all.map(x => x.d).sort((a, b) => a - b);
+    rows.push({ cat: o.cat, name: o.note || catOf(o.cat).label, day: ds[Math.floor(ds.length / 2)], amount: med, n: ks.length });
+  });
+  rows.sort((a, b) => b.amount - a.amount);
+  const top = rows.slice(0, 5);
+  return { rows: top, total: top.reduce((a, r) => a + r.amount, 0), more: Math.max(0, rows.length - top.length) };
+}
+/* Garis saldo kecil di kartu utama: arus bersih kumulatif per hari (atau per titik) sampai hari ini */
+function anaSpark(bk, now) { const tk = ymd(startOfDay(now || new Date())); let c = 0; const v = []; bk.forEach(b => { if (b.key > tk) return; c += b.in - b.out; v.push(c); }); return v; }
 /* ================= PDF (vektor, tanpa pustaka) ================= */
 const CP1252 = { 0x20AC: 128, 0x201A: 130, 0x0192: 131, 0x201E: 132, 0x2026: 133, 0x2020: 134, 0x2021: 135, 0x02C6: 136, 0x2030: 137, 0x0160: 138, 0x2039: 139, 0x0152: 140, 0x017D: 142, 0x2018: 145, 0x2019: 146, 0x201C: 147, 0x201D: 148, 0x2022: 149, 0x2013: 150, 0x2014: 151, 0x02DC: 152, 0x2122: 153, 0x0161: 154, 0x203A: 155, 0x0153: 156, 0x017E: 158, 0x0178: 159 };
 function pdfStr(s) {
@@ -2362,7 +2498,7 @@ function bkShowPopup() {
   document.body.appendChild(el);
   bkPopT = setTimeout(bkHidePopup, sec * 1000);
 }
-function bkTick() { if (S.form || $('#bkpop')) return; if (bkDue(new Date())) bkShowPopup(); }
+function bkTick() { if (S.form || $('#bkpop') || $('#wnew')) return; if (bkDue(new Date())) bkShowPopup(); }
 
 /* ---------- Admin: pengaturan pengingat ---------- */
 function bkAdminCardHTML() {
@@ -2897,8 +3033,9 @@ function dueModel(plan, txs, now) {
    mis. /rekap, /tagihan/cicilan, /rencana/target. Judul tab tetap "SaKu".
    Mode alamat: 'path' (situs biasa, butuh aturan pengalihan ke index.html), 'hash' (aplikasi Android/iOS), 'none' (edisi claude.ai). */
 const NAV_GROUPS = [
-  { id: 'rekap', label: 'Rekap', tab: 'Rekap', icon: 'chart', def: 'rekap' },
+  { id: 'rekap', label: 'Beranda', tab: 'Beranda', icon: 'home', def: 'rekap' },
   { id: 'transaksi', label: 'Transaksi', tab: 'Transaksi', icon: 'list', def: 'transaksi' },
+  { id: 'analisis', label: 'Analisis', tab: 'Analisis', icon: 'chart', def: 'insight' },
   { id: 'tagihan', label: 'Tagihan', tab: 'Tagihan', icon: 'receipt', def: 'jatuh' },
   { id: 'rencana', label: 'Rencana', tab: 'Rencana', icon: 'flag', def: 'anggaran' },
   { id: 'laporan', label: 'Laporan', tab: 'Laporan', icon: 'file', def: 'laporan' },
@@ -2909,23 +3046,23 @@ const NAV_GROUPS = [
   { id: 'akun', label: 'Pengaturan', tab: 'Akun', icon: 'settings', def: 'akun' }
 ];
 const LEAF = {
-  rekap: { g: 'rekap', path: '/rekap', title: 'Rekap', sub: 'Ringkasan' },
-  insight: { g: 'rekap', path: '/rekap/insight', title: 'Insight', sub: 'Insight' },
+  rekap: { g: 'rekap', path: '/rekap', title: 'Beranda' },
+  insight: { g: 'analisis', path: '/rekap/insight', title: 'Analisis' },
   transaksi: { g: 'transaksi', path: '/transaksi', title: 'Transaksi' },
-  jatuh: { g: 'tagihan', path: '/tagihan', title: 'Jatuh Tempo', sub: 'Jatuh Tempo' },
-  cicilan: { g: 'tagihan', path: '/tagihan/cicilan', title: 'Cicilan', sub: 'Cicilan' },
-  hutang: { g: 'tagihan', path: '/tagihan/hutang', title: 'Hutang', sub: 'Hutang' },
-  anggaran: { g: 'rencana', path: '/rencana', title: 'Anggaran', sub: 'Anggaran' },
-  target: { g: 'rencana', path: '/rencana/target', title: 'Target', sub: 'Target' },
-  simpanan: { g: 'rencana', path: '/rencana/simpanan', title: 'Simpanan', sub: 'Simpanan' },
-  ramean: { g: 'rencana', path: '/rencana/ramean', title: 'Jajan Ramean', sub: 'Jajan Ramean' },
-  perjalanan: { g: 'rencana', path: '/rencana/perjalanan', title: 'Perjalanan', sub: 'Perjalanan' },
-  wishlist: { g: 'rencana', path: '/rencana/wishlist', title: 'Wishlist', sub: 'Wishlist' },
+  jatuh: { g: 'tagihan', path: '/tagihan', title: 'Jatuh Tempo', sub: 'Jatuh Tempo', ico: 'clock' },
+  cicilan: { g: 'tagihan', path: '/tagihan/cicilan', title: 'Cicilan', sub: 'Cicilan', ico: 'repeat' },
+  hutang: { g: 'tagihan', path: '/tagihan/hutang', title: 'Hutang', sub: 'Hutang', ico: 'landmark' },
+  anggaran: { g: 'rencana', path: '/rencana', title: 'Anggaran', sub: 'Anggaran', ico: 'pie', tone: 'blue' },
+  target: { g: 'rencana', path: '/rencana/target', title: 'Target', sub: 'Target', ico: 'target', tone: 'grn' },
+  simpanan: { g: 'rencana', path: '/rencana/simpanan', title: 'Simpanan', sub: 'Simpanan', ico: 'wallet', tone: 'vio' },
+  ramean: { g: 'rencana', path: '/rencana/ramean', title: 'Jajan Ramean', sub: 'Jajan Ramean', ico: 'users', tone: 'ora' },
+  perjalanan: { g: 'rencana', path: '/rencana/perjalanan', title: 'Perjalanan', sub: 'Perjalanan', ico: 'plane', tone: 'tea' },
+  wishlist: { g: 'rencana', path: '/rencana/wishlist', title: 'Wishlist', sub: 'Wishlist', ico: 'heart', tone: 'pink' },
   laporan: { g: 'laporan', path: '/laporan', title: 'Laporan' },
   asisten: { g: 'asisten', path: '/tanya', title: 'Tanya SaKu' },
   rekening: { g: 'rekening', path: '/rekening', title: 'Pengaturan Rekening', sub: 'Rekening' },
-  konversi: { g: 'kurs', path: '/kurs', title: 'Konversi Mata Uang', sub: 'Konversi' },
-  pasar: { g: 'kurs', path: '/kurs/pasar', title: 'Kurs & Indeks', sub: 'Kurs & Indeks' },
+  konversi: { g: 'kurs', path: '/kurs', title: 'Konversi Mata Uang', sub: 'Konversi', ico: 'swap', tone: 'blue', hint: 'Hitung cepat' },
+  pasar: { g: 'kurs', path: '/kurs/pasar', title: 'Kurs & Indeks', sub: 'Kurs & Indeks', ico: 'trendup', tone: 'grn', hint: 'Pasar langsung' },
   teman: { g: 'teman', path: '/teman', title: 'Teman' },
   akun: { g: 'akun', path: '/akun', title: 'Pengaturan' },
   kategoriku: { g: 'akun', path: '/akun/kategori', title: 'Kategori Saya' },
@@ -2941,9 +3078,25 @@ function leafGroup(view) {
 }
 /* Submenu satu grup: daftar halaman daun, berurutan menurut LEAF */
 function leavesOf(g) { return Object.keys(LEAF).filter(k => LEAF[k].g === g && LEAF[k].sub); }
+/* Gaya submenu dalam halaman berbeda per grup: Tagihan = segmen ikon, Rencana = kartu ikon yang bisa digeser, Kurs = dua kartu besar */
+const SUBSTYLE = { tagihan: 'seg', rencana: 'rail', kurs: 'big' };
 function subnavHTML(view) {
   const g = leafGroup(view), ls = leavesOf(g); if (ls.length < 2) return '';
-  return '<div class="subnav" role="tablist" aria-label="Submenu ' + esc((GROUP_OF(g) || {}).label || '') + '">' + ls.map(k => `<button type="button" role="tab" data-act="nav" data-v="${k}" aria-selected="${k === view || (view === 'kategori' && k === ((S.catView && S.catView.back) || 'rekap'))}"${k === view ? ' aria-current="page"' : ''}>${esc(LEAF[k].sub)}${k === 'jatuh' ? '<span class="nbadge sm" data-due-badge hidden></span>' : ''}</button>`).join('') + '</div>';
+  const st = SUBSTYLE[g] || 'pill', cur = view === 'kategori' ? ((S.catView && S.catView.back) || 'rekap') : view;
+  const btn = k => {
+    const L = LEAF[k], on = k === cur, bd = k === 'jatuh' ? `<span class="nbadge sm" data-due-badge hidden></span>` : '', tn = L.tone ? ' tone-' + L.tone : '';
+    const attrs = `type="button" role="tab" data-act="nav" data-v="${k}" aria-selected="${on}"${k === view ? ' aria-current="page"' : ''}`;
+    if (st === 'seg' || st === 'rail') return `<button ${attrs} class="sn-i${tn}"><span class="sn-ic">${ic(L.ico || 'list', st === 'seg' ? 20 : 21)}${bd}</span><span class="sn-l">${esc(L.sub)}</span></button>`;
+    if (st === 'big') return `<button ${attrs} class="sn-i${tn}"><span class="sn-top"><span class="sn-ic">${ic(L.ico || 'list', 21)}</span><span class="sn-ck" aria-hidden="true">${ic('check', 13)}</span></span><span class="sn-l"><b>${esc(L.sub)}</b><small>${esc(L.hint || '')}</small></span></button>`;
+    return `<button ${attrs}>${esc(L.sub)}${bd}</button>`;
+  };
+  return `<div class="subnav sn-${st}" role="tablist" aria-label="Submenu ${esc((GROUP_OF(g) || {}).label || '')}">${ls.map(btn).join('')}</div>`;
+}
+/* Gulirkan submenu geser (kartu ikon) agar kartu yang aktif tampak di tengah */
+function subnavReveal() {
+  const nav = $('#view .subnav.sn-rail'); if (!nav) return;
+  const on = nav.querySelector('[aria-selected="true"]'); if (!on) return;
+  nav.scrollLeft = Math.max(0, on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2);
 }
 /* Judul tab selalu "SaKu"; nama halaman tidak ditampilkan di judul (alamat tetap per halaman, mis. /tagihan/cicilan) */
 function titleFor() { return 'SaKu'; }
@@ -3465,23 +3618,43 @@ const I18N_EN = {
   ", {1} catatan hutang dibuat.": ", {1} debt entries created.",
   ", {1} data cicilan, hutang & target": ", {1} installment, debt & goal data",
   ", {1} terlambat": ", {1} overdue",
+  ", {1}{2} dari minggu yang sama di": ", {1}{2} from the same week in",
+  ", {1}{2} dari minggu yang sama di {3}": ", {1}{2} from the same week in {3}",
+  ", {1}{2} dari minggu yang sama di {3}.": ", {1}{2} from the same week in {3}.",
+  ", atau": ", or",
+  ", atau {1} di atas": ", or {1} above",
+  ", atau {1} di atas {2}": ", or {1} above {2}",
+  ", atau {1} di atas {2}.": ", or {1} above {2}.",
+  ", batas": ", limit",
   ", dan pengguna bisa menggantinya di Pengaturan. Kata sandi awal juga dipakai saat admin mereset akun.": ", and users can change it in Settings. The initial password is also used when an admin resets an account.",
   ", dibayar": ", paid",
+  ", diperkirakan": ", projected",
+  ", diperkirakan {1} pada akhir periode": ", projected {1} at period end",
   ", ganti seluruh isinya dengan aturan keamanan di bawah, lalu": ", replace all of its contents with the security rules below, then",
+  ", jadi garis putus-putus belum final.": ", so the dashed line is not final yet.",
   ", jadi targetnya sekitar": ", so the goal is about",
   ", jadi targetnya sekitar {1}.": ", so the goal is about {1}.",
+  ", jumlah": ", total",
   ", lainnya": ", other",
   ", lalu deploy fungsi": ", then deploy the function",
   ", lalu tambahkan aplikasi": ", then add an app",
+  ", masih": ", still",
+  ", masih {1} di bawah": ", still {1} below",
+  ", masih {1} di bawah {2}": ", still {1} below {2}",
+  ", masih {1} di bawah {2}.": ", still {1} below {2}.",
+  ", masih sisa": ", still left",
   ", perkiraan total": ", estimated total",
   ", proyeksi total": ", projected total",
   ", rata-rata": ", average",
   ", saldo bebas": ", free balance",
+  ", sekitar": ", about",
   ", sisa": ", remaining",
+  ", terlampaui sejak": ", exceeded since",
   ", total keluar": ", total out",
   ": administrator hanya melihat nama akun, jumlah catatan, dan waktunya, tidak bisa membuka atau membaca transaksinya. Hanya sistem yang bisa memulihkannya.": ": administrators can only see account names, entry counts, and timestamps. They can't open or read the transactions. Only the system can restore it.",
   ": aplikasi tiap pengguna menyalin catatannya dalam bentuk terkunci, administrator hanya bisa mengunduh salinan itu, dan hanya pemegang berkas kunci yang bisa membukanya untuk memulihkan.": ": each user's app copies its entries in locked form, administrators can only download that copy, and only the holder of the key file can unlock it to restore.",
   ": tanpanya cadangan tidak bisa dipulihkan, dan siapa pun yang memegangnya bisa membukanya.": ": without it the backup can't be restored, and anyone who holds it can open it.",
+  "· {1} admin pembantu": "· {1} assistant admins",
   "· {1} akun,": "· {1} accounts,",
   "· {1} akun, {2}": "· {1} accounts, {2}",
   "· {1} akun, {2} transaksi": "· {1} accounts, {2} transactions",
@@ -3489,6 +3662,9 @@ const I18N_EN = {
   "· {1} belum ada pengeluaran": "· {1} no expenses yet",
   "· {1} foto": "· {1} photos",
   "· {1} nonaktif": "· {1} inactive",
+  "· {1} pengeluaran": "· {1} expenses",
+  "· {1} per hari": "· {1} per day",
+  "· build": "· build",
   "· Bulan laporan:": "· Report month:",
   "· cicilan ke-": "· installment #",
   "· cicilan ke-{1} dari": "· installment #{1} of",
@@ -3497,8 +3673,10 @@ const I18N_EN = {
   "· Dibuat": "· Created",
   "· dicicil": "· in installments",
   "· gagal memperbarui, memakai salinan terakhir": "· update failed, using last saved copy",
+  "· hampir habis": "· almost used up",
   "· Jajan Ramean:": "· Group Treats:",
   "· jatuh tempo": "· due",
+  "· mendekati batas": "· nearing the limit",
   "· periode": "· period",
   "· periode mulai tanggal": "· period starting on",
   "· sisa": "· remaining",
@@ -3542,6 +3720,7 @@ const I18N_EN = {
   "(Untuk Login)": "(For Login)",
   ") di kolom di bawah, lalu tekan": ") in the field below, then press",
   ") dicatat tanpa daftar barang.": ") recorded without an item list.",
+  "). Kurangi budget kategori dulu.": "). Reduce the category budget first.",
   "). Kurs terbaru belum bisa diambil; hubungkan ke internet lalu tekan Perbarui.": "). Latest rates couldn't be fetched; connect to the internet, then press Update.",
   "). Salin blok": "). Copy the block",
   "). Simpan berkasnya di tempat yang aman, misalnya pengelola kata sandi atau flashdisk. Berkas itu": "). Store the file somewhere safe, such as a password manager or USB drive. That file",
@@ -3549,16 +3728,19 @@ const I18N_EN = {
   "{1} · {2} transaksi{3}{4}": "{1} · {2} transactions{3}{4}",
   "{1} · ke-{2} dari": "{1} · #{2} of",
   "{1} · ke-{2} dari {3}": "{1} · #{2} of {3}",
+  "{1} {2} terpakai": "{1} {2} used",
   "{1} Acara Baru": "{1} New Event",
   "{1} admin pembantu": "{1} assistant admins",
   "{1} akan datang": "{1} upcoming",
   "{1} akun · {2} administrator": "{1} accounts · {2} administrators",
   "{1} akun · {2} administrator{3}": "{1} accounts · {2} administrators{3}",
+  "{1} akun · {2} administrator{3}{4}": "{1} accounts · {2} administrator{3}{4}",
   "{1} Baca barang dari foto": "{1} Read Items from Photo",
   "{1} belum lunas": "{1} not yet paid off",
   "{1} Buat Acara": "{1} Create Event",
   "{1} Buat akun": "{1} Create Account",
   "{1} Buat kunci pemulihan": "{1} Create Recovery Key",
+  "{1} Buka menu Laporan": "{1} Open the Reports menu",
   "{1} bulan": "{1} months",
   "{1} Bulan Terakhir": "Last {1} Months",
   "{1} Cadangkan Sekarang": "{1} Back Up Now",
@@ -3570,17 +3752,24 @@ const I18N_EN = {
   "{1} catatan": "{1} entries",
   "{1} catatan menunggu diunggah.": "{1} entries waiting to be uploaded.",
   "{1} catatan offline tetap tersimpan dan akan diunggah setelah Anda masuk.": "{1} offline entries are kept and will upload after you log in.",
+  "{1} Cek pembaruan": "{1} Check for updates",
   "{1} Coba tampilkan": "{1} Try Showing",
   "{1} Dana Darurat": "{1} Emergency Fund",
   "{1} dari {2}": "{1} of {2}",
   "{1} dari {2} bulan": "{1} of {2} months",
   "{1} dari {2} sudah dibayar": "{1} of {2} paid",
+  "{1} dari {2}.": "{1} of {2}.",
+  "{1} dari {2}.{3}": "{1} of {2}.{3}",
   "{1} dari batas": "{1} of limit",
   "{1} dari batas pengeluaran sudah dibagi ke kategori": "{1} of the spending limit is assigned to categories",
   "{1} dari pemasukan": "{1} of income",
   "{1} dari total {2} {3}": "{1} of {2} total {3}",
   "{1} di laut": "{1} at sea",
   "{1} di udara": "{1} in the air",
+  "{1} dibanding {2} pada tanggal yang sama.": "{1} vs {2} on the same date.",
+  "{1} dibanding {2}. Hemat": "{1} vs {2}. Saved",
+  "{1} dibanding {2}. Hemat {3}": "{1} vs {2}. Saved {3}",
+  "{1} dibanding {2}. Hemat {3}.": "{1} vs {2}. Saved {3}.",
   "{1} Excel + grafik": "{1} Excel + Charts",
   "{1} foto tidak bisa diambil.": "{1} photos couldn't be fetched.",
   "{1} Galeri": "{1} Gallery",
@@ -3600,9 +3789,18 @@ const I18N_EN = {
   "{1} kini admin pembantu": "{1} is now an assistant admin",
   "{1} km, {2} berkendara": "{1} km, {2} driving",
   "{1} Laporan PDF": "{1} PDF Report",
+  "{1} masuk {2} keluar": "{1} in {2} out",
+  "{1} masuk {2} keluar {3}": "{1} in {2} out {3}",
   "{1} Memberi Hutang": "{1} Lend Money",
+  "{1} naik {2}% dari": "{1} up {2}% from",
+  "{1} naik {2}% dari {3}": "{1} up {2}% from {3}",
   "{1} orang": "{1} people",
   "{1} orang · bagian Anda {2}": "{1} people · your share {2}",
+  "{1} paling boros, rata-rata {2} per hari.": "{1} spent the most, averaging {2} per day.",
+  "{1} paling boros, rata-rata {2} per hari.{3}": "{1} spent the most, averaging {2} per day.{3}",
+  "{1} paling hemat, hanya": "{1} spent the least, only",
+  "{1} paling hemat, hanya {2}": "{1} spent the least, only {2}",
+  "{1} paling hemat, hanya {2} per hari.": "{1} spent the least, only {2} per day.",
   "{1} Pemasukan": "{1} Income",
   "{1} Pengeluaran": "{1} Expenses",
   "{1} Perbarui": "{1} Update",
@@ -3626,7 +3824,9 @@ const I18N_EN = {
   "{1} Tambah barang": "{1} Add Item",
   "{1} Tambah Cicilan": "{1} Add Installment",
   "{1} Tambah item": "{1} Add Item",
+  "{1} Tambah Kategori": "{1} Add Category",
   "{1} terpakai": "{1} used",
+  "{1} terpakai{2}": "{1} used{2}",
   "{1} transaksi": "{1} transactions",
   "{1} transaksi ({2}) dicatat tanpa daftar barang.": "{1} transactions ({2}) recorded without an item list.",
   "{1} Transaksi (CSV)": "{1} Transactions (CSV)",
@@ -3635,16 +3835,30 @@ const I18N_EN = {
   "{1} transaksi tersimpan di akun ini": "{1} transactions saved in this account",
   "{1} transaksi tersimpan di akun ini.": "{1} transactions saved in this account.",
   "{1} transaksi tersimpan di akun ini. Laporan PDF, Excel, dan CSV sekarang diunduh dari menu Laporan.": "{1} transactions saved in this account. PDF, Excel, and CSV reports are now downloaded from the Reports menu.",
+  "{1} turun {2}% dari": "{1} down {2}% from",
+  "{1} turun {2}% dari {3}": "{1} down {2}% from {3}",
   "{1} Ubah": "{1} Edit",
   "{1} Unduh Cadangan": "{1} Download Backup",
   "{1} Unduh lagi": "{1} Download again",
   "{1}: terkumpul {2} dari {3}.": "{1}: {2} saved of {3}.",
   "{1}{2} peserta · dibayar {3}": "{1}{2} participants · paid {3}",
+  "{1}{2}, sisa {3}": "{1}{2}, {3} left",
   "{1}% dari total": "{1}% of total",
   "{1}× dicatat · terakhir {2}": "{1}× recorded · latest {2}",
+  "{1}Kurs": "{1}Rates",
+  "{1}Melebihi {2}": "{1}Over {2}",
+  "{1}Pemasukan": "{1}Income",
+  "{1}Pengeluaran": "{1}Expenses",
+  "{1}Rekening": "{1}Accounts",
   "{1}Tekan tombol di tiap tagihan bila sudah dibayar, lalu otomatis tercatat di transaksi.": "{1}Tap the button on each bill once it's paid, and it's recorded in Transactions automatically.",
+  "{1}Teman": "{1}Friends",
   "{1}Tidak termasuk setoran ke tabungan dan investasi.": "{1}Excludes deposits to savings and investments.",
+  "*{1} ini baru berjalan sampai tanggal": "*{1} this has only run up to the date",
+  "*{1} ini baru berjalan sampai tanggal {2}": "*{1} this has only run up to {2}",
+  "*{1} ini baru berjalan sampai tanggal {2}, jadi garis putus-putus belum final.": "*{1} this has only run up to {2}, so the dashed line is not final yet.",
+  "% dari": "% of",
   "% dari batas": "% of limit",
+  "% dari pemasukan": "% of income",
   "% dari seluruh pengeluaran": "% of all spending",
   "% dari seluruh target": "% of all goals",
   "% dari total keluar": "% of total spending",
@@ -3652,6 +3866,7 @@ const I18N_EN = {
   "+ {1} tagihan lainnya ada di menu Jatuh Tempo.": "+ {1} more bills are in Due Dates.",
   "+ tambahan": "+ extra",
   "× dicatat · terakhir": "× recorded · latest",
+  "− keluar": "− out",
   "✓ Kunci": "✓ Key",
   "✓ Kunci {1} cocok dengan cadangan ini": "✓ Key {1} matches this backup",
   "✕ Kunci ini bukan pasangan cadangan ini": "✕ This key doesn't match this backup",
@@ -3665,10 +3880,12 @@ const I18N_EN = {
   "4–20 huruf kecil atau angka, diawali huruf.": "4–20 lowercase letters or numbers, starting with a letter.",
   "4–20 huruf kecil atau angka, tanpa spasi. Contoh:": "4–20 lowercase letters or numbers, no spaces. Example:",
   "4. Pilih yang dibagikan": "4. Choose what to share",
+  "7 hari": "7 days",
   "7 hari ke depan": "next 7 days",
   "7 Hari ke Depan": "Next 7 Days",
   "7 hari terakhir": "last 7 days",
   "7 Hari Terakhir": "Last 7 Days",
+  "82% terpakai · sisa 10 hari": "82% used · 10 days left",
   "ac": "AC",
   "acara": "events",
   "Acara & Kondangan": "Events & Wedding Gifts",
@@ -3683,10 +3900,14 @@ const I18N_EN = {
   "Ada 1 pendaftaran menunggu persetujuan": "There is 1 sign-up waiting for approval",
   "Ada permintaan simpan yang masih terbuka. Selesaikan dulu, lalu coba lagi.": "A save request is still pending. Please finish it first, then try again.",
   "Ada yang bisa dibantu?": "Need any help?",
+  "Admin": "Admin",
+  "Admin akan memeriksa data Anda lebih dulu.": "Admin will review your details first.",
   "Admin hanya melihat jumlah catatan dan waktu aktivitas. Isi transaksi, nominal, dan foto milik pengguna tidak dapat dibuka dari sini.": "Admins can only see the number of entries and activity times. Users' transaction details, amounts, and photos can't be opened from here.",
+  "admin pembantu": "assistant admin",
   "Admin Pembantu": "Assistant Admin",
   "Admin pembantu hanya boleh mengelola akun pengguna biasa.": "Assistant admins can only manage regular user accounts.",
   "Admin pembantu tetap memakai semua menu biasa (pemasukan, pengeluaran, dan lainnya) dan mendapat tambahan menu Admin untuk menyetujui pendaftar, membuat akun, serta mengaktifkan atau menonaktifkan pengguna.": "Assistant admins keep all the regular menus (income, expenses, and more) and get an extra Admin menu to approve sign-ups, create accounts, and enable or disable users.",
+  "Administrator": "Administrator",
   "agar": "so that",
   "agar semuanya tepat waktu": "so everything is on time",
   "Agar tepat waktu, perlu sekitar": "To be on time, you need about",
@@ -3746,15 +3967,23 @@ const I18N_EN = {
   "Alamat proyek Supabase": "Supabase project URL",
   "Alamat proyek:": "Project URL:",
   "Alamat server belum diisi.": "Server address is not set yet.",
+  "Alat dan akun": "Tools and account",
   "Aman": "Safe",
   "anak": "kids",
   "Anak & Keluarga": "Kids & Family",
+  "Analisis": "Analysis",
   "Anda": "You",
   "Anda bisa menyetujui pendaftar, membuat akun pengguna, serta mengaktifkan atau menonaktifkan pengguna.": "You can approve sign-ups, create user accounts, and enable or disable users.",
+  "Anda bisa menyetujui pendaftar, membuat akun pengguna, serta mengaktifkan atau menonaktifkan pengguna. Reset kata sandi, perubahan peran, dan penghapusan akun hanya bisa dilakukan administrator.": "You can approve sign-ups, create user accounts, and enable or disable users. Only an administrator can reset passwords, change roles, and delete accounts.",
   "Anda kini admin pembantu": "You are now an assistant admin",
   "Anda kini administrator": "You are now an administrator",
   "Anda masih memakai kata sandi awal": "You're still using the initial password",
   "Anda masih memakai kata sandi awal. Ganti sekarang agar akun lebih aman.": "You're still using the initial password. Change it now to keep your account safer.",
+  "Anda menabung": "You saved",
+  "Anda menabung {1} dari pemasukan": "You saved {1} of income",
+  "Anda menabung {1} dari pemasukan {2}": "You saved {1} of income {2}",
+  "Anda menabung {1} dari pemasukan {2}.": "You saved {1} of income {2}.",
+  "Anda menabung {1}% dari pemasukan": "You saved {1}% of income",
   "Anda perlu mengembalikan": "You need to pay back",
   "Anda perlu mengembalikan {1} kepada": "You need to pay back {1} to",
   "Anda perlu mengembalikan {1} kepada {2}": "You need to pay back {1} to {2}",
@@ -3768,8 +3997,12 @@ const I18N_EN = {
   "Anggaran {1}, sisa": "Budget {1}, remaining",
   "Anggaran {1}, sisa {2}": "Budget {1}, remaining {2}",
   "Anggaran acara": "Event budget",
+  "Anggaran aman sampai akhir periode": "Budget is safe until the end of the period",
   "Anggaran belum diatur, jadi saldo pemasukan menjadi dasar: saldo awal periode + pemasukan + penarikan − setoran simpanan.": "No budget is set yet, so your income balance is the base: opening period balance + income + withdrawals − savings deposits.",
   "Anggaran bersama": "Shared budget",
+  "Anggaran bisa terlampaui sekitar": "Budget may be exceeded around",
+  "Anggaran bisa terlampaui sekitar {1} pada": "Budget may be exceeded around {1} on",
+  "Anggaran bisa terlampaui sekitar {1} pada {2}": "Budget may be exceeded around {1} on {2}",
   "Anggaran bulanan": "Monthly budget",
   "Anggaran dihapus": "Budget deleted",
   "Anggaran disimpan": "Budget saved",
@@ -3777,13 +4010,16 @@ const I18N_EN = {
   "Anggaran menjadi": "Budget changed to",
   "Anggaran per": "Budget per",
   "Anggaran per {1}": "Budget per {1}",
+  "Anggaran per kategori": "Budget per category",
   "Anggaran saat ini": "Current budget",
   "Anggaran saat ini {1}, saldo bebas": "Current budget {1}, free balance",
   "Anggaran saat ini {1}, saldo bebas {2}": "Current budget {1}, free balance {2}",
   "Anggaran saat ini {1}, saldo bebas {2}.": "Current budget {1}, free balance {2}.",
+  "Anggaran sudah terlampaui": "Budget already exceeded",
   "Anggaran terpakai": "Budget used",
   "Anggaran terpakai, hampir habis": "Budget used, almost used up",
   "Anggaran terpakai, mendekati batas": "Budget used, nearing the limit",
+  "Anggaran, target, simpanan": "Budgets, goals, savings",
   "Animasi cara kerja": "How-it-works animation",
   "antara": "between",
   "Antrean pendaftaran sedang penuh. Coba lagi nanti atau hubungi admin.": "The sign-up queue is full. Try again later or contact an admin.",
@@ -3794,6 +4030,10 @@ const I18N_EN = {
   "Arisan": "Arisan (Rotating Savings)",
   "Arti SaKu": "What SaKu Means",
   "Arus kas": "Cash flow",
+  "Arus kas {1}": "Cash flow {1}",
+  "Arus kas {1} {2}": "Cash flow {1} {2}",
+  "Arus kas {1} periode:": "Cash flow {1} period:",
+  "Arus kas {1} periode: {2}": "Cash flow {1} period: {2}",
   "Arus Kas Harian": "Daily Cash Flow",
   "Arus Kas per Hari": "Cash Flow per Day",
   "Asisten keuangan dari catatan Anda sendiri": "A finance assistant built on your own records",
@@ -3819,7 +4059,9 @@ const I18N_EN = {
   "Baca foto otomatis belum diaktifkan di server ini.": "Automatic photo reading isn't enabled on this server.",
   "Baca foto otomatis belum tersedia di akun ini. Isi barang secara manual.": "Automatic photo reading isn't available for this account yet. Enter items manually.",
   "Baca foto otomatis tidak tersedia di edisi Firebase.": "Automatic photo reading isn't available in the Firebase edition.",
+  "backdrop pwp-bd": "backdrop pwp-bd",
   "bagi": "for",
+  "Bagian analisis": "Analysis section",
   "Bagian Anda": "Your share",
   "Bagian Anda bulan ini": "Your share this month",
   "Bagian masing-masing:": "Each person's share:",
@@ -3844,6 +4086,8 @@ const I18N_EN = {
   "Bank Syariah": "Islamic Banks",
   "Bank tidak ditemukan. Coba nama lain.": "No bank found. Try another name.",
   "Bantu mengelola akun pengguna, tanpa membuka catatan keuangan": "Help manage user accounts without opening financial entries",
+  "Banyak": "Many",
+  "bar hot": "bar hot",
   "barang": "items",
   "Barang": "Item",
   "Barang atau kegiatan impian yang dikumpulkan bersama.": "Dream items or activities saved for together.",
@@ -3856,16 +4100,20 @@ const I18N_EN = {
   "Batal": "Cancel",
   "Batalkan": "Cancel",
   "Batas": "Limit",
+  "Batas {1}": "Limit {1}",
   "Batas {1} data tercapai. Hapus data lama dulu.": "{1} data limit reached. Delete old data first.",
   "Batas {1} transaksi tercapai. Hapus transaksi lama dulu.": "{1} transaction limit reached. Delete old transactions first.",
   "Batas {1} transaksi tercapai. Pakai \"Ganti\" atau hapus transaksi lama dulu.": "{1} transaction limit reached. Use \"Replace\" or delete old transactions first.",
   "batas & estimasi habis": "limit & estimated run-out",
+  "Batas anggaran": "Budget limit",
+  "Batas anggaran {1}{2}.": "Budget limit {1}{2}.",
   "Batas pengeluaran": "Spending Limit",
   "Batas pengeluaran / dana tersedia": "Spending limit / available funds",
   "Batas pengeluaran dan sisa dana": "Spending Limit and Remaining Funds",
   "Batas pengeluaran per periode. Bila diisi, inilah yang dipantau tiap periode, dan sisa anggaran dikurangkan dari saldo pemasukan. Isi 0 atau kosongkan untuk memakai saldo pemasukan sebagai dasar. Kalau anggaran kurang, tambahkan dari kartu di atas.": "Spending limit per period. If set, this is what gets tracked each period, and the remaining budget is subtracted from your income balance. Enter 0 or leave it empty to use your income balance as the base. If your budget is too low, add more from the card above.",
   "Batas pengiriman email tercapai (3 kali per jam), jadi admin akan memeriksa data Anda.": "The email sending limit (3 per hour) was reached, so an admin will review your details.",
   "Batas pengiriman email tercapai (maksimal 3 kali per jam). Coba lagi dalam sekitar {1} menit.": "Email sending limit reached (maximum 3 per hour). Try again in about {1} minutes.",
+  "Batas tidak boleh lebih kecil dari total budget kategori (": "Limit can't be lower than the total category budget (",
   "Batas tidak boleh lebih kecil dari total budget kategori ({1}). Kurangi budget kategori dulu.": "The limit cannot be lower than the total category budgets ({1}). Reduce the category budgets first.",
   "Batas waktu": "Deadline",
   "Batas waktu (menit)": "Timeout (minutes)",
@@ -3909,15 +4157,18 @@ const I18N_EN = {
   "Belum ada akun.": "No accounts yet.",
   "Belum ada akun. Masukkan kode setup (rahasia": "No account yet. Enter the setup code (the secret",
   "Belum ada akun. Masukkan kode setup dari pengaturan Netlify, lalu pilih username dan kata sandi administrator.": "No account yet. Enter the setup code from your Netlify settings, then choose an administrator username and password.",
+  "Belum ada anggaran per kategori.": "No budget per category yet.",
   "Belum ada barang. Tambahkan satu per satu, atau ambil foto struk lalu baca otomatis.": "No items yet. Add them one by one, or take a photo of the receipt and read it automatically.",
   "Belum ada budget kategori. Pilih kategori yang ingin dijaga (misalnya Makanan atau Transportasi) dan bagi sebagian dari batas {1}. Kategori tanpa budget tetap dihitung di batas pengeluaran.": "No category budgets yet. Pick the categories you want to watch (for example Food or Transport) and assign part of the {1} limit. Categories without a budget still count toward the spending limit.",
   "Belum ada catatan": "No entries yet",
+  "Belum Ada Catatan": "No Entries Yet",
   "Belum ada catatan {1}. Mulai dengan menekan Setor.": "No {1} entries yet. Start by tapping Deposit.",
   "Belum ada catatan hutang": "No debt entries yet",
   "Belum ada catatan pengeluaran, jadi nominalnya baru bisa dihitung setelah Anda mencatat pengeluaran.": "No expenses recorded yet, so the amount can only be calculated after you record some expenses.",
   "Belum ada catatan yang bisa dicadangkan": "No entries available to back up",
   "Belum ada cicilan": "No installments yet",
   "Belum ada daftar barang di kategori ini. Isi bagian Barang yang Dibeli saat mencatat transaksi.": "No item list in this category yet. Fill in the Items Purchased section when recording a transaction.",
+  "Belum ada e-wallet. Dicatat sebagai pengeluaran biasa. Tambahkan e-wallet di Pengaturan Rekening agar saldo berpindah.": "No e-wallet yet. Recorded as a regular expense. Add an e-wallet in Account Settings so the balance can move.",
   "Belum ada email. Tambahkan email untuk verifikasi akun.": "No email yet. Add one to verify your account.",
   "Belum ada gerakan bulan ini": "No activity this month yet",
   "Belum ada hutang yang tercatat.": "No debts recorded yet.",
@@ -3927,6 +4178,7 @@ const I18N_EN = {
   "belum ada nominal": "no amount yet",
   "Belum ada pemasukan": "No income yet",
   "Belum ada pemasukan di periode ini.": "No income in this period yet.",
+  "Belum ada pemasukan tercatat pada periode ini.": "No income recorded for this period.",
   "Belum ada pembanding": "No comparison yet",
   "belum ada pengeluaran": "no expenses yet",
   "Belum ada pengeluaran": "No spending yet",
@@ -3945,10 +4197,13 @@ const I18N_EN = {
   "Belum ada setoran. Tekan Setor untuk mulai menabung ke target ini.": "No deposits yet. Tap Deposit to start saving toward this goal.",
   "belum ada tagihan": "no bills yet",
   "Belum ada tagihan": "No bills yet",
+  "Belum ada tagihan rutin yang terdeteksi. Pengeluaran yang berulang tiap bulan dengan nominal mirip akan tampil di sini.": "No recurring bills detected yet. Expenses that repeat monthly with similar amounts will show up here.",
   "Belum ada target": "No goals yet",
+  "Belum ada target dana darurat.": "No emergency fund goal yet.",
   "Belum ada teman. Kirim kode Anda, atau masukkan kode teman di atas.": "No friends yet. Send your code, or enter a friend's code above.",
   "Belum ada transaksi di periode ini.": "No transactions in this period yet.",
   "Belum ada transaksi pada periode ini.": "No transactions in this period.",
+  "Belum ada transaksi.": "No transactions yet.",
   "Belum ada transaksi. Catat transaksi dulu, lalu laporan bisa diunduh di sini.": "No transactions yet. Record a transaction first, then reports can be downloaded here.",
   "Belum ada tujuan — tambahkan di Pengaturan Rekening": "No destination yet. Add one in Account Settings",
   "Belum ada uang yang Anda pinjamkan.": "You haven't lent any money yet.",
@@ -3976,6 +4231,7 @@ const I18N_EN = {
   "bensin": "fuel",
   "Bensin & Parkir": "Fuel & Parking",
   "berakhir": "ended",
+  "Beranda": "Home",
   "Berangkat": "Departure",
   "Berangkat dari": "Departing from",
   "Berangkat dari {1}": "Departing from {1}",
@@ -3991,6 +4247,9 @@ const I18N_EN = {
   "Beri pinjaman": "Loans given",
   "Beri Pinjaman": "Lend Money",
   "Berikutnya": "Next",
+  "Berikutnya {1} (": "Next {1} (",
+  "Berikutnya {1} ({2}": "Next {1} ({2}",
+  "Berikutnya {1} ({2}).": "Next {1} ({2}).",
   "Berkas belum tersimpan": "File not saved yet",
   "Berkas cadangan rusak, sudah diubah, atau bukan milik akun ini.": "Backup file is corrupted, has been modified, or doesn't belong to this account.",
   "Berkas cadangan tidak dikenali.": "Backup file not recognized.",
@@ -4016,6 +4275,7 @@ const I18N_EN = {
   "Biaya tambahan": "Extra fees",
   "bila": "if",
   "Bila sebagian sudah dibayar sebelum memakai SaKu, isi sisanya saja.": "If part was already paid before using SaKu, just enter the remaining amount.",
+  "Boba": "Boba",
   "Boleh dilewati. Pengingat ini muncul lagi setiap kali Anda masuk, sampai kata sandinya diganti.": "You can skip this. This reminder will appear again each time you log in until you change your password.",
   "bonus": "bonus",
   "Bonus & THR": "Bonus & Holiday Allowance",
@@ -4038,7 +4298,9 @@ const I18N_EN = {
   "Buat kunci pemulihan dulu.": "Create a recovery key first.",
   "Buat proyek": "Create Project",
   "Buat sendiri, minimal": "Create your own, at least",
+  "Buat sendiri, minimal {1} karakter. Dipakai untuk masuk {2}.": "Create your own, at least {1} characters. Used to log in to {2}.",
   "Buat sendiri, minimal {1} karakter. Dipakai untuk masuk setelah disetujui admin.": "Create your own, at least {1} characters. Used to log in after admin approval.",
+  "Buat target": "Create goal",
   "Budget (bagian dari batas {1})": "Budget (part of the {1} limit)",
   "Budget {1} terpakai": "Budget {1} used",
   "Budget bulan ini": "This month's budget",
@@ -4053,6 +4315,7 @@ const I18N_EN = {
   "Budget, tagihan, dan cicilan terkendali": "Budgets, bills, and installments under control",
   "Buka": "Open",
   "Buka {1}": "Open {1}",
+  "Buka anggaran": "Open budget",
   "Buka di Yahoo Finance": "Open in Yahoo Finance",
   "Buka halaman ini lewat claude.ai dan masuk ke akun Claude Anda agar catatan keuangan bisa disimpan.": "Open this page through claude.ai and log in to your Claude account so your financial records can be saved.",
   "Buka Jatuh Tempo": "Open Due Dates",
@@ -4062,6 +4325,8 @@ const I18N_EN = {
   "Buka menu Teman": "Open Friends menu",
   "Buka menu Teman. Setiap akun punya kode sendiri. Salin atau kirim kode itu ke teman lewat chat.": "Open the Friends menu. Every account has its own code. Copy it or send it to a friend by chat.",
   "Buka rute di Google Maps": "Open route in Google Maps",
+  "Buka submenu": "Open submenu",
+  "Buka target": "Open goal",
   "bukan": "not",
   "Bukan pemasukan. Saldo kas bertambah dan saldo": "Not income. Cash balance goes up and balance",
   "Bukan pemasukan. Saldo kas bertambah dan saldo {1} berkurang.": "Not income. Cash balance goes up and {1} balance goes down.",
@@ -4097,6 +4362,7 @@ const I18N_EN = {
   "Bunga Tabungan": "Savings Interest",
   "bus": "bus",
   "Bus Antar Kota": "Intercity Bus",
+  "Butuh minimal dua rekening agar saldo bisa berpindah. Dicatat sebagai pengeluaran biasa.": "You need at least two accounts for the balance to move. Recorded as a regular expense.",
   "Cabut Admin Pembantu": "Remove Assistant Admin",
   "Cabut Administrator": "Remove Administrator",
   "Cadangan 7 hari terakhir": "Backups from the last 7 days",
@@ -4154,11 +4420,13 @@ const I18N_EN = {
   "Catat hasil": "Record income",
   "Catat hutang Anda ke orang lain, atau uang yang Anda pinjamkan. SaKu mengingatkan saat jatuh tempo dan menghitung sisanya. Hutang tidak dihitung sebagai pemasukan atau pengeluaran, hanya menggeser saldo.": "Record debts you owe to others, or money you've lent out. SaKu reminds you on due dates and calculates what's left. Debts aren't counted as income or expenses; they only shift your balance.",
   "Catat ke SaKu": "Record to SaKu",
+  "Catat pemasukan atau pengeluaran pertama Anda.": "Record your first income or expense.",
   "Catat pemasukan atau pengeluaran pertama Anda. Foto struk bisa dipakai untuk mengisi daftar barang.": "Record your first income or expense. You can use a receipt photo to fill in the item list.",
   "Catat Sekarang": "Record Now",
   "catat tiap transaksi": "record every transaction",
   "Catat transaksi": "Record transaction",
   "Catat Transaksi": "Record Transaction",
+  "Catat transaksi untuk melihat tren mingguan, arus kas, dan tagihan rutin.": "Record transactions to see weekly trends, cash flow, and recurring bills.",
   "Catat uang pinjaman ke Transaksi": "Record loan money in Transactions",
   "Catat, atur, dan pantau keuangan pribadi Anda dengan tenang, di satu tempat.": "Record, organize, and track your personal finances with peace of mind, all in one place.",
   "catatan": "notes",
@@ -4220,6 +4488,7 @@ const I18N_EN = {
   "Cicilan: {1}": "Installment: {1}",
   "Ciutkan": "Collapse",
   "Ciutkan menu": "Collapse menu",
+  "Ciutkan submenu": "Collapse submenu",
   "Client ID Google di konfigurasi tidak cocok dengan proyek Firebase ini. Di Firebase Console buka Authentication → Sign-in method → Google, salin Web client ID di sana ke googleClientId (firebase-config.js), atau daftarkan Client ID Anda di \"Safelist client IDs from external projects\".": "The Google Client ID in the configuration does not match this Firebase project. In the Firebase Console open Authentication → Sign-in method → Google, copy the Web client ID shown there into googleClientId (firebase-config.js), or register your Client ID under \"Safelist client IDs from external projects\".",
   "Cloud Firestore belum diaktifkan di proyek Firebase Anda. Buka Firestore Database lalu klik Create database.": "Cloud Firestore isn't enabled in your Firebase project. Open Firestore Database and click Create database.",
   "Coba kata lain atau tekan Tambah Kategori.": "Try another word or tap Add Category.",
@@ -4228,6 +4497,7 @@ const I18N_EN = {
   "Coba tampilkan": "Try showing",
   "Coba ubah kata kunci atau filter.": "Try changing the keyword or filter.",
   "cocok dengan cadangan ini": "matches this backup",
+  "Contoh": "Example",
   "Contoh:": "Example:",
   "Contoh: \"beli kopi dua puluh lima ribu pakai GoPay\"": "Example: \"coffee 25 thousand with GoPay\"",
   "Cuci Motor/Mobil": "Motorcycle/Car Wash",
@@ -4254,7 +4524,10 @@ const I18N_EN = {
   "dan": "and",
   "dan {1} foto": "and {1} photos",
   "dana": "funds",
+  "Dana": "Funds",
+  "Dana darurat": "Emergency fund",
   "Dana Darurat": "Emergency Fund",
+  "Dana darurat terkumpul": "Emergency fund saved",
   "Dana darurat, tabungan, investasi, dan impian lain": "Emergency fund, savings, investments, and other dreams",
   "Dana hampir habis": "Funds Almost Empty",
   "Dana mulai menipis": "Funds Starting to Run Low",
@@ -4266,6 +4539,7 @@ const I18N_EN = {
   "Dana terpakai, mendekati batas": "Funds used, nearing the limit",
   "dana tersedia": "funds available",
   "Dana tersedia": "Funds available",
+  "Dana tersedia bulan ini": "Funds available this month",
   "Dana wishlist “{1}” sudah cukup!": "Wishlist “{1}” is fully funded!",
   "dapur": "kitchen",
   "Darat": "Land",
@@ -4278,7 +4552,10 @@ const I18N_EN = {
   "dari {1}{2}": "of {1}{2}",
   "dari {1}{2}.": "of {1}{2}.",
   "dari {1}{2}. {3}": "of {1}{2}. {3}",
+  "dari 100": "of 100",
   "Dari akun": "From account",
+  "dari batas": "of limit",
+  "dari minggu yang sama di": "from the same week in",
   "dari pemasukan": "of income",
   "Dari rata-rata harian": "From the daily average",
   "Dari rekening": "From account",
@@ -4290,6 +4567,7 @@ const I18N_EN = {
   "Darurat & Tak Terduga": "Emergency & Unexpected",
   "Dasar": "Base",
   "Dasar {1} + tambahan {2}.": "Base {1} + extra {2}.",
+  "Data": "Data",
   "Data {1} akun dipulihkan": "{1} account data restored",
   "Data acara tidak valid.": "Invalid event data.",
   "Data akun di dalam cadangan rusak.": "Account data inside the backup is corrupted.",
@@ -4338,6 +4616,16 @@ const I18N_EN = {
   "Dengan {1} per bulan, perkiraan tercapai {2}": "At {1} per month, expected to reach it by {2}",
   "Dengan {1} per bulan, perkiraan tercapai {2}{3}": "At {1} per month, expected to reach it by {2}{3}",
   "Dengan {1} per bulan, perkiraan tercapai {2}{3}.": "At {1} per month, expected to reach it by {2}{3}.",
+  "Dengan laju": "At this pace",
+  "Dengan laju {1} per hari, perkiraan total": "At {1} per day, projected total",
+  "Dengan laju {1} per hari, perkiraan total {2}": "At {1} per day, projected total {2}",
+  "Dengan laju {1} per hari, perkiraan total {2}, masih sisa": "At {1} per day, projected total {2}, still left",
+  "Dengan laju {1} per hari, perkiraan total {2}, masih sisa {3}": "At {1} per day, projected total {2}, still {3} left",
+  "Dengan laju {1} per hari, perkiraan total {2}, masih sisa {3}.": "At {1} per day, projected total {2}, still {3} left.",
+  "Dengan laju {1} per hari. Kurangi sekitar": "At {1} per day. Cut about",
+  "Dengan laju {1} per hari. Kurangi sekitar {2}": "At {1} per day. Cut about {2}",
+  "Dengan laju {1} per hari. Kurangi sekitar {2} per hari agar tetap aman.": "At {1} per day. Cut about {2} per day to stay safe.",
+  "Dengan laju sekarang, pengeluaran akhir periode sekitar": "At the current pace, end-of-period spending about",
   "dengan laju sekarang:": "at the current pace:",
   "Desain dan tampilan": "Design and screens",
   "detik": "seconds",
@@ -4347,6 +4635,7 @@ const I18N_EN = {
   "Di edisi ini pemulihan": "In this edition, restoring",
   "Di luar kategori berbudget: {1}": "Outside budgeted categories: {1}",
   "Di luar kategori berbudget: {1}  ·  Belum dibagi dari batas: {2}": "Outside budgeted categories: {1}  ·  Not yet allocated from the limit: {2}",
+  "Di ponsel ini Anda tetap masuk sampai menekan Keluar (otomatis keluar bila": "On this phone you stay logged in until you tap Log out (logs out automatically if",
   "Di ponsel ini Anda tetap masuk sampai menekan Keluar (otomatis keluar bila {1} hari tidak dipakai).": "On this phone you stay signed in until you tap Sign out (signed out automatically after {1} days of no use).",
   "di server, jadi cadangan tetap bisa dipulihkan bila server dipindah.": "on the server, so backups can still be restored if the server is moved.",
   "di Supabase), lalu pilih username dan kata sandi administrator.": "in Supabase), then choose an administrator username and password.",
@@ -4358,9 +4647,11 @@ const I18N_EN = {
   "Dibagikan ke {1} teman": "Shared with {1} friends",
   "Dibagikan ke Anda": "Shared with you",
   "dibanding": "compared to",
+  "Dibanding": "Compared to",
   "dibanding {1}": "compared to {1}",
   "dibanding {1} pada": "compared to {1} on",
   "dibanding {1} pada {2}": "compared to {1} on {2}",
+  "Dibanding rentang sebelumnya": "Compared to the previous range",
   "Dibayar": "Paid",
   "Dibayar dari": "Paid from",
   "Dibayar oleh": "Paid by",
@@ -4418,6 +4709,7 @@ const I18N_EN = {
   "Edisi Firebase hanya bisa mengganti seluruh catatan akun saat memulihkan.": "The Firebase edition can only replace all account entries when restoring.",
   "Edisi ini tidak punya server penjaga rahasia, jadi cadangan dikunci dengan": "This edition doesn't have a secrets server, so backups are locked with",
   "elektronik": "electronics",
+  "Email": "Email",
   "Email akun Google ini sudah terhubung ke identitas lain di Firebase, jadi tidak bisa ditautkan ke akun ini. Pakai akun Google dengan email lain.": "This Google account's email is already connected to another identity in Firebase, so it cannot be linked to this account. Use a Google account with a different email.",
   "Email akun Google ini terlalu panjang untuk SaKu.": "This Google account's email is too long for SaKu.",
   "Email akun ini belum terverifikasi, jadi belum bisa dipakai untuk reset. Konfirmasi email Anda dulu lewat tautan pendaftaran, atau hubungi administrator.": "This account's email is not verified yet, so it cannot be used for a reset. Confirm your email first through the registration link, or contact the administrator.",
@@ -4455,6 +4747,7 @@ const I18N_EN = {
   "Email verifikasi dikirim ke {1}. Cek kotak masuk dan folder spam.": "Verification email sent to {1}. Check your inbox and spam folder.",
   "Email yang menerima tautan reset ini.": "The email that received this reset link.",
   "Es teh": "Iced tea",
+  "Escape": "Escape",
   "Estimasi": "Estimate",
   "Estimasi {1} habis sekitar": "{1} estimated to run out around",
   "Estimasi {1} habis sekitar {2}": "{1} estimated to run out around {2}",
@@ -4561,6 +4854,8 @@ const I18N_EN = {
   "Gigi & Kacamata": "Dental & Eyeglasses",
   "Golongan I": "Class I",
   "Google tidak bisa dibuka. Coba lagi.": "Google could not be opened. Please try again.",
+  "Grafik arus bersih periode ini, cenderung naik": "Net cash flow chart this period, trending up",
+  "Grafik arus bersih periode ini, cenderung turun": "Net cash flow chart this period, trending down",
   "Grafik batang pemasukan dan pengeluaran. Total masuk {1}, total keluar {2}.": "Bar chart of income and expenses. Total in {1}, total out {2}.",
   "Grafik dan perubahan: 30 hari terakhir.": "Chart and changes: last 30 days.",
   "Grafik garis pengeluaran kumulatif.": "Cumulative expense line chart.",
@@ -4621,6 +4916,7 @@ const I18N_EN = {
   "hari lagi).": "days left).",
   "hari sebelum": "days before",
   "hari tercatat, angka makin akurat seiring waktu.": "days recorded, figures get more accurate over time.",
+  "hari tidak dipakai).": "days unused).",
   "harian": "daily",
   "Harian": "Daily",
   "hasil": "result",
@@ -4639,6 +4935,7 @@ const I18N_EN = {
   "hiburan": "entertainment",
   "Hiburan & Nonton": "Entertainment & Movies",
   "Hilang otomatis setelah (detik)": "Automatically disappear after (seconds)",
+  "Hitung cepat": "Quick calc",
   "Hobi & Koleksi": "Hobbies & Collectibles",
   "hotel": "hotel",
   "Hotel & Penginapan": "Hotels & Lodging",
@@ -4672,6 +4969,7 @@ const I18N_EN = {
   "Ingat saya di perangkat ini": "Remember me on this device",
   "Ingatkan saat jatuh tempo": "Remind on due date",
   "ini": "this",
+  "ini baru berjalan sampai tanggal": "this has only run up to the date",
   "Ini bukan berkas cadangan tertutup SaKu. Cadangan pribadi (.json) dipulihkan lewat Pengaturan di akun masing-masing.": "This isn't a SaKu locked backup file. Personal backups (.json) are restored through Settings in each account.",
   "Ini bukan berkas kunci pemulihan SaKu.": "This isn't a SaKu recovery key file.",
   "Ini bukan file cadangan SaKu.": "This isn't a SaKu backup file.",
@@ -4796,6 +5094,11 @@ const I18N_EN = {
   "Jenis transaksi tidak valid.": "Invalid transaction type.",
   "jika": "if",
   "Jika data cocok, tautan untuk membuat kata sandi baru sudah dikirim ke email. Cek juga folder spam. Tautan berlaku 30 menit.": "If the details match, a link to create a new password has been sent to the email. Check your spam folder too. The link is valid for 30 minutes.",
+  "Jika menabung": "If you save",
+  "Jika menabung {1} per bulan, target tercapai": "If you save {1} per month, goal reached",
+  "Jika menabung {1} per bulan, target tercapai {2}": "If you save {1} per month, goal reached {2}",
+  "Jika menabung {1} per bulan, target tercapai {2} {3}": "If you save {1} per month, goal reached {2} {3}",
+  "Jika menabung {1} per bulan, target tercapai {2} {3}.": "If you save {1} per month, goal reached {2} {3}.",
   "Jml": "Qty",
   "jual": "sell",
   "Jual Barang Bekas": "Sell Used Items",
@@ -4825,7 +5128,9 @@ const I18N_EN = {
   "Kado ulang tahun teman": "Friend's birthday gift",
   "kalau": "if",
   "kalender": "calendar",
+  "Kalender pengeluaran": "Spending calendar",
   "kali bayar.": "payments.",
+  "kali rata-rata harian.": "times the daily average.",
   "Kalian sekarang berteman": "You are now friends",
   "Kalian sudah berteman.": "You are already friends.",
   "Kamera": "Camera",
@@ -4836,7 +5141,9 @@ const I18N_EN = {
   "kapal": "ship",
   "Kapal & Ferry": "Ships & Ferries",
   "karakter.": "characters.",
+  "karakter. Dipakai untuk masuk": "characters. Used to log in",
   "karakter. Dipakai untuk masuk setelah disetujui admin.": "characters. Used to log in after admin approval.",
+  "Karaoke": "Karaoke",
   "karena": "because",
   "kartu": "card",
   "Kata sandi": "Password",
@@ -4873,7 +5180,9 @@ const I18N_EN = {
   "Kategori terbesar": "Top category",
   "Kategori tidak valid.": "Invalid category.",
   "Ke": "To",
+  "Ke mana uang pergi": "Where your money goes",
   "Ke slide {1}": "Go to slide {1}",
+  "Kebiasaan belanja": "Shopping habits",
   "Kebutuhan Harian": "Daily Needs",
   "Kebutuhan menabung": "Savings needed",
   "Kebutuhan Rumah Tangga": "Household Supplies",
@@ -4883,6 +5192,7 @@ const I18N_EN = {
   "Kelola": "Manage",
   "Kelompok": "Group",
   "Keluar": "Out",
+  "Keluar {1}{2}": "Out {1}{2}",
   "Keluar otomatis setelah": "Log out automatically after",
   "Keluar otomatis setelah {1} menit tanpa aktivitas.": "Log out automatically after {1} minutes of inactivity.",
   "Keluar-masuk": "In & Out",
@@ -4918,6 +5228,7 @@ const I18N_EN = {
   "Ketuk tombol + kapan saja untuk mencatat pemasukan atau pengeluaran.": "Tap the + button any time to record income or an expense.",
   "Keuangan sehat dibangun dari keputusan kecil. Tunda satu keinginan hari ini.": "Healthy finances are built on small decisions. Put off one want today.",
   "Keuangan, Cicilan & Pajak": "Finance, Installments & Taxes",
+  "kini admin pembantu": "now an assistant admin",
   "kini administrator": "now an administrator",
   "Kirim": "Send",
   "Kirim email verifikasi": "Send verification email",
@@ -4954,6 +5265,7 @@ const I18N_EN = {
   "Konfirmasi Pembayaran": "Confirm Payment",
   "Konfirmasi Penerimaan": "Confirm Receipt",
   "Konsep cicilan": "Installment plan",
+  "Konsistensi": "Consistency",
   "Konsumsi (km/L)": "Consumption (km/L)",
   "konversi": "convert",
   "Konversi": "Convert",
@@ -4986,6 +5298,7 @@ const I18N_EN = {
   "Kunci tidak bisa dibuat.": "Key can't be created.",
   "Kuota Firebase hari ini habis. Coba lagi nanti.": "Today's Firebase quota has been used up. Try again later.",
   "Kurang": "Short by",
+  "kurang. Saldo sekarang": "short. Current balance",
   "Kurangi penumpang": "Fewer passengers",
   "kurs": "rates",
   "Kurs": "Rates",
@@ -5031,15 +5344,20 @@ const I18N_EN = {
   "Layanan baca foto gagal merespons.": "The photo reading service failed to respond.",
   "Layanan baca foto sedang sibuk. Coba lagi nanti.": "The photo reading service is busy. Try again later.",
   "Layanan baca foto tidak bisa dihubungi.": "The photo reading service can't be reached.",
+  "Layar {1} dari {2}": "Screen {1} of {2}",
   "Layar pengenalan SaKu: empat slide yang bisa digeser sebelum masuk, bisa dibuka lagi dari layar masuk": "SaKu introduction: four swipeable slides before sign-in, which can be reopened from the sign-in screen",
   "Layar sambutan Selamat datang di SaKu setiap kali dibuka": "Welcome to SaKu splash screen every time the app opens",
   "lebih boros": "spending more",
   "lebih hemat": "spending less",
+  "lebih ringkas": "simpler",
+  "lebih segar": "fresher",
+  "lebih tertata": "more organized",
   "Lembur & Tunjangan": "Overtime & Allowances",
   "lepas": "freelance",
   "lewat": "overdue",
   "Lewat": "Over",
   "Lewat {1}": "Over by {1}",
+  "Lewat {1} dari batas": "Over {1} of limit",
   "Lewat {1}.": "Past {1}.",
   "Lewat batas {1}": "Over the {1} limit",
   "Lewat tenggat": "Past deadline",
@@ -5047,17 +5365,28 @@ const I18N_EN = {
   "liburan": "vacation",
   "Liburan": "Vacation",
   "Liburan & Perjalanan": "Holidays & Travel",
+  "Lihat analisis": "View analysis",
+  "Lihat analisis pengeluaran dan tren Anda": "View your spending analysis and trends",
   "Lihat aturan keamanan": "View Security Rules",
   "Lihat cara kerja": "See how it works",
   "Lihat cara kerja ": "See how it works",
   "Lihat dengan data contoh": "View with sample data",
   "Lihat isi kategori {1}": "View {1} Category",
+  "Lihat jatuh tempo, cicilan, dan hutang": "View due dates, installments, and debts",
   "Lihat pengenalan SaKu": "Take a quick tour of SaKu",
   "Lihat semua": "View All",
   "Lihat semua {1} kategori": "View All {1} Categories",
   "Lihat semua di Transaksi": "View All in Transactions",
+  "Lihat yang baru": "See what's new",
   "listrik": "electricity",
   "Listrik & Air": "Electricity & Water",
+  "Lonjakan terbesar:": "Biggest spike:",
+  "Lonjakan terbesar: {1},": "Biggest spike: {1},",
+  "Lonjakan terbesar: {1}, {2}": "Biggest spike: {1}, {2}",
+  "Lonjakan terbesar: {1}, {2}, sekitar": "Biggest spike: {1}, {2}, about",
+  "Lonjakan terbesar: {1}, {2}, sekitar {3}": "Biggest spike: {1}, {2}, about {3}",
+  "Lonjakan terbesar: {1}, {2}, sekitar {3} kali rata-rata harian.": "Biggest spike: {1}, {2}, about {3} times the daily average.",
+  "Lonjakan terbesar: {1}, {2}, sekitar {3} kali rata-rata harian.{4}": "Biggest spike: {1}, {2}, about {3} times the daily average.{4}",
   "Lunas": "Paid Off",
   "Lunas dalam": "Paid off in",
   "Lunas dalam {1} kali bayar.": "Paid off in {1} payments.",
@@ -5066,6 +5395,19 @@ const I18N_EN = {
   "Lupa kata sandi": "Forgot password",
   "Lupa kata sandi: tautan reset dikirim lewat email, berlaku 30 menit dan hanya sekali pakai": "Forgot password: a reset link is sent by email, valid for 30 minutes and usable only once",
   "Lupa kata sandi?": "Forgot password?",
+  "M{1},{2}V{3}Q": "M{1},{2}V{3}Q",
+  "M{1},{2}V{3}Q{4}": "M{1},{2}V{3}Q{4}",
+  "M{1},{2}V{3}Q{4},": "M{1},{2}V{3}Q{4},",
+  "M{1},{2}V{3}Q{4},{5}": "M{1},{2}V{3}Q{4},{5}",
+  "M{1},{2}V{3}Q{4},{5} {6}": "M{1},{2}V{3}Q{4},{5} {6}",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H": "M{1},{2}V{3}Q{4},{5} {6},{7}H",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}": "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q": "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9}": "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9}",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},": "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},{10}": "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},{10}",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},{10} {11}": "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},{10} {11}",
+  "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},{10} {11},{12}V{13}Z": "M{1},{2}V{3}Q{4},{5} {6},{7}H{8}Q{9},{10} {11},{12}V{13}Z",
   "Main bareng teman": "Hanging out with friends",
   "makan": "food",
   "Makan": "Meal",
@@ -5087,6 +5429,9 @@ const I18N_EN = {
   "Master Data Akun": "Account Master Data",
   "masuk": "in",
   "Masuk": "In",
+  "Masuk {1} − keluar": "In {1} − out",
+  "Masuk {1} − keluar {2}": "In {1} − out {2}",
+  "Masuk {1}{2}": "In {1}{2}",
   "Masuk atau daftar": "Log In or Sign Up",
   "Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)": "Sign in with a Google account (Netlify and Firebase; the site owner needs to enable it)",
   "Masuk dengan Email/Kata sandi belum diaktifkan. Di Firebase Console buka Authentication → Sign-in method → Email/Password → Enable.": "Log in with Email/Password isn't enabled yet. In the Firebase Console, open Authentication → Sign-in method → Email/Password → Enable.",
@@ -5106,6 +5451,7 @@ const I18N_EN = {
   "Matikan titik yang tidak ingin Anda singgahi. Waktu tiba dan biaya ikut dihitung ulang.": "Turn off stops you do not want to make. Arrival time and cost are recalculated.",
   "maupun": "as well as",
   "melebihi": "exceeds",
+  "Melebihi": "Over",
   "Melebihi anggaran": "Over budget",
   "Melebihi sisa batas pengeluaran. Yang masih bisa dibagi: {1}.": "Exceeds the remaining spending limit. You can still assign: {1}.",
   "Melebihi sisa batas. Yang masih bisa dibagi: {1}.": "Exceeds the remaining limit. You can still assign: {1}.",
@@ -5144,6 +5490,7 @@ const I18N_EN = {
   "Mencatat…": "Recording…",
   "Mendaftar": "Signing up",
   "mendekati batas": "nearing the limit",
+  "Mendekati batas": "Nearing limit",
   "Mendengarkan… ketuk untuk selesai": "Listening… tap to finish",
   "Mengambil foto": "Fetching photos",
   "Mengambil foto {1} dari": "Fetching photos {1} of",
@@ -5167,6 +5514,9 @@ const I18N_EN = {
   "menit": "minutes",
   "menit tanpa aktivitas.": "minutes of inactivity.",
   "menit. Silakan masuk lagi.": "minutes. Please log in again.",
+  "Menu": "Menu",
+  "Menu Analisis baru dengan empat tab: Wawasan (skor keuangan, proyeksi akhir bulan, kebiasaan belanja), Kategori, Tren, dan Rincian": "New Analysis menu with four tabs: Insights (financial score, end-of-month projection, shopping habits), Categories, Trends, and Details",
+  "Menu bawah berbentuk pil melayang: Beranda, Transaksi, tombol tambah, Analisis, dan Lainnya; Tagihan kini ada di Lainnya dengan pintasan lonceng di atas": "Floating pill-shaped bottom menu: Home, Transactions, add button, Analysis, and More; Bills now live under More with a bell shortcut at the top",
   "Menu lainnya": "More menu",
   "Menu Laporan terpisah: unduh PDF, Excel, dan CSV dengan pilihan periode": "Separate Reports menu: download PDF, Excel, and CSV with a period picker",
   "Menu Teman untuk akun pengguna.": "The Friends menu is for user accounts.",
@@ -5186,7 +5536,16 @@ const I18N_EN = {
   "Mi instan": "Instant noodles",
   "Mikrofon tidak ditemukan di perangkat ini.": "No microphone was found on this device.",
   "Minggu": "Week",
+  "minggu {1}{2}": "week {1}{2}",
+  "minggu {1}{2} {3}": "week {1}{2} {3}",
+  "minggu {1}{2} {3} (sebelumnya": "week {1}{2} {3} (previously",
+  "minggu {1}{2} {3} (sebelumnya {4}": "week {1}{2} {3} (previously {4}",
+  "minggu {1}{2} {3} (sebelumnya {4})": "week {1}{2} {3} (previously {4})",
   "Minggu ini": "This week",
+  "Minggu ke-": "Week ",
+  "Minggu ke-{1}{2} paling tinggi,": "Week {1}{2} was highest,",
+  "Minggu ke-{1}{2} paling tinggi, {3}": "Week {1}{2} was highest, {3}",
+  "Minggu ke-{1}{2} paling tinggi, {3}{4}": "Week {1}{2} was highest, {3}{4}",
   "minggu lalu": "last week",
   "Mingguan": "Weekly",
   "Minimal {1} karakter": "At least {1} characters",
@@ -5233,12 +5592,16 @@ const I18N_EN = {
   "mrt krl": "MRT & KRL",
   "Mulai": "Start",
   "Mulai dengan mencatat transaksi pertama.": "Start by recording your first transaction.",
+  "Mulai jelajahi": "Start exploring",
   "Mulai menipis bukan berarti gagal. Ini tanda untuk melangkah lebih bijak. Kamu pasti bisa!": "Running low doesn't mean failure. It's a sign to step more wisely. You've got this!",
   "mulai tanggal": "starting on",
   "Mulai ulang": "Start over",
   "Multiguna": "Multipurpose",
   "naik": "up",
   "Naik": "Up",
+  "Naik {1} poin dari": "Up {1} points from",
+  "Naik {1} poin dari {2}": "Up {1} points from {2}",
+  "Naik {1} poin dari {2}.": "Up {1} points from {2}.",
   "Nama": "Name",
   "Nama acara": "Event name",
   "Nama barang": "Item name",
@@ -5269,6 +5632,7 @@ const I18N_EN = {
   "Nasi padang": "Padang rice",
   "Navigasi": "Navigation",
   "Navigasi utama": "Main navigation",
+  "neg txt": "neg txt",
   "nikah": "wedding",
   "Nilai yang Sama di Mata Uang Lain": "Same Value in Other Currencies",
   "No": "No.",
@@ -5289,6 +5653,7 @@ const I18N_EN = {
   "Nonaktif / Ditolak": "Inactive / Rejected",
   "Nonaktifkan": "Deactivate",
   "Nonton bioskop": "Movies",
+  "Nyata": "Actual",
   "obat": "medicine",
   "Ojek online": "Ride-hailing",
   "Ojek Online & Angkutan Umum": "Ride-hailing & Public Transport",
@@ -5302,7 +5667,10 @@ const I18N_EN = {
   "opsional": "optional",
   "orang": "people",
   "pada": "on",
+  "pada akhir periode": "at period end",
+  "pada periode ini. Cek kategori terbesar di tab Kategori.": "this period. Check the largest category in the Categories tab.",
   "pada tanggal yang sama": "on the same date",
+  "pada tanggal yang sama.": "on the same date.",
   "pagi": "morning",
   "pajak": "tax",
   "Pajak & Administrasi": "Taxes & Admin Fees",
@@ -5318,10 +5686,14 @@ const I18N_EN = {
   "pakaian": "clothing",
   "Pakaian & Fashion": "Clothing & Fashion",
   "paket": "package",
+  "paling boros, rata-rata": "spent the most, averaging",
+  "paling hemat, hanya": "spent the least, only",
+  "paling tinggi,": "was highest,",
   "Pantau akun, tanpa membuka catatan keuangan": "Monitor accounts without opening financial entries",
   "Parkir": "Parking",
   "Pasang versi terbaru untuk mendapatkan pembaruan ini.": "Install the latest version to get this update.",
   "pasar": "market",
+  "Pasar langsung": "Live market",
   "Pastikan berkas SQL migrasi sudah dijalankan di": "Make sure the SQL migration file has been run in",
   "Pastikan fungsi": "Make sure the function",
   "Pastikan rahasia": "Make sure the secret",
@@ -5346,6 +5718,8 @@ const I18N_EN = {
   "PEMASUKAN": "INCOME",
   "Pemasukan Lainnya": "Other Income",
   "Pemasukan vs pengeluaran per bulan": "Income vs expenses per month",
+  "Pembaruan": "Updates",
+  "Pembaruan {1}": "Update {1}",
   "pembayaran": "payments",
   "Pembayaran": "Payment",
   "Pembayaran dicatat": "Payment recorded",
@@ -5374,10 +5748,13 @@ const I18N_EN = {
   "penerimaan": "receipts",
   "Penerimaan": "Receipt",
   "Penerimaan dicatat": "Receipt recorded",
+  "Pengantar ini hanya tampil sekali.": "This intro shows only once.",
+  "Pengantar Tampilan baru yang tampil sekali setelah masuk, dengan animasi empat layar dan tombol Lewati": "Intro New look, shown once after logging in, with a four-screen animation and a Skip button",
   "Pengaturan": "Settings",
   "Pengaturan akun": "Account settings",
   "Pengaturan di dalam cadangan rusak.": "Settings inside the backup are corrupted.",
   "Pengaturan Profil": "Profile Settings",
+  "Pengaturan Rekening": "Account Settings",
   "pengeluaran": "expenses",
   "Pengeluaran": "Expenses",
   "PENGELUARAN": "EXPENSES",
@@ -5390,19 +5767,29 @@ const I18N_EN = {
   "Pengeluaran {1} vs {2} (kumulatif)": "Expenses {1} vs {2} (cumulative)",
   "Pengeluaran / hari": "Spending per day",
   "pengeluaran Anda, kategori": "your expenses, category",
+  "Pengeluaran bisa melewati anggaran sekitar 12 hari lagi": "Spending could pass the budget in about 12 days",
   "Pengeluaran bulan ini?": "Spending this month?",
   "Pengeluaran di luar kategori berbudget": "Spending outside budgeted categories",
   "Pengeluaran di luar kategori berbudget bulan ini: {1}.": "Spending outside budgeted categories this month: {1}.",
   "Pengeluaran di luar kategori berbudget periode ini: {1}.": "Spending outside budgeted categories this period: {1}.",
   "Pengeluaran harian –": "Daily expenses –",
   "pengeluaran jajan ramean": "group treat expenses",
+  "Pengeluaran kumulatif:": "Cumulative spending:",
+  "Pengeluaran kumulatif: {1} sampai tanggal": "Cumulative spending: {1} up to date",
+  "Pengeluaran kumulatif: {1} sampai tanggal {2}": "Cumulative spending: {1} up to {2}",
+  "Pengeluaran kumulatif: {1} sampai tanggal {2}{3}": "Cumulative spending: {1} up to {2}{3}",
+  "Pengeluaran kumulatif: {1} sampai tanggal {2}{3}{4}": "Cumulative spending: {1} up to {2}{3}{4}",
   "Pengeluaran melebihi dana": "Spending exceeds funds",
   "pengeluaran melebihi pemasukan": "spending exceeds income",
+  "Pengeluaran melebihi pemasukan": "Spending exceeds income",
+  "Pengeluaran melebihi pemasukan pada periode ini.": "Spending exceeds income this period.",
   "Pengeluaran per hari": "Spending per day",
   "Pengeluaran per hari dalam seminggu": "Expenses by day of the week",
   "Pengeluaran per kategori": "Expenses by category",
   "Pengeluaran per Kategori": "Expenses by Category",
   "Pengeluaran per kategori –": "Expenses by category –",
+  "Pengeluaran per minggu": "Spending per week",
+  "Pengeluaran per minggu:": "Spending per week:",
   "Pengeluaran seluruh data": "All-time expenses",
   "Pengeluaran terbesar": "Largest expense",
   "Pengenalan SaKu": "Introduction to SaKu",
@@ -5431,20 +5818,27 @@ const I18N_EN = {
   "Penyimpanan di browser penuh. Hapus foto atau transaksi lama, atau pindahkan data lewat cadangan.": "Browser storage is full. Delete old photos or transactions, or move data using a backup.",
   "Penyimpanan di perangkat penuh. Sambungkan ke internet dulu agar catatan terunggah, lalu coba lagi.": "Device storage is full. Connect to the internet first so entries can upload, then try again.",
   "Penyimpanan penuh. Hapus beberapa foto atau transaksi lama, lalu coba lagi.": "Storage is full. Delete some old photos or transactions, then try again.",
+  "Per": "Per",
   "per {1}": "as of {1}",
   "per akun. Hapus sebagian transaksi lama dulu, atau pakai \"Ganti Semua Data\".": "per account. Delete some older transactions first, or use \"Replace All Data\".",
   "per bulan": "per month",
   "per bulan agar tercapai": "per month to reach it",
   "per bulan, perkiraan tercapai": "per month, expected to reach it",
+  "per bulan, target tercapai": "per month, goal reached",
   "per bulan, tiap tanggal": "per month, on the same date",
   "per bulan, tiap tanggal {1}": "per month, on day {1}",
   "per bulan.": "per month.",
+  "per hari": "per day",
   "per Hari": "Per Day",
   "Per hari": "Per day",
   "per hari ·": "per day ·",
   "per hari (7 hari terakhir": "per day (last 7 days",
   "per hari × 7": "per day × 7",
+  "per hari agar tetap aman.": "per day to stay safe.",
   "per hari,": "per day,",
+  "per hari, perkiraan total": "per day, projected total",
+  "per hari.": "per day.",
+  "per hari. Kurangi sekitar": "per day. Cut about",
   "per hari)": "per day)",
   "per Minggu": "per Week",
   "Per minggu": "Per week",
@@ -5452,6 +5846,7 @@ const I18N_EN = {
   "per orang": "per person",
   "Peramban ini belum mendukung input suara. Coba Chrome, Edge, atau Safari terbaru.": "This browser does not support voice input yet. Try the latest Chrome, Edge, or Safari.",
   "Peran": "Role",
+  "Peran admin pembantu": "Assistant admin role",
   "Peran admin pembantu {1} dicabut": "Assistant admin role removed for {1}",
   "Peran admin pembantu Anda dicabut": "Your assistant admin role has been removed",
   "Peran administrator": "Administrator role",
@@ -5490,6 +5885,8 @@ const I18N_EN = {
   "Periode saat ini: {1}. Periode berikutnya mulai tanggal {2}": "Current period: {1}. Next period starts on {2}",
   "Periode saat ini: {1}. Periode berikutnya mulai tanggal {2}.": "Current period: {1}. Next period starts on {2}.",
   "Periode sebelumnya": "Previous period",
+  "periode selesai": "period ended",
+  "periode terakhir": "last period",
   "Periode:": "Period:",
   "Periode: {1}. Kolom Sisa, Pemakaian, dan Status memakai rumus; warna berubah otomatis (hijau aman, kuning hampir habis, merah lewat).": "Period: {1}. The Remaining, Usage, and Status columns use formulas; colors change automatically (green safe, yellow almost used up, red over).",
   "Periode: {1}. Urut dari pengeluaran terbesar. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.": "Period: {1}. Sorted from largest expense. Savings deposits and withdrawals are not counted as expenses.",
@@ -5500,12 +5897,14 @@ const I18N_EN = {
   "Perjalanan dihapus": "Trip deleted",
   "Perjalanan diperbarui": "Trip updated",
   "Perjalanan disimpan": "Trip saved",
+  "Perkiraan": "Forecast",
   "Perkiraan akhir": "Projected end",
   "Perkiraan akhir {1} dengan laju sekarang:": "Projected end {1} at current pace:",
   "Perkiraan akhir bulan:": "Estimated end of month:",
   "Perkiraan akhir bulan: {1}.": "Estimated end of month: {1}.",
   "Perkiraan biaya": "Estimated cost",
   "Perkiraan tiba": "Estimated arrival",
+  "perkiraan total": "projected total",
   "Perkiraan total biaya": "Estimated total cost",
   "perkiraan total untuk {1} orang": "estimated total for {1} people",
   "perkiraan, belum ada": "estimate, no data yet",
@@ -5513,6 +5912,7 @@ const I18N_EN = {
   "Perlu dibayar sekarang": "Due for payment now",
   "Perlu per bulan": "Needed per month",
   "Perlu Persetujuan": "Needs Approval",
+  "Perlu Persetujuan (": "Needs Approval (",
   "Perlu Persetujuan ({1})": "Needs Approval ({1})",
   "Perlu sekitar {1} per bulan sampai tanggal rencana.": "About {1} per month is needed until the planned date.",
   "Perlu sekitar {1} per hari sampai tanggal rencana.": "About {1} per day is needed until the planned date.",
@@ -5530,6 +5930,9 @@ const I18N_EN = {
   "Persentase Pengeluaran terhadap Total": "Expenses as a Percentage of Total",
   "Persentase pengeluaran:": "Expense percentage:",
   "Pertemanan diputuskan": "Friend disconnected",
+  "Perubahan 1": "Change 1",
+  "Perubahan 2": "Change 2",
+  "Perubahan 3": "Change 3",
   "Perubahan tersimpan di perangkat. Diunggah otomatis saat online.": "Changes saved on this device. Uploaded automatically when online.",
   "Pesan Antar Makanan": "Food Delivery",
   "Pesan undangan disalin. Tempel di chat teman.": "Invitation copied. Paste it in your friend's chat.",
@@ -5558,10 +5961,12 @@ const I18N_EN = {
   "Pilih konsep cicilan.": "Select an installment plan.",
   "Pilih minimal satu teman.": "Pick at least one friend.",
   "Pilih pengguna yang dijadikan administrator atau admin pembantu.": "Choose which users become an administrator or assistant admin.",
+  "Pilih pengguna yang dijadikan administrator atau admin pembantu. Akun administrator mengelola aplikasi dan tidak dipakai mencatat transaksi; catatan lama miliknya tetap tersimpan dan kembali bila perannya dicabut. Admin pembantu tetap memakai semua menu biasa (pemasukan, pengeluaran, dan lainnya) dan mendapat tambahan menu Admin untuk menyetujui pendaftar, membuat akun, serta mengaktifkan atau menonaktifkan pengguna.": "Choose users to make administrators or assistant admins. The administrator account manages the app and isn't used to record transactions; its old entries stay saved and return if the role is removed. Assistant admins still use all regular menus (income, expenses, and more) and get an extra Admin menu to approve sign-ups, create accounts, and activate or deactivate users.",
   "Pilih pengguna yang dijadikan administrator. Akun administrator mengelola aplikasi dan tidak dipakai mencatat transaksi; catatan lama miliknya tetap tersimpan dan kembali bila perannya dicabut.": "Choose the user to make an administrator. Administrator accounts manage the app and aren't used to record transactions; their existing entries stay saved and return if the role is removed.",
   "Pilih peran: administrator atau pengguna.": "Choose a role: administrator or user.",
   "Pilih peran: administrator, admin pembantu, atau pengguna.": "Choose a role: administrator, assistant admin, or user.",
   "Pilih persen dari batas": "Choose a percentage of the limit",
+  "Pilih rekening pembayaran terlebih dulu.": "Select a payment account first.",
   "Pilih rekening tujuan.": "Choose a destination account.",
   "Pilih salah satu kategori.": "Choose a category.",
   "Pilih sendiri apa yang dibagikan: anggaran, rencana nikah, wishlist, atau perjalanan.": "Choose what to share: budget, wedding plan, wishlist, or trips.",
@@ -5587,8 +5992,10 @@ const I18N_EN = {
   "piutang": "receivables",
   "Piutang dari": "Receivable from",
   "Piutang: {1}": "Receivable: {1}",
+  "poin dari": "points from",
   "Popok & Perlengkapan Bayi": "Diapers & Baby Supplies",
   "Porsi": "Portion",
+  "Porsi pengeluaran:": "Spending share:",
   "Posisi per {1}. Kolom Sisa dan Progres memakai rumus.": "Position as of {1}. The Remaining and Progress columns use formulas.",
   "Pratinjau skema": "Schematic preview",
   "prestasi": "achievement",
@@ -5596,8 +6003,10 @@ const I18N_EN = {
   "Progres": "Progress",
   "projectId tidak ditemukan atau bentuknya salah. Salin seluruh blok firebaseConfig dari Firebase Console.": "projectId not found or malformed. Copy the entire firebaseConfig block from the Firebase Console.",
   "Proyek lepas": "Freelance project",
+  "Proyeksi": "Projection",
   "Proyeksi akhir bulan": "Projected month end",
   "PROYEKSI AKHIR PERIODE": "PROJECTED PERIOD END",
+  "Proyeksi pengeluaran": "Spending projection",
   "Pulihkan": "Restore",
   "Pulihkan {1} akun terpilih": "Restore {1} selected accounts",
   "Pulihkan dari cadangan": "Restore from Backup",
@@ -5615,6 +6024,7 @@ const I18N_EN = {
   "Rata-rata pengeluaran Anda": "Your average expenses",
   "Rata-rata pengeluaran Anda {1} per bulan": "Your average expenses are {1} per month",
   "Rata-rata pengeluaran Anda {1} per bulan{2}": "Your average expenses are {1} per month{2}",
+  "Rata-rata pengeluaran per hari:": "Average spending per day:",
   "Rata-rata pengeluaran:": "Average spending:",
   "Rata-rata pengeluaran: {1} per hari ·": "Average spending: {1} per day ·",
   "Rata-rata pengeluaran: {1} per hari · {2}": "Average spending: {1} per day · {2}",
@@ -5623,6 +6033,7 @@ const I18N_EN = {
   "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per": "Average spending: {1} per day · {2} per week · {3} per",
   "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per {4}": "Average spending: {1} per day · {2} per week · {3} per {4}",
   "Rata-rata pengeluaran: {1} per hari · {2} per minggu · {3} per {4}.": "Average spending: {1} per day · {2} per week · {3} per {4}.",
+  "rata-rata per hari": "average per day",
   "Rata-rata per hari": "Average per day",
   "RATA-RATA PER HARI": "AVERAGE PER DAY",
   "Rata-rata per transaksi": "Average per transaction",
@@ -5670,6 +6081,8 @@ const I18N_EN = {
   "Ringkasan {1}": "{1} summary",
   "Ringkasan Akun": "Account Summary",
   "Ringkasan batas": "Limit summary",
+  "Ringkasan dan ekspor": "Summary and export",
+  "Ringkasan keuangan periode ini.": "Financial summary for this period.",
   "Ringkasan saldo": "Balance summary",
   "Ringkasan saldo, pemasukan, dan pengeluaran Anda ada di sini.": "Your balance, income, and expense summary lives here.",
   "Ringkasan satu periode: kesehatan keuangan, budget per kategori, rekening, rencana, dan daftar transaksi. Cocok untuk dibaca atau dicetak.": "A summary of one period: financial health, category budgets, accounts, plans, and the transaction list. Good for reading or printing.",
@@ -5691,6 +6104,7 @@ const I18N_EN = {
   "saat": "when",
   "Saat mencatat transaksi, pilih rekening yang dipakai.": "When recording a transaction, choose the account you used.",
   "Sabun cuci piring": "Dish soap",
+  "SaKu": "SaKu",
   "SaKu · {1} · Bulan laporan:": "SaKu · {1} · Report month:",
   "SaKu · {1} · Bulan laporan: {2}": "SaKu · {1} · Report month: {2}",
   "SaKu · {1} · Bulan laporan: {2} · Dibuat": "SaKu · {1} · Report month: {2} · Created",
@@ -5699,9 +6113,18 @@ const I18N_EN = {
   "SaKu Masih Kosong": "SaKu Is Still Empty",
   "SaKu memakai Firebase milik Anda sebagai server: akun dan catatan tersimpan di sana dan sinkron di semua perangkat. Siapkan sekali saja (gratis di paket Spark).": "SaKu uses your own Firebase as its server: accounts and entries are stored there and sync across all devices. Set it up once (free on the Spark plan).",
   "SaKu memakai Supabase milik Anda sebagai server: akun dan catatan tersimpan di sana dan sinkron di semua perangkat. Siapkan sekali saja, lalu masukkan alamat proyeknya di bawah.": "SaKu uses your own Supabase as its server: accounts and entries are stored there and sync across all devices. Set it up once, then enter the project URL below.",
+  "SaKu tampil": "SaKu looks",
+  "SaKu v": "SaKu v",
+  "SaKu v{1} · build {2}": "SaKu v{1} · build {2}",
+  "SaKu.": "SaKu.",
   "Salah email? Ubah email": "Wrong email? Change email",
   "saldo": "balance",
   "Saldo": "Balance",
+  "Saldo {1} kurang. Saldo sekarang": "Balance {1} short. Current balance",
+  "Saldo {1} kurang. Saldo sekarang {2}": "Balance {1} short. Current balance {2}",
+  "Saldo {1} kurang. Saldo sekarang {2}, jumlah": "Balance {1} short. Current balance {2}, amount",
+  "Saldo {1} kurang. Saldo sekarang {2}, jumlah {3}": "Balance {1} short. Current balance {2}, amount {3}",
+  "Saldo {1} kurang. Saldo sekarang {2}, jumlah {3}.": "Balance {1} short. Current balance {2}, amount {3}.",
   "Saldo = setoran − penarikan + bunga atau hasil. Setoran hanya mengurangi saldo kas dan penarikan menambahnya; keduanya bukan pengeluaran atau pemasukan, jadi tidak masuk Rekap maupun anggaran. Bunga dan dividen langsung masuk ke saldo masing-masing dan tidak menambah kas. Nilai pasar investasi tidak dihitung otomatis; catat kenaikannya sebagai hasil.": "Balance = deposits − withdrawals + interest or returns. Deposits only reduce the cash balance and withdrawals add to it; neither is an expense or income, so they're not included in Overview or budgets. Interest and dividends go straight to their own balances and don't add to cash. Market value of investments isn't calculated automatically; record increases as returns.",
   "Saldo akhir": "Ending balance",
   "Saldo akhir = saldo bulan sebelumnya + selisih + setor/tarik simpanan (setoran mengurangi saldo, penarikan menambahnya; keduanya bukan pengeluaran atau pemasukan).": "Ending balance = previous month's balance + net + savings deposits/withdrawals (deposits reduce the balance, withdrawals add to it; neither counts as an expense or income).",
@@ -5713,6 +6136,7 @@ const I18N_EN = {
   "Saldo keseluruhan": "Total balance",
   "SALDO KESELURUHAN": "TOTAL BALANCE",
   "Saldo keseluruhan Anda kini": "Your total balance now",
+  "Saldo keseluruhan, pemasukan, pengeluaran, dan anggaran bulan ini terbaca dalam sekali pandang.": "Total balance, income, spending, and this month's budget at a glance.",
   "Saldo menurut bank, e-wallet, dan tunai": "Balance by bank, e-wallet, and cash",
   "Saldo per Rekening": "Balance per Account",
   "saldo selalu jelas": "your balance is always clear",
@@ -5729,6 +6153,9 @@ const I18N_EN = {
   "Saling terhubung": "Get connected",
   "salon": "salon",
   "Sama rata": "Split evenly",
+  "Sama seperti": "Same as",
+  "Sama seperti {1}.": "Same as {1}.",
+  "Sambutan": "Welcome",
   "sampai": "until",
   "Sampai": "To",
   "sampai tanggal": "up to date",
@@ -5757,22 +6184,28 @@ const I18N_EN = {
   "Sebagian data mungkin sudah masuk. Ulangi dengan \"Gabungkan\" untuk melengkapi.": "Some data may already have been added. Try again with \"Merge\" to complete it.",
   "Sebagian mungkin sudah tercatat; tekan Catat Sekarang lagi untuk melanjutkan tanpa dobel.": "Some may already be recorded; tap Record Now again to continue without duplicates.",
   "sebelum": "before",
+  "Sebelum": "Before",
   "Sebelum SaKu": "Before SaKu",
   "Sebelumnya": "Previous",
   "Sedang dikerjakan": "In progress",
   "Sedang menyusun jawaban": "Preparing an answer",
   "Sedekah Jumat": "Friday Charity",
+  "Sedikit": "Few",
   "Segera": "Soon",
   "sehat": "healthy",
+  "Sehat": "Healthy",
   "sejak": "since",
   "sejak {1}": "since {1}",
   "Sekali bayar": "One-time payment",
   "Sekali bayar (lunas sekaligus)": "One-time payment (paid in full)",
+  "Sekarang": "Now",
   "Sekarang Anda bisa terhubung dengan teman atau pasangan memakai kode khusus, lalu berbagi rencana bersama. Intro singkat ini hanya muncul sekali.": "You can now connect with friends or your partner using a special code and share plans together. This short intro only appears once.",
   "sekitar": "around",
+  "Sekitar": "About",
   "sekitar {1} hari lagi,": "about {1} days left,",
   "sekitar {1} hari lagi, {2}": "about {1} days left, {2}",
   "Sekitar {1} per orang untuk {2} orang": "About {1} per person for {2} people",
+  "Sekitar {1} tersisa pada periode ini.": "About {1} left this period.",
   "sekolah": "school",
   "Selamat datang di": "Welcome to",
   "Selamat datang di SaKu": "Welcome to SaKu",
@@ -5784,6 +6217,8 @@ const I18N_EN = {
   "Selisih": "Net",
   "SELISIH": "NET",
   "Selisih bulan ini": "Net this month",
+  "Selisihnya": "The difference",
+  "Selisihnya {1} pada periode ini. Cek kategori terbesar di tab Kategori.": "The difference is {1} this period. Check the largest category in the Categories tab.",
   "seluruh": "all",
   "Seluruh batas sudah dibagi.": "The whole limit is already assigned.",
   "Seluruh catatan dengan 8 grafik dan rumus, plus lembar Transaksi, Rekening, Budget Kategori, dan Rencana. Pilih bulan yang menjadi sorotan laporan.": "All entries with 8 charts and formulas, plus Transactions, Accounts, Category Budget, and Plans sheets. Choose the month the report highlights.",
@@ -5822,7 +6257,9 @@ const I18N_EN = {
   "setelah": "after",
   "setelah {1} dicadangkan": "after {1} is set aside",
   "Setelah akhir": "After the end",
+  "setelah disetujui admin": "after admin approval",
   "Setelah disetujui admin, masuk memakai username dan kata sandi tersebut. Lupa kata sandi? Admin dapat meresetnya.": "Once an admin approves it, log in with that username and password. Forgot your password? An admin can reset it.",
+  "setelah email dikonfirmasi": "after email confirmation",
   "Setelah kode diterima dan disetujui, kalian terhubung. Putuskan kapan saja.": "Once the code is accepted and approved, you are connected. Disconnect any time.",
   "Setelah mengklik tautan, masuk memakai username dan kata sandi tersebut. Belum menerima email? Di layar Masuk pilih Kirim ulang email konfirmasi.": "After clicking the link, sign in with that username and password. No email yet? On the Sign in screen choose Resend confirmation email.",
   "Setelah selesai, tekan": "When done, press",
@@ -5880,6 +6317,7 @@ const I18N_EN = {
   "Sisa anggaran {1} dicadangkan dari saldo pemasukan {2}. Setoran tabungan dan investasi tidak dihitung sebagai pengeluaran, hanya mengurangi saldo.": "Remaining budget {1} is reserved from the {2} income balance. Deposits to savings and investments aren't counted as expenses; they only reduce the balance.",
   "Sisa batas setelah ini: {1} · {2} dari batas.": "Limit remaining after this: {1} · {2} of the limit.",
   "Sisa batas setelah ini: {1}.": "Limit remaining after this: {1}.",
+  "Sisa dana": "Funds left",
   "sisa dari": "remaining of",
   "Sisa seluruh cicilan": "Total remaining installments",
   "Sisa tagihan": "Remaining bill",
@@ -5888,6 +6326,9 @@ const I18N_EN = {
   "Sisihkan sekitar {1} per minggu agar terkumpul pada {2}.": "Set aside about {1} per week to reach it by {2}.",
   "Situs web selalu memakai versi terbaru.": "The website always uses the latest version.",
   "Skincare & Kosmetik": "Skincare & Cosmetics",
+  "Skor keuangan": "Financial score",
+  "Skor keuangan {1} dari 100": "Financial score {1} of 100",
+  "Skor keuangan, proyeksi akhir bulan, perbandingan periode, hingga pola harian dan kategori pengeluaran.": "Financial score, end-of-month projection, period comparisons, and daily and category spending patterns.",
   "Slide {1} dari {2}": "Slide {1} of {2}",
   "Slide {1} dari {2}: {3}": "Slide {1} of {2}: {3}",
   "Soto ayam": "Chicken soto",
@@ -5897,6 +6338,7 @@ const I18N_EN = {
   "struk": "receipt",
   "Suara tidak bisa dikenali. Coba lagi.": "The speech could not be recognized. Try again.",
   "Submenu {1}": "{1} Submenu",
+  "Submenu baru: menu Lainnya bergaya bento, serta submenu Tagihan, Rencana, dan Kurs dengan gaya berbeda dan sidebar web dengan garis alur": "New submenus: the More menu in bento style, plus Bills, Plans, and Rates submenus in different styles, and a web sidebar with flow lines",
   "sudah": "already",
   "sudah {1}": "already {1}",
   "Sudah ada rekening bernama itu.": "That account name is already used.",
@@ -5936,8 +6378,10 @@ const I18N_EN = {
   "Tagihan": "Bill",
   "Tagihan Jatuh Tempo": "Due Bills",
   "tagihan lainnya ada di menu Jatuh Tempo.": "Other bills are in Due Dates.",
+  "Tagihan rutin terdeteksi": "Recurring bills detected",
   "Tagihan terdekat": "Upcoming Bills",
   "tagihan yang sudah dihapus": "deleted bills",
+  "Tagihan, Rencana, Laporan, dan Tanya SaKu kini ada di menu Lainnya, satu ketukan dari mana pun.": "Bills, Plans, Reports, and Ask SaKu are now in the More menu, one tap away from anywhere.",
   "Tahapan pengembangan": "Development stages",
   "Tahu": "Tofu",
   "tahun": "year",
@@ -5977,6 +6421,8 @@ const I18N_EN = {
   "Tambahkan minimal satu teman.": "Add at least one friend.",
   "Tambahkan rekening bank, e-wallet, dan tunai, lalu pindahkan saldo antar rekening.": "Add bank accounts, e-wallets, and cash, then move balances between accounts.",
   "Tambahkan rekening dulu di Pengaturan Rekening.": "Add an account first in Account Settings.",
+  "Tampilan baru, menu yang lebih rapi, dan analisis keuangan yang lebih tajam. Semua data Anda tetap aman di tempatnya.": "New look, a tidier menu, and sharper financial analysis. All your data stays safe where it is.",
+  "Tampilan baru: Beranda lebih ringkas (saldo keseluruhan, pemasukan, pengeluaran, anggaran, transaksi terbaru) dengan warna biru bersentuhan hijau logo dan huruf Plus Jakarta Sans": "New look: Home is more concise (total balance, income, spending, budget, latest transactions) with the logo's blue-meets-green colors and Plus Jakarta Sans font",
   "Tampilkan": "Show",
   "Tampilkan kata sandi": "Show password",
   "Tampilkan lebih banyak": "Show more",
@@ -6010,10 +6456,12 @@ const I18N_EN = {
   "tanpa daftar barang": "without an item list",
   "Tanpa darat": "No land leg",
   "tanpa foto": "without photos",
+  "tanpa pembanding": "without a comparison",
   "Tanpa rekening, semua catatan dihitung sebagai satu dompet seperti biasa.": "Without accounts, all entries count as one wallet as usual.",
   "Tanpa tenggat": "No deadline",
   "tanpa verifikasi JWT": "without JWT verification",
   "Tanya": "Ask",
+  "Tanya keuangan Anda dengan bahasa sehari-hari": "Ask about your finances in everyday language",
   "Tanya SaKu": "Ask SaKu",
   "Tanya SaKu: asisten keuangan interaktif dari data Anda sendiri": "Ask SaKu: an interactive finance assistant built on your own data",
   "Tanya soal keuangan Anda…": "Ask about your finances…",
@@ -6109,6 +6557,7 @@ const I18N_EN = {
   "Terjadi kesalahan di aplikasi. Muat ulang halaman lalu coba lagi.": "An app error occurred. Reload the page and try again.",
   "Terjadi kesalahan di server. Coba lagi.": "A server error occurred. Try again.",
   "Terkumpul": "Saved",
+  "Terkumpul {1}. Nominal target belum bisa dihitung.": "{1} saved. Goal amount can't be calculated yet.",
   "Terkumpul diambil dari catatan setoran target dan isian wishlist. Kolom Kurang dan Progres memakai rumus.": "Saved comes from target deposit entries and the wishlist fields. The Short by and Progress columns use formulas.",
   "terkunci": "locked",
   "Terlalu banyak percobaan. Coba lagi beberapa menit lagi.": "Too many attempts. Try again in a few minutes.",
@@ -6124,6 +6573,7 @@ const I18N_EN = {
   "terpakai": "used",
   "Terpakai": "Used",
   "Tersimpan di perangkat. Diunggah otomatis saat online.": "Saved on this device. Uploaded automatically when online.",
+  "tersisa pada periode ini.": "left this period.",
   "Tertaut:": "Linked:",
   "tertinggal": "behind",
   "Tertinggal": "Behind",
@@ -6135,7 +6585,10 @@ const I18N_EN = {
   "Tetap masuk di ponsel ini sampai Anda menekan Keluar.": "Stay signed in on this phone until you tap Sign out.",
   "tetapi": "but",
   "Tetapkan tujuan keuangan Anda: dana darurat, tabungan, investasi, atau impian lain. SaKu menghitung berapa yang perlu disetor tiap bulan dan memantau kemajuannya.": "Set your financial goals: an emergency fund, savings, investments, or other dreams. SaKu calculates how much to deposit each month and tracks your progress.",
+  "TGL": "DATE",
   "tiap akhir bulan": "at the end of each month",
+  "Tiap bulan ·": "Every month ·",
+  "Tiap bulan · {1} periode terakhir": "Every month · last {1} periods",
   "tiap tanggal": "on the same date",
   "Tiba": "Arrive",
   "Tiba di {1}": "Arriving at {1}",
@@ -6150,10 +6603,13 @@ const I18N_EN = {
   "Tidak ada internet. {1}": "No internet connection. {1}",
   "Tidak ada kategori yang cocok.": "No matching categories.",
   "Tidak ada kategori yang cocok. Coba kata lain atau tekan Tambah Kategori.": "No matching categories. Try another word or tap Add Category.",
+  "Tidak ada pemasukan atau pengeluaran pada": "No income or spending on",
+  "Tidak ada pemasukan atau pengeluaran pada {1}. Catat transaksi untuk melihat skor dan wawasan.": "No income or spending on {1}. Record transactions to see your score and insights.",
   "Tidak ada ruas darat": "No land leg",
   "Tidak ada suara yang terdengar. Ketuk lagi lalu bicara.": "No speech was heard. Tap again and speak.",
   "tidak ada tagihan": "no bills",
   "Tidak ada tagihan dalam 7 hari ke depan": "No bills in the next 7 days",
+  "Tidak ada tagihan dalam waktu dekat": "No upcoming bills",
   "Tidak Ada Transaksi": "No Transactions",
   "Tidak ada yang disimpan.": "Nothing was saved.",
   "Tidak ada yang diubah.": "Nothing was changed.",
@@ -6189,6 +6645,7 @@ const I18N_EN = {
   "Tombol mengambang Tanya SaKu dengan maskot dan sapaan": "Floating Ask SaKu button with a mascot and greeting",
   "Topup E-Money (Kartu)": "E-Money Card Top-up",
   "Topup E-Wallet": "E-Wallet Top-up",
+  "Total": "Total",
   "total · rata-rata": "total · average",
   "total · rata-rata {1} per orang": "total · average {1} per person",
   "Total (mengikuti filter)": "Total (follows filter)",
@@ -6205,6 +6662,10 @@ const I18N_EN = {
   "TOTAL KELUAR": "TOTAL OUT",
   "Total masuk": "Total in",
   "Total pengeluaran": "Total expenses",
+  "Total pengeluaran periode ini": "Total spending this period",
+  "Total pengeluaran periode ini {1}.": "Total spending this period {1}.",
+  "Total per": "Total per",
+  "Total per {1}": "Total per {1}",
   "Total saldo": "Total balance",
   "Total sisa": "Total remaining",
   "Total tabungan & investasi": "Total savings & investments",
@@ -6222,9 +6683,11 @@ const I18N_EN = {
   "Transaksi ini dihitung sebagai pembayaran tagihan tersebut.": "This transaction counts as a payment for that bill.",
   "transaksi rusak dilewati.": "corrupted transactions skipped.",
   "transaksi tanpa foto karena fotonya tidak ada di berkas.": "transactions without photos because the photos aren't in the file.",
+  "Transaksi terbaru": "Latest transactions",
   "transaksi tercapai. Hapus transaksi lama dulu.": "transaction limit reached. Delete old transactions first.",
   "transaksi tercapai. Pakai \"Ganti\" atau hapus transaksi lama dulu.": "transaction limit reached. Use \"Replace\" or delete old transactions first.",
   "Transaksi tersimpan": "Transaction saved",
+  "transaksi tersimpan di akun ini.": "transactions saved in this account.",
   "transaksi tersimpan di akun ini. Laporan PDF mengikuti periode yang sedang dibuka di Rekap, sedangkan Excel memuat seluruh catatan dengan 8 grafik.": "transactions are saved to this account. The PDF report follows the period currently open in Overview, while the Excel file includes all entries with 8 charts.",
   "Transaksi yang tidak memilih rekening": "Transactions without an account",
   "transaksi,": "transactions,",
@@ -6235,6 +6698,7 @@ const I18N_EN = {
   "TransJakarta & BRT": "TransJakarta & BRT",
   "Transportasi Harian": "Daily Transport",
   "tren": "trend",
+  "Tren": "Trends",
   "Tren pengeluaran": "Expense trend",
   "Tren pengeluaran {1} per hari (7 hari terakhir {2}, rata-rata {3} ini {4}).": "Expense trend {1} per day (last 7 days {2}, averaging {3} this {4}).",
   "Tujuan": "Destination",
@@ -6248,9 +6712,14 @@ const I18N_EN = {
   "Tur & Paket Wisata": "Tours & Travel Packages",
   "turun": "down",
   "Turun": "Down",
+  "Turun {1} poin dari": "Down {1} points from",
+  "Turun {1} poin dari {2}": "Down {1} points from {2}",
+  "Turun {1} poin dari {2}.": "Down {1} points from {2}.",
   "Turun 12% dari bulan lalu": "Down 12% from last month",
   "Tutup": "Close",
+  "Tutup menu": "Close menu",
   "Tutup pengingat": "Close reminder",
+  "tv bad": "tv bad",
   "Uang": "Money",
   "Uang awal yang sudah terkumpul:": "Starting funds already saved:",
   "Uang awal yang sudah terkumpul: {1} (tidak dicatat sebagai transaksi).": "Starting funds already saved: {1} (not recorded as a transaction).",
@@ -6296,6 +6765,7 @@ const I18N_EN = {
   "Unduhan belum tersedia di tampilan ini.": "Downloads are not available in this view yet.",
   "Unduhan tidak tersedia di tampilan ini.": "Downloads aren't available in this view.",
   "untuk": "for",
+  "untuk {1} hari lagi": "for {1} more days",
   "Untuk akun Anda sendiri, pakai menu Pengaturan.": "For your own account, use the Settings menu.",
   "Untuk keamanan, ganti kata sandi memerlukan verifikasi email. Kirim tautan ke email Anda, klik, lalu kembali ke sini.": "For security, changing your password requires email verification. Send a link to your email, click it, then come back here.",
   "Untuk keamanan, masuk lagi dengan kata sandi lalu ulangi menautkan Google.": "For security, sign in again with your password and then link Google again.",
@@ -6304,6 +6774,7 @@ const I18N_EN = {
   "Update": "Update",
   "usaha": "business",
   "Usaha & Sampingan": "Business & Side Hustle",
+  "Username": "Username",
   "Username 4–20 karakter: huruf kecil dan angka saja, diawali huruf. Contoh: sifulan12.": "Username must be 4–20 characters: lowercase letters and numbers only, starting with a letter. Example: sifulan12.",
   "Username admin": "Admin username",
   "Username admin 4–20 karakter: huruf kecil dan angka, diawali huruf.": "Admin username must be 4–20 characters: lowercase letters and numbers, starting with a letter.",
@@ -6315,6 +6786,8 @@ const I18N_EN = {
   "Verifikasi email Anda dulu (lihat himbauan di atas) agar kata sandi bisa diganti.": "Verify your email first (see the notice above) so you can change your password.",
   "Verifikasi email Anda dulu lewat himbauan di atas, lalu ganti kata sandi.": "Verify your email first through the notice above, then change your password.",
   "Verifikasi email dulu: kirim email verifikasi, klik tautannya, lalu ganti kata sandi (berlaku 15 menit).": "Verify your email first: send the verification email, click its link, then change your password (valid for 15 minutes).",
+  "Versi": "Version",
+  "Versi {1} · build": "Version {1} · build",
   "Versi {1} · build {2}": "Version {1} · build {2}",
   "Versi baru tersedia": "New version available",
   "Versi berkas cadangan ini belum didukung.": "This backup file version isn't supported yet.",
@@ -6323,6 +6796,9 @@ const I18N_EN = {
   "Vitamin & Suplemen": "Vitamins & Supplements",
   "Wajib: berkas kunci yang diunduh saat fitur ini pertama diaktifkan": "Required: the key file downloaded when this feature was first enabled",
   "Waktu tempuh": "Travel time",
+  "Warteg": "Warteg",
+  "Wawasan": "Insights",
+  "Wawasan untuk Anda": "Insights for you",
   "Wishlist": "Wishlist",
   "Wishlist aktif": "Active wishlist",
   "Wishlist bersama": "Shared wishlist",
@@ -6330,6 +6806,8 @@ const I18N_EN = {
   "Wishlist diperbarui": "Wishlist updated",
   "Wishlist ditambahkan": "Wishlist added",
   "Wishlist masih kosong": "Your wishlist is empty",
+  "wn-up\"": "wn-up\"",
+  "wnew s": "wnew s",
   "won Korea": "Korean won",
   "Won Korea": "Korean Won",
   "Yakin cabut admin pembantu?": "Are you sure you want to remove this assistant admin?",
@@ -6362,6 +6840,7 @@ const I18N_EN = {
   "Yang dibagikan": "What to share",
   "yang dicatat.": "recorded.",
   "Yang ikut membayar item {1}": "Who shares the cost of item {1}",
+  "yang lebih tajam": "sharper",
   "yang muncul.": "that appears.",
   "Yang nanti bisa dibagikan": "What can be shared later",
   "Yang penting sadar dan mau memperbaiki. Catatan yang jujur adalah langkah pertama yang berani.": "What matters is being aware and willing to improve. An honest record is a brave first step.",
@@ -6916,7 +7395,7 @@ function navFoldSet(g, shut) {
 function shellHTML() {
   const m = me(), items = navItems();
   const bdg = i => i[0] === 'admin' ? '<span class="nbadge" data-badge hidden></span>' : i[0] === 'tagihan' ? '<span class="nbadge" data-due-badge hidden></span>' : i[0] === 'teman' ? '<span class="nbadge" data-fr-badge hidden></span>' : '';
-  const subs = g => { const ls = leavesOf(g); return ls.length < 2 ? '' : `<div class="nav-sub" role="group" aria-label="Submenu ${esc((GROUP_OF(g) || {}).label || '')}"><div class="nav-sub-in">${ls.map(k => `<button type="button" class="nav-s" data-act="nav" data-v="${k}"><span class="nav-mk" aria-hidden="true"></span><span>${esc(LEAF[k].sub)}</span></button>`).join('')}</div></div>`; };
+  const subs = g => { const ls = leavesOf(g); return ls.length < 2 ? '' : `<div class="nav-sub" role="group" aria-label="Submenu ${esc((GROUP_OF(g) || {}).label || '')}"><div class="nav-sub-in">${ls.map(k => `<button type="button" class="nav-s" data-act="nav" data-v="${k}"><span class="nav-mk" aria-hidden="true"></span><span class="nav-si${LEAF[k].tone ? ' tone-' + LEAF[k].tone : ''}" aria-hidden="true">${ic(LEAF[k].ico || 'list', 14)}</span><span>${esc(LEAF[k].sub)}</span></button>`).join('')}</div></div>`; };
   const fold = navFold();
   const grp = i => { const sb = isAdmin() ? '' : subs(i[0]); const shut = sb && fold.indexOf(i[0]) >= 0;
     return `<div class="nav-g${sb ? ' has-sub' : ''}${shut ? ' shut' : ''}" data-g="${i[0]}"><button class="nav-i" data-act="${sb ? 'nav-g' : 'nav'}" data-v="${i[0]}" title="${i[1]}" aria-label="${i[1]}"${sb ? ` aria-expanded="${!shut}"` : ''}>${ic(i[2], 20)}<span class="nav-t">${i[1]}</span>${bdg(i)}</button>${sb}${sb ? `<button type="button" class="nav-fold" data-act="nav-fold" data-g="${i[0]}" aria-expanded="${!shut}" aria-label="${shut ? 'Buka submenu' : 'Ciutkan submenu'}" title="${shut ? 'Buka submenu' : 'Ciutkan submenu'}">${ic('chevl', 14)}</button>` : ''}</div>`; };
@@ -6934,7 +7413,7 @@ function shellHTML() {
       </div>
     </aside>
     <div class="main">
-      <div class="topbar"><div class="brand">${LOGO}${WM}</div><div class="top-r">${langSwitchHTML('lsw-top')}<button class="avatar sm" data-act="nav" data-v="akun" aria-label="Pengaturan akun">${esc(initials(m.name))}</button></div></div>
+      <div class="topbar"><div class="brand">${LOGO}${WM}</div><div class="top-r">${langSwitchHTML('lsw-top')}${isAdmin() ? '' : `<button type="button" class="top-bell" data-act="nav" data-v="jatuh" aria-label="Jatuh tempo" title="Jatuh tempo">${ic('bell', 20)}<span class="nbadge" data-due-badge hidden></span></button>`}<button class="avatar sm" data-act="nav" data-v="akun" aria-label="Pengaturan akun">${esc(initials(m.name))}</button></div></div>
       <div id="netbar" class="netbar" role="status" hidden></div>
       <div id="mailbar" class="netbar mailbar" role="status" hidden></div>
       <div id="view"></div>
@@ -6943,17 +7422,49 @@ function shellHTML() {
   </div>
   ${(() => {
     if (isAdmin()) return `<nav class="tabbar" aria-label="Navigasi utama">${items.map(tab).join('')}</nav>`;
-    const MAIN = ['rekap', 'transaksi', 'tagihan'], mi = items.filter(i => MAIN.indexOf(i[0]) < 0);
+    const MAIN = ['rekap', 'transaksi', 'analisis'], mi = items.filter(i => MAIN.indexOf(i[0]) < 0);
     const by = id => items.filter(i => i[0] === id)[0];
-    const sheetI = i => `<button type="button" class="more-i" data-act="nav" data-v="${i[0]}"><span class="pill">${ic(i[2], 22)}${bdg(i)}</span><span>${i[3]}</span></button>`;
-    return `<nav class="tabbar has-add" aria-label="Navigasi utama">${tab(by('rekap'))}${tab(by('transaksi'))}<span class="tab-gap" aria-hidden="true"></span>${tab(by('tagihan'))}<button type="button" class="tab tab-more" data-act="more" aria-haspopup="true" aria-expanded="false" data-more="${mi.map(i => i[0]).join(',')}"><span class="pill">${ic('more', 22)}<span class="nbadge" data-badge hidden></span><span class="nbadge" data-fr-badge hidden></span></span><span>Lainnya</span></button></nav>
+    const SHP = '<svg class="mi-shape" width="110" height="100" viewBox="0 0 120 110" aria-hidden="true"><path d="M10 38C10 32 14 28 19 26L70 8C77 5.6 84 10 84 17V62L26 82C17 85 10 79 10 71Z" fill="#01A1FA" fill-opacity=".3"/><path d="M44 52 98 33C105 30.6 112 35 112 42V86C112 91 109 95 104 97L52 116C48 117.5 44 114.5 44 110Z" fill="#1CCE8A" fill-opacity=".36"/></svg>';
+    const mk = (id, cls, inner) => by(id) ? `<button type="button" class="more-i ${cls}" role="menuitem" data-act="nav" data-v="${id}">${inner}</button>` : '';
+    const tile = id => { const i = by(id); return i ? `<button type="button" class="more-i mi-tile mi-${id}" role="menuitem" data-act="nav" data-v="${id}"><span class="mi-ic pill">${ic(i[2], 24)}${bdg(i)}</span><span>${i[3]}</span></button>` : ''; };
+    return `<nav class="tabbar has-add" aria-label="Navigasi utama">${tab(by('rekap'))}${tab(by('transaksi'))}<span class="tab-gap" aria-hidden="true"></span>${tab(by('analisis'))}<button type="button" class="tab tab-more" data-act="more" aria-haspopup="true" aria-expanded="false" data-more="${mi.map(i => i[0]).join(',')}"><span class="pill">${ic('more', 22)}<span class="nbadge" data-badge hidden></span><span class="nbadge" data-due-badge hidden></span><span class="nbadge" data-fr-badge hidden></span></span><span>Lainnya</span></button></nav>
     <div class="more-scrim" data-act="more-close"></div>
-    <div class="more-sh" role="menu" aria-label="Menu lainnya"><div class="more-h">Menu lainnya</div><div class="more-grid">${mi.map(sheetI).join('')}</div></div>`;
+    <div class="more-sh" role="menu" aria-label="Menu lainnya"><span class="more-grab" aria-hidden="true"></span>
+      <div class="more-h"><span class="avatar sm" aria-hidden="true">${esc(initials(m.name))}</span><span class="more-who"><b>${esc(m.name)}</b><small>Menu lainnya</small></span><button type="button" class="more-x" data-act="more-close" aria-label="Tutup menu">${ic('x', 20)}</button></div>
+      ${mk('asisten', 'mi-ask', `${SHP}<span class="mi-ic">${ic('sparkle', 24)}</span><span class="mi-t"><b>Tanya SaKu</b><small>Tanya keuangan Anda dengan bahasa sehari-hari</small></span>`)}
+      <div class="more-bento">
+        ${mk('tagihan', 'mi-bill', `<span class="mi-top"><span class="mi-ic">${ic('receipt', 22)}</span><span class="nbadge sm" data-due-badge hidden></span></span><b>Tagihan</b><span class="mi-due" data-more-due><small>Lihat jatuh tempo, cicilan, dan hutang</small></span>`)}
+        ${mk('rencana', 'mi-plan', `<span class="mi-top"><span class="mi-ic">${ic('flag', 20)}</span><b>Rencana</b></span><span class="mi-bud" data-more-bud><small>Anggaran, target, simpanan</small></span>`)}
+        ${mk('laporan', 'mi-rep', `<span class="mi-top"><span class="mi-ic">${ic('file', 20)}</span><b>Laporan</b></span><small>Ringkasan dan ekspor</small>`)}
+      </div>
+      <div class="more-sec"><span>Alat dan akun</span></div>
+      <div class="more-tiles">${['rekening', 'kurs', 'teman', 'admin', 'akun'].map(tile).join('')}</div>
+    </div>`;
   })()}
   ${isAdmin() ? '' : `<button class="fab" data-act="add" aria-label="Catat transaksi">${ic('plus', 26)}<span class="fab-t">Catat transaksi</span></button>${askFabHTML()}`}`;
 }
+/* Isi dinamis kartu di sheet Lainnya: 3 tagihan terdekat dan pemakaian anggaran (diisi saat sheet dibuka) */
+function paintMore() {
+  if (S.phase !== 'app' || isAdmin()) return;
+  const du = $('[data-more-due]'), bu = $('[data-more-bud]');
+  if (du) {
+    try {
+      if (planReady()) {
+        const M = dueNow(), tk = ymd(new Date()), L = M.all.slice().sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0)).slice(0, 3);
+        du.innerHTML = L.length ? L.map(it => `<span class="mi-row"><span class="mi-rn">${esc(it.title)}</span><span class="mi-rw${it.st === 'telat' ? ' late' : ''}">${esc(lateText(it.due, tk))}</span></span>`).join('') : '<small>Tidak ada tagihan dalam waktu dekat</small>';
+      }
+    } catch (e) { /* biarkan isi bawaan */ }
+  }
+  if (bu) {
+    try {
+      const bm = S.txLoaded ? budgetModel(S.tx, new Date(), S.settings, new Date()) : null;
+      if (bm && bm.cap > 0) { const z = bm.used >= BUD_DANGER ? 'danger' : bm.used >= BUD_WARN ? 'warn' : ''; bu.innerHTML = `<small>${bm.basis === 'anggaran' ? 'Anggaran' : 'Dana'} ${fmtPct(bm.used)} terpakai</small><span class="mi-meter ${z}"><i style="width:${Math.min(100, bm.used).toFixed(1)}%"></i></span>`; }
+    } catch (e) { /* biarkan isi bawaan */ }
+  }
+}
 function moreSet(v) {
   const sh = $('.shell'); if (!sh) return;
+  if (v) paintMore();
   const b = document.body; if (b && b.classList) b.classList.toggle('more-open', !!v);
   const t = $('.tab-more'); if (t) t.setAttribute('aria-expanded', String(!!v));
 }
@@ -6968,6 +7479,7 @@ function setNav() {
   if (typeof paintMailBar === 'function') paintMailBar();
   if (typeof paintAvatars === 'function') paintAvatars();
   if (typeof tourMaybe === 'function') setTimeout(tourMaybe, 700);
+  if (typeof wnMaybe === 'function') setTimeout(wnMaybe, 900);
   paintBadge();
 }
 function showPhase() {
@@ -7013,7 +7525,7 @@ function renderView() {
   if (!VIEWS[S.view]) S.view = isAdmin() ? 'admin' : 'rekap';
   const V = VIEWS[S.view];
   if (S.mountedView !== S.view) { v.innerHTML = ''; if (V.mount) V.mount(v); S.mountedView = S.view; setNav(); routePush(S.view, S.routeReplace); S.routeReplace = false; }
-  V.update(); paintBadge(); askFabPaint();
+  V.update(); subnavReveal(); paintBadge(); askFabPaint(); paintMore();
   const key = S.view + (S.txLoaded ? ':ok' : ':load');
   if (S.entered !== key) {
     S.entered = key; enterAnim('enter');
@@ -7243,54 +7755,12 @@ async function clearBudgetAdd() {
 
 /* ================= Tampilan: Rekap ================= */
 const welcomeHTML = () => { const h = new Date().getHours(); return `<section class="welcome" aria-label="Sambutan"><h2 class="welcome-h">${h < 11 ? 'Selamat pagi' : h < 15 ? 'Selamat siang' : h < 19 ? 'Selamat sore' : 'Selamat malam'}, ${esc(String((me() && me().name) || '').split(' ')[0])}</h2><p class="welcome-s">Semua uang ada di SaKu.</p></section>`; };
-function rekapHTML() {
-  if (!S.txLoaded) return skelHTML();
-  const P = S.period, A = S.anchor, rg = rangeFor(P, A), s = ymd(rg.start), e = ymd(rg.end);
-  const list = S.tx.filter(t => t.date >= s && t.date <= e && !isXfer(t));
-  const tin = sumType(list, 'in'), tout = sumType(list, 'out'), net = tin - tout;
-  const pr = rangeFor(P, shiftAnchor(P, A, -1)), ps = ymd(pr.start), pe = ymd(pr.end);
-  const pout = sumType(S.tx.filter(t => t.date >= ps && t.date <= pe), 'out');
-  const now = startOfDay(new Date()), nx = rangeFor(P, shiftAnchor(P, A, 1));
-  const canNext = nx.start <= now, isCur = rg.start <= now && now <= rg.end;
-  const saldo = kasTotal();
-  S.bk = buildBuckets(P, A);
-  S.cmp = compareModel(S.tx, A, new Date());
-  S.wide = !!(window.matchMedia && window.matchMedia('(min-width: 1000px)').matches);
-  const label = rangeLabel(P, rg, A), prevWord = P === 'day' ? 'kemarin' : P === 'week' ? 'minggu lalu' : CYCLE.day > 1 ? 'periode lalu' : 'bulan lalu';
-  let delta = '';
-  if (pout > 0) { const ch = (tout - pout) / pout * 100; if (Math.abs(ch) >= 0.5) delta = `<p class="delta ${ch > 0 ? 'neg' : 'pos'}">Pengeluaran ${ch > 0 ? 'naik' : 'turun'} ${fmtPct(Math.abs(ch))} dari ${prevWord}</p>`; }
-  const bmx = P === 'month' ? budgetModel(S.tx, A, S.settings, new Date()) : null;
-  const budget = bmx ? budgetHTML(bmx) : '', budAdd = bmx ? budAddCard(bmx) : '';
-  const hello = `${new Date().getHours() < 11 ? 'Selamat pagi' : new Date().getHours() < 15 ? 'Selamat siang' : new Date().getHours() < 19 ? 'Selamat sore' : 'Selamat malam'}, ${esc(String((me() && me().name) || '').split(' ')[0])}`;
-  const head = `<div class="page-head"><div><h1>Rekap</h1></div><div class="seg" role="group" aria-label="Periode rekap">${[['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']].map(p => `<button data-act="period" data-v="${p[0]}" aria-pressed="${P === p[0]}">${p[1]}</button>`).join('')}</div></div>
-    <div class="range"><button class="icon-btn" data-act="prev" aria-label="Periode sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(label)}</span>${isCur ? '' : '<button class="back" data-act="today">Kembali ke sekarang</button>'}</div><button class="icon-btn" data-act="next" aria-label="Periode berikutnya" ${canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div>`;
-  const demo = S.demoCount > 0 ? `<div class="banner" style="margin-bottom:14px">${ic('info', 18)}<span>Sebagian catatan di sini adalah data contoh.</span><button class="btn btn-ghost btn-sm" data-act="demo-del">${S.armed && S.armed.key === 'demo' ? 'Yakin hapus?' : 'Hapus data contoh'}</button></div>` : '';
-  const hero = `<section class="hero" aria-label="Ringkasan saldo"><div><div class="eyebrow">Saldo keseluruhan</div><div class="big">${saldo < 0 ? '-' : ''}<span class="rp">${curSym()}</span>${dots(saldo)}</div></div>
-    <div class="hero-cap">Ringkasan ${esc(label)}</div>
-    <div class="hero-stats"><div class="hstat"><span class="k">${ic('down', 15)} Pemasukan</span><span class="v">${fmtRp(tin)}</span></div><div class="hstat"><span class="k">${ic('up', 15)} Pengeluaran</span><span class="v">${fmtRp(tout)}</span></div><div class="hstat"><span class="k">${ic('scale', 15)} Selisih</span><span class="v ${net < 0 ? 'neg' : net > 0 ? 'pos' : ''}">${net > 0 ? '+' : ''}${fmtRp(net)}</span></div></div>${delta}${budget}</section>`;
-  if (S.tx.length === 0) {
-    return head + hero + `<section class="card" style="margin-top:16px"><div class="empty"><h3>SaKu Masih Kosong</h3><p>Catat pemasukan atau pengeluaran pertama Anda. Foto struk bisa dipakai untuk mengisi daftar barang.</p><div class="acts"><button class="btn btn-primary" data-act="add">${ic('edit', 18)} Catat transaksi</button><button class="btn btn-ghost" data-act="demo-add">Lihat dengan data contoh</button></div></div></section>`;
-  }
-  const trend = `<section class="card" aria-labelledby="h-trend"><div class="card-h"><h2 id="h-trend">${P === 'month' ? 'Arus Kas Harian' : P === 'week' ? 'Arus Kas per Hari' : '7 Hari Terakhir'}</h2><span class="sub">masuk vs keluar</span></div><div class="chart" id="trend"><div class="plot"></div><div class="tip" id="tip" hidden></div></div><div class="legend"><span><i style="background:var(--in-bar)"></i>Pemasukan</span><span><i style="background:var(--out-bar)"></i>Pengeluaran</span></div></section>`;
-  const spend = spendCard(list, tout), income = incomeCard(list, tin), rinci = rinciCard(P), txc = txCard(list), cmp = cmpCard(S.cmp), pot = potMiniCard(), avg = avgCard(), acm = accMiniCard(s, e);
-  const dash = S.wide
-    ? `<div class="dash two"><div class="col">${trend}${cmp}${rinci}${txc}</div><div class="col">${acm}${pot}${avg}${spend}${income}</div></div>`
-    : `<div class="dash">${acm}${pot}${trend}${cmp}${avg}${spend}${income}${rinci}${txc}</div>`;
-  const dl = S.downloads ? `<div class="dl-row"><span class="lbl">Unduh</span><button class="btn btn-ghost btn-sm" data-act="dl-pdf">${ic('file', 16)} Laporan PDF</button><button class="btn btn-ghost btn-sm" data-act="dl-xlsx">${ic('table', 16)} Excel + grafik</button></div>` : '';
-  return head + demo + hero + budAdd + dl + dash;
-}
-VIEWS.rekap = { update() {
-  const hadFocus = !!(document.activeElement && document.activeElement.id === 'ba-amt');
-  $('#view').innerHTML = welcomeHTML() + subnavHTML('rekap') + rekapHTML(); drawTrend(); drawCmp();
-  if (hadFocus) { const i = $('#ba-amt'); if (i && i.focus) i.focus(); }
-} };
-
 /* ================= Tampilan: Isi Kategori (dibuka dari tabel kategori di Rekap) ================= */
 function katHTML() {
   const C = S.catView; if (!C) return '';
   const c = catOf(C.id), D = catDetailModel(S.tx, C.id, C.type, C.s, C.e), out = C.type === 'out', wd = out ? 'pengeluaran' : 'pemasukan';
   const tile = (k, v, s) => `<div class="tile"><span class="k">${k}</span><b>${v}</b>${s ? `<small>${s}</small>` : ''}</div>`;
-  const head = `<div class="page-head cat-head"><div><button type="button" class="back-link" data-act="cat-back">${ic('chevl', 18)} Kembali ke ${C.back === 'insight' ? 'Insight' : 'Rekap'}</button><h1>${esc(c.label)}</h1><p class="hello">${esc(C.label)} · ${out ? 'Pengeluaran' : 'Pemasukan'}</p></div></div>`;
+  const head = `<div class="page-head cat-head"><div><button type="button" class="back-link" data-act="cat-back">${ic('chevl', 18)} Kembali ke ${C.back === 'insight' ? 'Analisis' : 'Beranda'}</button><h1>${esc(c.label)}</h1><p class="hello">${esc(C.label)} · ${out ? 'Pengeluaran' : 'Pemasukan'}</p></div></div>`;
   if (!D.count) return head + `<section class="card"><div class="empty"><h3>Tidak Ada Catatan</h3><p>Belum ada ${wd} kategori ini pada ${esc(C.label)}.</p></div></section>`;
   const big = D.biggest, bd = big ? parseYmd(big.date) : null;
   const sum = `<section class="card kat-sum" style="--c:var(--s${c.slot})"><div class="kat-top"><span class="chip">${ic(c.icon, 26)}</span><div><div class="kat-total">${fmtRp(D.total)}</div><small>${fmtPct(D.share)} dari total ${wd} ${esc(C.label)}</small></div></div>
@@ -7303,44 +7773,6 @@ function katHTML() {
   return head + `<div class="dash">${sum}${itemsCard}${txs}</div>`;
 }
 VIEWS.kategori = { update() { $('#view').innerHTML = katHTML(); } };
-
-/* ================= Tampilan: Insight (rekap pengeluaran per kategori; rentang dipilih per periode anggaran atau tanggal kustom) ================= */
-function insState() { return S.ins || (S.ins = { mode: 'n', n: 1, anchor: startOfDay(new Date()), cs: '', ce: '' }); }
-function insWindow() {
-  const I = insState();
-  if (I.mode === 'custom' && I.cs && I.ce) return { s: I.cs, e: I.ce, custom: true, cur: I.cs <= ymd(new Date()) && ymd(new Date()) <= I.ce };
-  const a = rangeFor('month', shiftAnchor('month', I.anchor, -(I.n - 1))), b = rangeFor('month', I.anchor), now = startOfDay(new Date());
-  return { s: ymd(a.start), e: ymd(b.end), custom: false, cur: a.start <= now && now <= b.end, a, b, canNext: rangeFor('month', shiftAnchor('month', I.anchor, I.n)).start <= now };
-}
-function insLabel(w) {
-  const I = insState();
-  if (!w.custom && I.n === 1) return rangeLabel('month', w.b, I.anchor);
-  const s = parseYmd(w.s), e = parseYmd(w.e);
-  return s.getFullYear() === e.getFullYear() ? fmtDM(s) + ' – ' + fmtDM(e) + ' ' + e.getFullYear() : fmtDM(s) + ' ' + s.getFullYear() + ' – ' + fmtDM(e) + ' ' + e.getFullYear();
-}
-function insightHTML() {
-  if (!S.txLoaded) return skelHTML();
-  const I = insState(), W = CYCLE.day > 1 ? 'Periode' : 'Bulan', w = insWindow(), label = insLabel(w);
-  const seg = [['1', '1 ' + W], ['3', '3 ' + W], ['6', '6 ' + W], ['custom', 'Kustom']].map(o => `<button data-act="ins-n" data-v="${o[0]}" aria-pressed="${o[0] === 'custom' ? I.mode === 'custom' : (I.mode === 'n' && String(I.n) === o[0])}">${o[1]}</button>`).join('');
-  const head = `<div class="page-head"><div><p class="hello">Rekap Pengeluaran per Kategori</p><h1>Insight</h1></div><div class="seg" role="group" aria-label="Rentang insight">${seg}</div></div>`;
-  const range = w.custom
-    ? `<div class="ins-custom"><label>Dari<input type="date" class="input" id="ins-s" value="${esc(I.cs)}"></label><label>Sampai<input type="date" class="input" id="ins-e" value="${esc(I.ce)}"></label></div>`
-    : `<div class="range"><button class="icon-btn" data-act="ins-prev" aria-label="Rentang sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(label)}</span>${w.cur ? '' : '<button class="back" data-act="ins-today">Kembali ke sekarang</button>'}</div><button class="icon-btn" data-act="ins-next" aria-label="Rentang berikutnya" ${w.canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div>`;
-  const D = insightModel(S.tx, w.s, w.e);
-  let body;
-  if (!D.rows.length) body = `<section class="card"><div class="empty"><h3>Belum Ada Pengeluaran</h3><p>Tidak ada catatan pengeluaran pada ${esc(label)}. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.</p></div></section>`;
-  else {
-    const rows = D.rows.map(r => {
-      const c = catOf(r.id);
-      return `<tr><td>${r.no}</td><td><button type="button" class="cat-lnk" data-act="cat-open" data-id="${esc(r.id)}" data-t="out" data-s="${w.s}" data-e="${w.e}" data-l="${esc(label)}" data-back="insight"><i class="dot" style="background:var(--s${c.slot || 1})"></i><span>${esc(c.label)}</span>${ic('chevr', 15)}</button></td><td>${fmtRp(r.v)}</td><td>${fmtPct(r.pct)}</td></tr>`;
-    }).join('');
-    body = `<section class="card" aria-labelledby="h-ins"><div class="card-h"><h2 id="h-ins">Rekap Pengeluaran per Kategori</h2><span class="sub">${D.rows.length} kategori · ${fmtRp(D.total)}</span></div>
-      <div class="tblwrap ins-wrap"><table class="tbl tbl-ins"><thead><tr><th scope="col">No</th><th scope="col">Kategori</th><th scope="col">${curColHead()}</th><th scope="col">Persentase Pengeluaran terhadap Total</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td></td><td>Total</td><td>${fmtRp(D.total)}</td><td>${fmtPct(100)}</td></tr></tfoot></table></div>
-      <p class="avg-note">Ketuk nama kategori untuk melihat isinya. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.</p></section>`;
-  }
-  return head + range + body;
-}
-VIEWS.insight = { update() { $('#view').innerHTML = welcomeHTML() + subnavHTML('insight') + insightHTML(); } };
 
 /* ================= Tampilan: Transaksi ================= */
 function catOptions() {
@@ -7820,7 +8252,7 @@ const ACT = {
     let s, e, label;
     if (el.dataset.s && el.dataset.e) { s = el.dataset.s; e = el.dataset.e; label = el.dataset.l || ''; }
     else { const P = S.period, A = S.anchor, rg = rangeFor(P, A); s = ymd(rg.start); e = ymd(rg.end); label = rangeLabel(P, rg, A); }
-    S.catView = { id: el.dataset.id, type: el.dataset.t === 'in' ? 'in' : 'out', s, e, label, back: el.dataset.back === 'insight' ? 'insight' : 'rekap', scroll: window.scrollY || 0 };
+    S.catView = { id: el.dataset.id, type: el.dataset.t === 'in' ? 'in' : 'out', s, e, label, back: (el.dataset.back === 'insight' || S.view === 'insight') ? 'insight' : 'rekap', scroll: window.scrollY || 0 };
     S.view = 'kategori'; renderView(); window.scrollTo(0, 0);
   },
   'cat-back'() { const c = S.catView, y = c ? c.scroll : 0; S.view = (c && c.back) || 'rekap'; renderView(); window.scrollTo(0, y || 0); },
@@ -7830,8 +8262,6 @@ const ACT = {
     else { I.mode = 'n'; I.n = Number(v) || 1; }
     VIEWS.insight.update();
   },
-  'ins-prev'() { const I = insState(); I.anchor = shiftAnchor('month', I.anchor, -I.n); VIEWS.insight.update(); },
-  'ins-next'() { const I = insState(); I.anchor = shiftAnchor('month', I.anchor, I.n); VIEWS.insight.update(); },
   'ins-today'() { const I = insState(); I.anchor = startOfDay(new Date()); VIEWS.insight.update(); },
   sub(el) { const st = S.sub || (S.sub = {}), k = el.dataset.k; st[k] = !subOpen(k); if (SUB_KEEP[k]) { try { localStorage.setItem(SUB_KEEP[k], st[k] ? '1' : '0'); } catch (e) { /* abaikan */ } } paintSub(); },
   add() { if (!isAdmin()) openSheet(null); },
@@ -7882,10 +8312,6 @@ const ACT = {
   'pwp-bd'(el, e) { if (e && e.target === el) hidePwPrompt(); },
   'reg-ok'(el) { approveReg(el.dataset.id); },
   'reg-no'(el) { rejectReg(el.dataset.id); },
-  period(el) { S.period = el.dataset.v; S.anchor = startOfDay(new Date()); VIEWS.rekap.update(); enterAnim('enter-soft'); },
-  prev() { S.anchor = shiftAnchor(S.period, S.anchor, -1); VIEWS.rekap.update(); enterAnim('enter-soft'); },
-  next() { S.anchor = shiftAnchor(S.period, S.anchor, 1); VIEWS.rekap.update(); enterAnim('enter-soft'); },
-  today() { S.anchor = startOfDay(new Date()); VIEWS.rekap.update(); enterAnim('enter-soft'); },
   'toggle-all'(el) { S.showAll[el.dataset.k] = !S.showAll[el.dataset.k]; VIEWS.rekap.update(); },
   'tx-open'(el) { const t = S.tx.find(x => x.id === el.dataset.id); if (t) openSheet(t); },
   ftype(el) { S.filters.type = el.dataset.v; S.shown = 60; VIEWS.transaksi.update(); },
@@ -8008,7 +8434,7 @@ document.addEventListener('change', e => {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { idleCheck(); bkTick(); } });
 setInterval(idleCheck, 10000);
 setInterval(bkTick, 60000);
-document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if ($('#duepop')) dueHidePopup(); else if ($('#pwp')) hidePwPrompt(); else if (S.form || S.cf || S.pay || S.hf || S.tf || S.rf) closeSheet(); });
+document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if ($('#duepop')) dueHidePopup(); else if ($('#pwp')) hidePwPrompt(); else if (document.body.classList.contains('more-open')) moreSet(false); else if (S.form || S.cf || S.pay || S.hf || S.tf || S.rf) closeSheet(); });
 let rsT = null;
 window.addEventListener('resize', () => {
   clearTimeout(rsT);
@@ -8017,6 +8443,457 @@ window.addEventListener('resize', () => {
     const w = !!(window.matchMedia && window.matchMedia('(min-width: 1000px)').matches);
     if (w !== S.wide) VIEWS.rekap.update(); else { drawTrend(); drawCmp(); }
   }, 160);
+});
+/* ================= Beranda dan Analisis (Wawasan, Kategori, Tren, Rincian) =================
+   Beranda = ringkasan padat satu layar. Analisis = empat tab: Wawasan (skor, proyeksi, kebiasaan), Kategori (donut, perbandingan, anggaran),
+   Tren (mingguan, 6 periode, kalender, tagihan rutin, dana darurat) dan Rincian (grafik dan kartu lengkap periode Beranda).
+   Hitungan ada di model.js (ana*); file ini hanya menyusun tampilan. */
+const rpC = n => curSym() + ' ' + fmtCompact(n);
+const anaIc = (k, tone) => ({ over: 'alert', projOver: 'alert', projOk: 'check', up: 'trendup', down: 'trenddn', deficit: 'alert', save: 'check' }[k] || (tone === 'warn' ? 'alert' : 'bulb'));
+/* Teks wawasan (judul dan keterangan) dari hasil anaInsights */
+function anaText(it) {
+  const r = fmtRp;
+  switch (it.k) {
+    case 'over': return { t: 'Anggaran sudah terlampaui ' + r(it.over), s: 'Batas anggaran ' + r(it.cap) + (it.date ? ', terlampaui sejak ' + fmtDM(it.date) : '') + '.' };
+    case 'projOver': return { t: 'Anggaran bisa terlampaui sekitar ' + r(it.over) + ' pada ' + fmtDM(it.date), s: 'Dengan laju ' + r(it.rate) + ' per hari. Kurangi sekitar ' + r(it.cut) + ' per hari agar tetap aman.' };
+    case 'projOk': return { t: 'Anggaran aman sampai akhir periode', s: 'Dengan laju ' + r(it.rate) + ' per hari, perkiraan total ' + r(it.proj) + ', masih sisa ' + r(it.room) + '.' };
+    case 'up': return { t: it.label + ' naik ' + it.pct + '% dari ' + it.ref, s: r(it.cur) + ' dibanding ' + r(it.prev) + ' pada tanggal yang sama.' };
+    case 'down': return { t: it.label + ' turun ' + it.pct + '% dari ' + it.ref, s: r(it.cur) + ' dibanding ' + r(it.prev) + '. Hemat ' + r(it.save) + '.' };
+    case 'deficit': return { t: 'Pengeluaran melebihi pemasukan', s: 'Selisihnya ' + r(it.gap) + ' pada periode ini. Cek kategori terbesar di tab Kategori.' };
+    case 'save': return { t: 'Anda menabung ' + it.rate + '% dari pemasukan', s: 'Sekitar ' + r(it.keep) + ' tersisa pada periode ini.' };
+  }
+  return { t: '', s: '' };
+}
+/* ---------- Beranda ---------- */
+function homeCtx() {
+  const P = S.period, A = S.anchor, rg = rangeFor(P, A), s = ymd(rg.start), e = ymd(rg.end);
+  const list = S.tx.filter(t => t.date >= s && t.date <= e && !isXfer(t));
+  const tin = sumType(list, 'in'), tout = sumType(list, 'out');
+  const pr = rangeFor(P, shiftAnchor(P, A, -1)), ps = ymd(pr.start), pe = ymd(pr.end), pl = S.tx.filter(t => t.date >= ps && t.date <= pe);
+  const now = startOfDay(new Date()), nx = rangeFor(P, shiftAnchor(P, A, 1));
+  return {
+    P, A, rg, s, e, list, tin, tout, net: tin - tout, pout: sumType(pl, 'out'), pin: sumType(pl, 'in'), canNext: nx.start <= now, isCur: rg.start <= now && now <= rg.end,
+    label: rangeLabel(P, rg, A), prevWord: P === 'day' ? 'kemarin' : P === 'week' ? 'minggu lalu' : CYCLE.day > 1 ? 'periode lalu' : 'bulan lalu', saldo: kasTotal()
+  };
+}
+/* Baris pilihan periode: panah dan nama periode, lalu Harian / Mingguan / Bulanan */
+function homeBarHTML(C) {
+  const seg = [['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']].map(p => `<button data-act="period" data-v="${p[0]}" aria-pressed="${C.P === p[0]}">${p[1]}</button>`).join('');
+  return `<div class="home-bar"><div class="range"><button class="icon-btn" data-act="prev" aria-label="Periode sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(C.label)}</span>${C.isCur ? '' : '<button class="back" data-act="today">Kembali ke sekarang</button>'}</div><button class="icon-btn" data-act="next" aria-label="Periode berikutnya" ${C.canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div><div class="seg" role="group" aria-label="Periode rekap">${seg}</div></div>`;
+}
+/* Garis saldo kecil di kartu utama (arus bersih kumulatif sampai hari ini) */
+function sparkHTML(v) {
+  if (v.length < 2) return '';
+  const W = 322, H = 56, mn = Math.min.apply(null, v), mx = Math.max.apply(null, v), rg = mx - mn || 1;
+  const pts = v.map((y, i) => [i / (v.length - 1) * (W - 8) + 4, H - 8 - (y - mn) / rg * (H - 22)]);
+  let d = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1);
+  for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], m = ((a[0] + b[0]) / 2).toFixed(1); d += ' C' + m + ' ' + a[1].toFixed(1) + ' ' + m + ' ' + b[1].toFixed(1) + ' ' + b[0].toFixed(1) + ' ' + b[1].toFixed(1); }
+  const last = pts[pts.length - 1], up = v[v.length - 1] >= v[0];
+  return `<div class="hm-spark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${up ? 'Grafik arus bersih periode ini, cenderung naik' : 'Grafik arus bersih periode ini, cenderung turun'}"><defs><linearGradient id="hmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><path d="${d} L${last[0].toFixed(1)} ${H} L${pts[0][0].toFixed(1)} ${H} Z" fill="url(#hmg)"/><path class="ln" d="${d}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg><i class="hm-dot" style="top:${(last[1] / H * 100).toFixed(1)}%"></i></div>`;
+}
+/* Anggaran ringkas di Beranda: cincin persen terpakai; rincian lengkap di Rencana > Anggaran */
+function budgetCompactHTML(bm) {
+  if (bm.basis === 'dana' && bm.cap <= 0 && bm.outM <= 0) return '';
+  const ang = bm.basis === 'anggaran', over = bm.outM > bm.cap, zone = bm.cap > 0 || over ? budZone(bm.used, over) : '', flag = zone === 'warn' ? ' · mendekati batas' : zone === 'danger' && !over ? ' · hampir habis' : '', used = Math.min(100, bm.used);
+  const Cc = 2 * Math.PI * 22, sub = bm.left >= 0 ? 'Sisa ' + fmtRp(bm.left) + (bm.isCur && bm.daysLeft > 0 ? ' untuk ' + bm.daysLeft + ' hari lagi' : '') : 'Lewat ' + fmtRp(-bm.left) + ' dari batas';
+  const ring = `<div class="meter bud-ring ${over ? 'over' : zone}" role="progressbar" aria-label="${ang ? 'Anggaran terpakai' : 'Dana terpakai'}${flag.replace(' · ', ', ')}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(used)}"><svg width="54" height="54" viewBox="0 0 54 54" aria-hidden="true"><circle class="rg-bg" cx="27" cy="27" r="22" fill="none" stroke-width="7"/><circle class="rg-fg" cx="27" cy="27" r="22" fill="none" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(Cc * used / 100).toFixed(1)} ${Cc.toFixed(1)}" transform="rotate(-90 27 27)"/></svg><b>${Math.round(bm.used)}%</b></div>`;
+  const link = !ang ? ` <button type="button" class="bud-link" data-act="nav" data-v="anggaran">Atur anggaran</button>` : '';
+  return `<div class="hm-bud">${ring}<div class="hm-bud-t"><div class="bud-head"><span class="bud-name">${ang ? 'Anggaran' : 'Dana tersedia'} ${esc(bm.label)}</span><span class="${over ? 'neg' : zone}">${fmtPct(bm.used)} terpakai${flag}</span></div><div class="hm-sub">${esc(sub)}${link}</div></div><button type="button" class="icon-btn" data-act="nav" data-v="anggaran" aria-label="Buka anggaran">${ic('chevr', 18)}</button></div>`;
+}
+function homeTeaserHTML(C) {
+  const AP = anaPeriod(S.tx, C.P === 'month' ? C.A : new Date(), S.settings, new Date()), it = anaInsights(AP)[0], tx = it ? anaText(it) : null;
+  return `<button type="button" class="hm-tease" data-act="nav" data-v="insight"><span class="hm-ic tone-${it ? it.tone : 'info'}">${ic(it ? anaIc(it.k, it.tone) : 'bulb', 21)}</span><span class="hm-tt"><span class="hm-t">${esc(tx ? tx.t : 'Lihat analisis pengeluaran dan tren Anda')}</span><span class="hm-s">Lihat analisis</span></span>${ic('chevr', 18)}</button>`;
+}
+function rekapHTML() {
+  if (!S.txLoaded) return skelHTML();
+  const C = homeCtx(), P = C.P, A = C.A, tin = C.tin, tout = C.tout, net = C.net, now = new Date();
+  S.bk = buildBuckets(P, A);
+  let delta = '';
+  if (C.pout > 0) { const ch = (tout - C.pout) / C.pout * 100; if (Math.abs(ch) >= 0.5) delta = `<p class="delta ${ch > 0 ? 'neg' : 'pos'}">Pengeluaran ${ch > 0 ? 'naik' : 'turun'} ${fmtPct(Math.abs(ch))} dari ${C.prevWord}</p>`; }
+  const bmx = P === 'month' ? budgetModel(S.tx, A, S.settings, now) : null;
+  const budget = bmx ? budgetCompactHTML(bmx) : '', budAdd = bmx ? budAddCard(bmx) : '';
+  const demo = S.demoCount > 0 ? `<div class="banner" style="margin-bottom:14px">${ic('info', 18)}<span>Sebagian catatan di sini adalah data contoh.</span><button class="btn btn-ghost btn-sm" data-act="demo-del">${S.armed && S.armed.key === 'demo' ? 'Yakin hapus?' : 'Hapus data contoh'}</button></div>` : '';
+  const shapes = '<svg class="hm-shape" width="120" height="110" viewBox="0 0 120 110" aria-hidden="true"><path d="M10 38C10 32 14 28 19 26L70 8C77 5.6 84 10 84 17V62L26 82C17 85 10 79 10 71Z" fill="#01A1FA" fill-opacity=".28"/><path d="M44 52 98 33C105 30.6 112 35 112 42V86C112 91 109 95 104 97L52 116C48 117.5 44 114.5 44 110Z" fill="#1CCE8A" fill-opacity=".34"/></svg>';
+  const hero = `<section class="hero hero-home" aria-label="Ringkasan saldo"><div class="hm-card">${shapes}<div class="eyebrow">Saldo keseluruhan</div><div class="big">${C.saldo < 0 ? '-' : ''}<span class="rp">${curSym()}</span>${dots(C.saldo)}</div>${sparkHTML(anaSpark(S.bk, now))}<div class="hero-cap">Ringkasan ${esc(C.label)}</div></div>
+    <div class="hero-stats"><div class="hstat hs-in"><span class="k">${ic('down', 15)} Pemasukan</span><span class="v">${fmtRp(tin)}</span></div><div class="hstat hs-out"><span class="k">${ic('up', 15)} Pengeluaran</span><span class="v">${fmtRp(tout)}</span></div><div class="hstat hs-net"><span class="k">${ic('scale', 15)} Selisih</span><span class="v ${net < 0 ? 'neg' : net > 0 ? 'pos' : ''}">${net > 0 ? '+' : ''}${fmtRp(net)}</span></div></div>${delta}${S.tx.length ? homeTeaserHTML(C) : ''}${budget}</section>`;
+  const head = `<h1 class="sr-only">Beranda</h1>` + homeBarHTML(C);
+  if (S.tx.length === 0) {
+    return head + hero + `<section class="card" style="margin-top:16px"><div class="empty"><h3>SaKu Masih Kosong</h3><p>Catat pemasukan atau pengeluaran pertama Anda. Foto struk bisa dipakai untuk mengisi daftar barang.</p><div class="acts"><button class="btn btn-primary" data-act="add">${ic('edit', 18)} Catat transaksi</button><button class="btn btn-ghost" data-act="demo-add">Lihat dengan data contoh</button></div></div></section>`;
+  }
+  const recent = S.tx.filter(t => !isXfer(t)).slice(0, 3);
+  const rec = `<section class="card hm-recent" aria-labelledby="h-rec"><div class="card-h"><h2 id="h-rec">Transaksi terbaru</h2><button type="button" class="lnk" data-act="nav" data-v="transaksi">Lihat semua</button></div>${recent.length ? recent.map(t => txRow(t)).join('') : '<div class="empty-s">Belum ada transaksi.</div>'}</section>`;
+  return head + demo + hero + budAdd + rec;
+}
+VIEWS.rekap = { update() {
+  const hadFocus = !!(document.activeElement && document.activeElement.id === 'ba-amt');
+  $('#view').innerHTML = welcomeHTML() + rekapHTML();
+  if (hadFocus) { const i = $('#ba-amt'); if (i && i.focus) i.focus(); }
+} };
+
+/* ---------- Analisis: keadaan, kerangka, tab ---------- */
+function insState() { return S.ins || (S.ins = { mode: 'n', n: 1, anchor: startOfDay(new Date()), cs: '', ce: '' }); }
+function anaState() { return S.ana || (S.ana = { tab: 'wawasan' }); }
+const insStep = () => (anaState().tab === 'kat' ? insState().n : 1);
+function insWindow() {
+  const I = insState();
+  if (I.mode === 'custom' && I.cs && I.ce) return { s: I.cs, e: I.ce, custom: true, cur: I.cs <= ymd(new Date()) && ymd(new Date()) <= I.ce };
+  const a = rangeFor('month', shiftAnchor('month', I.anchor, -(I.n - 1))), b = rangeFor('month', I.anchor), now = startOfDay(new Date());
+  return { s: ymd(a.start), e: ymd(b.end), custom: false, cur: a.start <= now && now <= b.end, a, b, canNext: rangeFor('month', shiftAnchor('month', I.anchor, I.n)).start <= now };
+}
+function insLabel(w) {
+  const I = insState();
+  if (!w.custom && I.n === 1) return rangeLabel('month', w.b, I.anchor);
+  const s = parseYmd(w.s), e = parseYmd(w.e);
+  return s.getFullYear() === e.getFullYear() ? fmtDM(s) + ' – ' + fmtDM(e) + ' ' + e.getFullYear() : fmtDM(s) + ' ' + s.getFullYear() + ' – ' + fmtDM(e) + ' ' + e.getFullYear();
+}
+const ANA_TABS = [['wawasan', 'Wawasan'], ['kat', 'Kategori'], ['tren', 'Tren'], ['rinci', 'Rincian']];
+function anaTabsHTML() {
+  const t = anaState().tab;
+  return `<div class="ana-tabs" role="tablist" aria-label="Bagian analisis">${ANA_TABS.map(x => `<button type="button" role="tab" data-act="ana-tab" data-v="${x[0]}" aria-selected="${x[0] === t}">${x[1]}</button>`).join('')}</div>`;
+}
+/* Pilih satu periode untuk tab Wawasan dan Tren */
+function anaStepHTML() {
+  const I = insState(), rg = rangeFor('month', I.anchor), now = startOfDay(new Date()), cur = rg.start <= now && now <= rg.end, canNext = rangeFor('month', shiftAnchor('month', I.anchor, 1)).start <= now;
+  return `<div class="range"><button class="icon-btn" data-act="ins-prev" aria-label="Periode sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(rangeLabel('month', rg, I.anchor))}</span>${cur ? '' : '<button class="back" data-act="ins-today">Kembali ke sekarang</button>'}</div><button class="icon-btn" data-act="ins-next" aria-label="Periode berikutnya" ${canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div>`;
+}
+const anaEmpty = (h, p) => `<section class="card"><div class="empty"><h3>${h}</h3><p>${p}</p></div></section>`;
+const anaNote = t => `<p class="ana-note">${t}</p>`;
+const anaCard = (title, sub, body) => `<section class="card ana-card"><div class="ana-ch"><h2>${title}</h2>${sub ? `<span class="sub">${sub}</span>` : ''}</div>${body}</section>`;
+/* "1–21 November" atau "25 Okt – 21 Nov" untuk bagian periode yang sudah berjalan */
+function anaSpan(rg, el) {
+  const a = rg.start, b = addDays(rg.start, Math.max(1, el) - 1);
+  return a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear() ? a.getDate() + '–' + b.getDate() + ' ' + MONTHS[b.getMonth()] : fmtDM(a) + ' – ' + fmtDM(b);
+}
+const anaDow = a => a.map(i => DAYS[i]).join(' dan ');
+
+/* ---------- Tab Wawasan ---------- */
+function anaWawasanHTML() {
+  const I = insState(), now = new Date(), P = anaPeriod(S.tx, I.anchor, S.settings, now), bm = P.bm, per = CYCLE.day > 1 ? 'periode' : 'bulan';
+  if (!P.has) return anaEmpty('Belum Ada Catatan', 'Tidak ada pemasukan atau pengeluaran pada ' + esc(rangeLabel('month', P.rg, I.anchor)) + '. Catat transaksi untuk melihat skor dan wawasan.');
+  const ps = anaPrevScore(S.tx, I.anchor, S.settings, now), pcyc = cycleOf(addDays(P.rg.start, -1)), plab = cycleLabel(pcyc);
+  let head;
+  if (P.saveRate != null && P.saveRate >= 0) head = 'Anda menabung ' + fmtPct(P.saveRate) + ' dari pemasukan ' + (P.isCur ? per + ' ini' : 'periode ini') + '.';
+  else if (P.saveRate != null) head = 'Pengeluaran melebihi pemasukan pada periode ini.';
+  else if (P.tout > 0) head = 'Belum ada pemasukan tercatat pada periode ini.';
+  else head = 'Ringkasan keuangan periode ini.';
+  const d = P.score != null && ps != null ? P.score - ps : null;
+  const cmpT = d == null ? '' : d > 0 ? 'Naik ' + d + ' poin dari ' + plab + '.' : d < 0 ? 'Turun ' + (-d) + ' poin dari ' + plab + '.' : 'Sama seperti ' + plab + '.';
+  const Cc = 2 * Math.PI * 37, sc = P.score;
+  const ring = sc == null ? '' : `<div class="sc-ring"><svg width="92" height="92" viewBox="0 0 92 92" role="img" aria-label="Skor keuangan ${sc} dari 100"><circle cx="46" cy="46" r="37" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="9"/><circle cx="46" cy="46" r="37" fill="none" stroke="#1CCE8A" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(Cc * sc / 100).toFixed(1)} ${Cc.toFixed(1)}" transform="rotate(-90 46 46)"/></svg><span class="sc-n"><b>${sc}</b><small>dari 100</small></span></div>`;
+  const subs = P.subs.map(x => `<div class="sc-row"><span>${x[0]}</span><div class="sc-bar"><i style="width:${x[1]}%"></i></div><b>${x[1]}</b></div>`).join('');
+  const hero = `<section class="ana-hero" aria-label="Skor keuangan"><div class="ah-top"><div class="ah-t"><span class="ah-k">Ringkasan ${esc(anaSpan(P.rg, P.el))}</span><span class="ah-h">${esc(head)}</span>${cmpT ? `<span class="ah-s">${esc(cmpT)}</span>` : ''}</div>${ring}</div>${subs ? `<div class="ah-subs">${subs}</div>` : ''}</section>`;
+  const kpi = (k, v, s, tone) => `<div class="kpi"><span class="k">${k}</span><b>${v}</b><span class="s ${tone || ''}">${s}</span></div>`;
+  const pdTone = P.perDayPct == null || Math.abs(P.perDayPct) < 3 ? '' : P.perDayPct > 0 ? 'warn' : 'good';
+  const kpis = '<div class="kpi-grid">' + [
+    kpi('Saldo ' + (P.isCur ? per + ' ini' : 'periode ini'), fmtRp(P.net), 'Masuk ' + rpC(P.tin) + ' − keluar ' + rpC(P.tout)),
+    kpi('Rata-rata per hari', fmtRp(Math.round(P.perDay)), P.perDayPct == null ? 'tanpa pembanding' : (P.perDayPct > 0 ? '▲ ' : P.perDayPct < 0 ? '▼ ' : '') + fmtPct(Math.abs(P.perDayPct)) + ' dari ' + plab, pdTone),
+    P.proj != null ? kpi('Proyeksi ' + fmtDM(P.rg.end), fmtRp(P.proj), bm.cap > 0 ? (P.proj > bm.cap ? rpC(P.proj - bm.cap) + ' di atas ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana') : rpC(bm.cap - P.proj) + ' di bawah ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana')) : 'perkiraan total', bm.cap > 0 ? (P.proj > bm.cap ? 'warn' : 'good') : '') : kpi('Total pengeluaran', fmtRp(P.tout), P.el + ' hari'),
+    bm.cap > 0 ? kpi(bm.basis === 'anggaran' ? 'Sisa anggaran' : 'Sisa dana', fmtRp(Math.max(0, bm.left)), bm.left < 0 ? 'melebihi ' + fmtRp(-bm.left) : bm.isCur && bm.daysLeft > 0 ? bm.daysLeft + ' hari lagi' + (bm.perDay != null ? ' · ' + fmtRp(bm.perDay) + ' per hari' : '') : 'periode selesai', bm.left < 0 ? 'warn' : '') : kpi('Anggaran', 'Belum diatur', '<button type="button" class="bud-link" data-act="nav" data-v="anggaran">Atur anggaran</button>')
+  ].join('') + '</div>';
+  const ins = anaInsights(P).map(it => { const x = anaText(it); return `<div class="ins-card"><span class="hm-ic tone-${it.tone}">${ic(anaIc(it.k, it.tone), 21)}</span><span class="ins-tt"><span class="ins-t">${esc(x.t)}</span><span class="ins-s">${esc(x.s)}</span></span></div>`; }).join('');
+  const insBlock = ins ? `<h2 class="ana-h2">Wawasan untuk Anda</h2>${ins}` : '';
+  return hero + kpis + insBlock + anaProjHTML(P) + anaHabitHTML(P);
+}
+/* Grafik proyeksi: pengeluaran kumulatif sampai hari ini (garis tegas), perkiraan akhir periode (putus-putus), dan batas anggaran */
+function anaProjHTML(P) {
+  const bm = P.bm, N = P.N, W = 326, x0 = 4, x1 = 322, yb = 120, yt = 21;
+  if (P.el < 1) return '';
+  const hasCap = bm.cap > 0, top = Math.max(1, P.proj || 0, P.cumToday, hasCap ? bm.cap : 0) * 1.0, X = i => x0 + (x1 - x0) * i / Math.max(1, N - 1), Y = v => yb - (v / top) * (yb - yt);
+  const pts = []; for (let i = 0; i < P.el; i++) pts.push(X(i).toFixed(1) + ',' + Y(P.cum[i]).toFixed(1));
+  const xt = X(P.el - 1), yt0 = Y(P.cumToday);
+  const mid = top / 2;
+  let g = `<line x1="0" y1="${Y(mid).toFixed(1)}" x2="${W}" y2="${Y(mid).toFixed(1)}" class="gl"/><line x1="0" y1="${yb}" x2="${W}" y2="${yb}" class="bl"/>`;
+  if (hasCap) g += `<line x1="0" y1="${Y(bm.cap).toFixed(1)}" x2="${W}" y2="${Y(bm.cap).toFixed(1)}" class="capl"/>`;
+  if (P.isCur && P.el < N) g += `<line x1="${xt.toFixed(1)}" y1="14" x2="${xt.toFixed(1)}" y2="${yb}" class="tdl"/>`;
+  g += `<polygon points="${x0},${yb} ${pts.join(' ')} ${xt.toFixed(1)},${yb}" class="ar"/><polyline points="${pts.join(' ')}" class="ln"/>`;
+  let endV = null;
+  if (P.proj != null) { endV = P.proj; g += `<polyline points="${xt.toFixed(1)},${yt0.toFixed(1)} ${(x1 - 4).toFixed(1)},${Y(P.proj).toFixed(1)}" class="ln dsh"/><circle cx="${(x1 - 4).toFixed(1)}" cy="${Y(P.proj).toFixed(1)}" r="5" class="dt ${hasCap && P.proj > bm.cap ? 'bad' : ''}"/>`; }
+  if (P.isCur && P.el < N) g += `<circle cx="${xt.toFixed(1)}" cy="${yt0.toFixed(1)}" r="5" class="dt"/>`;
+  const lab = (x, y, t, cls, a) => `<text x="${x}" y="${y}" class="${cls}"${a ? ` text-anchor="${a}"` : ''}>${esc(t)}</text>`;
+  if (hasCap) g += lab(4, Math.max(11, Y(bm.cap) - 7), 'Batas ' + rpC(bm.cap), 'tv bad');
+  g += lab(Math.min(xt, x1 - 8).toFixed(1), (yt0 - 7 < 12 ? yt0 + 17 : yt0 - 7).toFixed(1), rpC(P.cumToday), 'tv', 'end');
+  if (endV != null) g += lab(322, Math.max(11, Y(endV) - 8).toFixed(1), '≈ ' + rpC(endV), 'tv', 'end');
+  g += lab(0, (Y(mid) - 3).toFixed(1), fmtCompact(mid), 'ax') + lab(4, 142, fmtDM(P.rg.start), 'ax') + (P.isCur && P.el < N ? lab(xt.toFixed(1), 142, 'Hari ini', 'ax', 'middle') : '') + lab(326, 142, fmtDM(P.rg.end), 'ax', 'end');
+  const alt = 'Pengeluaran kumulatif: ' + fmtRp(P.cumToday) + ' sampai tanggal ' + P.el + (P.proj != null ? ', diperkirakan ' + fmtRp(P.proj) + ' pada akhir periode' : '') + (hasCap ? ', batas ' + fmtRp(bm.cap) : '');
+  const legend = `<div class="ana-leg"><span><i class="lg-ln"></i>Nyata</span>${P.proj != null ? '<span><i class="lg-ds"></i>Perkiraan</span>' : ''}${hasCap ? '<span><i class="lg-cap"></i>Batas ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana') + '</span>' : ''}</div>`;
+  const txt = P.proj != null ? 'Dengan laju sekarang, pengeluaran akhir periode sekitar ' + fmtRp(P.proj) + (hasCap ? (P.proj > bm.cap ? ', atau ' + fmtRp(P.proj - bm.cap) + ' di atas ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana') + '.' : ', masih ' + fmtRp(bm.cap - P.proj) + ' di bawah ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana') + '.') : '.') : 'Total pengeluaran periode ini ' + fmtRp(P.tout) + '.';
+  return anaCard('Proyeksi pengeluaran', 'kumulatif', legend + `<svg class="ana-svg" viewBox="0 0 ${W} 150" role="img" aria-label="${esc(alt)}">${g}</svg>` + anaNote(esc(txt)));
+}
+/* Kebiasaan belanja: rata-rata pengeluaran per hari dalam seminggu */
+function anaHabitHTML(P) {
+  if (P.wmax <= 0 || P.el < 7) return '';
+  const W = 326, base = 120, top = 28, bw = 22, step = W / 7, Y = v => base - v / P.wmax * (base - top);
+  let g = `<line x1="0" y1="${base}" x2="${W}" y2="${base}" class="bl"/>`;
+  P.weekday.forEach((w, i) => {
+    const cx = step * i + step / 2, y = Y(w.v), hot = P.wTop.indexOf(w.dow) >= 0;
+    if (w.v > 0) g += `<path d="${barPath(cx - bw / 2, y, bw, base - y, 4)}" class="${hot ? 'bar hot' : 'bar'}"/><text x="${cx.toFixed(1)}" y="${(y - 6).toFixed(1)}" class="tv" text-anchor="middle">${esc(fmtCompact(w.v))}</text>`;
+    g += `<text x="${cx.toFixed(1)}" y="138" class="ax" text-anchor="middle">${DAYS_S[w.dow]}</text>`;
+  });
+  const alt = 'Rata-rata pengeluaran per hari: ' + P.weekday.map(w => DAYS[w.dow] + ' ' + fmtRp(Math.round(w.v))).join(', ');
+  const top2 = P.wTop.slice(0, 2), low = P.wLow.slice(0, 1);
+  const txt = anaDow(top2) + ' paling boros, rata-rata ' + fmtRp(Math.round(P.wmax)) + ' per hari.' + (low.length && low[0] !== top2[0] ? ' ' + anaDow(low) + ' paling hemat, hanya ' + fmtRp(Math.round(P.wmin)) + ' per hari.' : '');
+  return anaCard('Kebiasaan belanja', 'rata-rata per hari', `<svg class="ana-svg" viewBox="0 0 ${W} 146" role="img" aria-label="${esc(alt)}">${g}</svg>` + anaNote(esc(txt)));
+}
+
+/* ---------- Tab Kategori ---------- */
+function donutHTML(rows, total) {
+  const Cc = 2 * Math.PI * 50; let off = 0, segs = '';
+  rows.forEach((r, i) => { const part = Cc * r.v / total, len = Math.max(0.5, part - 2); segs += `<circle cx="70" cy="70" r="50" stroke="var(--ana-${i + 1})" stroke-dasharray="${len.toFixed(2)} ${(Cc - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`; off += part; });
+  const alt = 'Porsi pengeluaran: ' + rows.map(r => r.label + ' ' + fmtPct(r.v / total * 100)).join(', ');
+  return `<div class="donut"><svg width="156" height="156" viewBox="0 0 140 140" role="img" aria-label="${esc(alt)}"><g fill="none" stroke-width="18" transform="rotate(-90 70 70)">${segs}</g></svg><span class="dn-c"><b>${esc(rpC(total))}</b><small>keluar</small></span></div>`;
+}
+function anaKatHTML() {
+  const I = insState(), w = insWindow(), label = insLabel(w), W = CYCLE.day > 1 ? 'Periode' : 'Bulan', now = new Date();
+  const seg = [['1', '1 ' + W], ['3', '3 ' + W], ['6', '6 ' + W], ['custom', 'Kustom']].map(o => `<button data-act="ins-n" data-v="${o[0]}" aria-pressed="${o[0] === 'custom' ? I.mode === 'custom' : (I.mode === 'n' && String(I.n) === o[0])}">${o[1]}</button>`).join('');
+  const range = w.custom
+    ? `<div class="ins-custom"><label>Dari<input type="date" class="input" id="ins-s" value="${esc(I.cs)}"></label><label>Sampai<input type="date" class="input" id="ins-e" value="${esc(I.ce)}"></label></div>`
+    : `<div class="range"><button class="icon-btn" data-act="ins-prev" aria-label="Rentang sebelumnya">${ic('chevl', 20)}</button><div class="rl" aria-live="polite"><span>${esc(label)}</span>${w.cur ? '' : '<button class="back" data-act="ins-today">Kembali ke sekarang</button>'}</div><button class="icon-btn" data-act="ins-next" aria-label="Rentang berikutnya" ${w.canNext ? '' : 'disabled'}>${ic('chevr', 20)}</button></div>`;
+  const ctl = `<div class="seg ana-seg" role="group" aria-label="Rentang insight">${seg}</div>` + range;
+  const D = insightModel(S.tx, w.s, w.e);
+  if (!D.rows.length) return ctl + `<section class="card"><div class="empty"><h3>Belum Ada Pengeluaran</h3><p>Tidak ada catatan pengeluaran pada ${esc(label)}. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.</p></div></section>`;
+  const gr = anaGroups(S.tx.filter(t => t.date >= w.s && t.date <= w.e)), tot = gr.reduce((a, g) => a + g.v, 0);
+  let rows = gr.slice(0, 5); if (gr.length > 5) rows.push({ id: 'rest', label: 'Lainnya', v: gr.slice(5).reduce((a, g) => a + g.v, 0) });
+  const list = rows.map((r, i) => `<div class="lg-row"><i class="sw" style="background:var(--ana-${i + 1})"></i><span class="nm">${esc(r.label)}</span><span class="am">${fmtRp(r.v)}</span><b>${fmtPct(r.v / tot * 100)}</b></div>`).join('');
+  const donut = anaCard('Ke mana uang pergi', fmtRp(tot), donutHTML(rows, tot) + `<div class="lg-list">${list}</div>`);
+  /* perbandingan dengan rentang sebelumnya */
+  const cyc = !w.custom && I.n === 1, C = anaCompare(S.tx, w.s, w.e, now, cyc);
+  let cmp = '';
+  if (C.has) {
+    const bad = (t, p) => { const tn = anaTone(p, 1); return `<span class="dl ${tn}">${p == null ? 'Baru' : (p > 0 ? '▲ ' : p < 0 ? '▼ ' : '') + fmtPct(Math.abs(p))}</span>`; };
+    const tr = C.rows.slice(0, 8).map(r => `<tr><td><span class="nm">${esc(r.label)}</span></td><td>${esc(fmtCompact(r.prev))}</td><td>${esc(fmtCompact(r.cur))}</td><td>${r.prev <= 0 && r.cur <= 0 ? '–' : r.prev <= 0 ? '<span class="dl new">Baru</span>' : bad(r.diff, r.pct)}</td></tr>`).join('');
+    const ttl = cyc ? 'Dibanding ' + C.plabel : 'Dibanding rentang sebelumnya', sub = (cyc ? anaSpan({ start: parseYmd(C.s) }, C.len) : fmtDM(parseYmd(C.s)) + ' – ' + fmtDM(parseYmd(C.e)));
+    cmp = anaCard(ttl, esc(sub), `<div class="tblwrap"><table class="ana-tbl"><thead><tr><th scope="col">Kategori</th><th scope="col">${esc(cyc ? (C.pshort || 'Sebelum') : 'Sebelum')}</th><th scope="col">Sekarang</th><th scope="col">Selisih</th></tr></thead><tbody>${tr}</tbody><tfoot><tr><td>Total</td><td>${esc(fmtCompact(C.prev))}</td><td>${esc(fmtCompact(C.cur))}</td><td>${C.prev > 0 ? bad(C.diff, C.pct) : '–'}</td></tr></tfoot></table></div>`);
+  }
+  /* anggaran per kategori (hanya untuk satu periode) */
+  let bud = '';
+  if (cyc) {
+    const cb = catBudgetModel(S.tx, I.anchor, S.settings, now);
+    if (cb.has) {
+      const rowsB = cb.rows.slice(0, 10).map(b => {
+        const z = b.over ? 'danger' : b.used >= BUD_WARN ? 'warn' : '', used = Math.min(100, b.used);
+        const warn = b.over ? `<span class="wn bad">${ic('alert', 12)}Melebihi ${esc(fmtRp(-b.left))}</span>` : z === 'warn' ? `<span class="wn">${ic('alert', 12)}${b.used > BUD_DANGER ? 'Hampir habis' : 'Mendekati batas'}, sisa ${esc(fmtRp(b.left))}</span>` : '';
+        return `<div class="cb-row"><div class="cb-t"><span>${esc(catOf(b.id).label)}</span><span class="am">${esc(fmtRp(b.spent))} / ${esc(fmtRp(b.amt))}</span></div><div class="cb-line"><div class="cb-bar ${z}"><i style="width:${used.toFixed(1)}%"></i></div><b>${fmtPct(b.used)}</b></div>${warn}</div>`;
+      }).join('');
+      bud = anaCard('Anggaran per kategori', esc(rpC(cb.outM) + ' / ' + rpC(cb.base)), rowsB);
+    } else bud = anaCard('Anggaran per kategori', '', `<p class="ana-note">Belum ada anggaran per kategori. <button type="button" class="bud-link" data-act="nav" data-v="anggaran">Atur anggaran</button></p>`);
+  }
+  /* tabel rekap per kategori (membuka isi kategori) */
+  const trows = D.rows.map(r => {
+    const c = catOf(r.id);
+    return `<tr><td>${r.no}</td><td><button type="button" class="cat-lnk" data-act="cat-open" data-id="${esc(r.id)}" data-t="out" data-s="${w.s}" data-e="${w.e}" data-l="${esc(label)}" data-back="insight"><i class="dot" style="background:var(--s${c.slot || 1})"></i><span>${esc(c.label)}</span>${ic('chevr', 15)}</button></td><td>${fmtRp(r.v)}</td><td>${fmtPct(r.pct)}</td></tr>`;
+  }).join('');
+  const tbl = `<section class="card" aria-labelledby="h-ins"><div class="card-h"><h2 id="h-ins">Rekap Pengeluaran per Kategori</h2><span class="sub">${D.rows.length} kategori · ${fmtRp(D.total)}</span></div>
+      <div class="tblwrap ins-wrap"><table class="tbl tbl-ins"><thead><tr><th scope="col">No</th><th scope="col">Kategori</th><th scope="col">${curColHead()}</th><th scope="col">Persentase Pengeluaran terhadap Total</th></tr></thead><tbody>${trows}</tbody><tfoot><tr><td></td><td>Total</td><td>${fmtRp(D.total)}</td><td>${fmtPct(100)}</td></tr></tfoot></table></div>
+      <p class="avg-note">Ketuk nama kategori untuk melihat isinya. Setoran dan penarikan simpanan tidak dihitung sebagai pengeluaran.</p></section>`;
+  return ctl + donut + cmp + bud + tbl;
+}
+
+/* ---------- Tab Tren ---------- */
+function anaWeeksHTML(T) {
+  if (!T.weeks.length) return '';
+  const n = T.weeks.length, W = 326, yb = 130, yt = 20, mx = Math.max.apply(null, T.weeks.map(w => Math.max(w.cur, w.prev)).concat([1])), top = niceMax(mx), Y = v => yb - v / top * (yb - yt), bw = Math.min(24, W / n / 2 - 8);
+  let g = `<line x1="0" y1="${yt}" x2="${W}" y2="${yt}" class="gl"/><line x1="0" y1="${(yb + yt) / 2}" x2="${W}" y2="${(yb + yt) / 2}" class="gl"/><line x1="0" y1="${yb}" x2="${W}" y2="${yb}" class="bl"/>`;
+  T.weeks.forEach((w, i) => {
+    const cx = W / n * (i + 0.5), e = w.partial ? addDays(w.from, w.days - 1) : w.to;
+    if (w.prev > 0) g += `<path d="${barPath(cx - bw - 2, Y(w.prev), bw, yb - Y(w.prev), 4)}" class="bar soft"/>`;
+    if (w.cur > 0) g += `<path d="${barPath(cx + 2, Y(w.cur), bw, yb - Y(w.cur), 4)}" class="bar hot"/><text x="${(cx + 2 + bw / 2).toFixed(1)}" y="${(Y(w.cur) - 6).toFixed(1)}" class="tv" text-anchor="middle">${esc(fmtCompact(w.cur))}</text>`;
+    g += `<text x="${cx.toFixed(1)}" y="148" class="ax" text-anchor="middle">${w.from.getDate()}–${e.getDate()} ${MONTHS_S[e.getMonth()]}</text>`;
+  });
+  const hi = T.weeks.reduce((m, w, i) => (w.cur > T.weeks[m].cur ? i : m), 0), h = T.weeks[hi], pc = cycleOf(addDays(T.rg.start, -1));
+  const txt = h.cur > 0 ? 'Minggu ke-' + (hi + 1) + ' paling tinggi, ' + fmtRp(h.cur) + (h.prev > 0 ? ', ' + (h.cur >= h.prev ? 'naik ' : 'turun ') + fmtPct(Math.abs((h.cur - h.prev) / h.prev * 100)) + ' dari minggu yang sama di ' + cycleLabel(pc) + '.' : '.') : '';
+  const alt = 'Pengeluaran per minggu: ' + T.weeks.map((w, i) => 'minggu ' + (i + 1) + ' ' + fmtRp(w.cur) + ' (sebelumnya ' + fmtRp(w.prev) + ')').join(', ');
+  const leg = `<div class="ana-leg"><span><i class="sw soft"></i>${esc(cycleLabel(pc))}</span><span><i class="sw hot"></i>${esc(cycleLabel(T.rg))}</span></div>`;
+  return anaCard('Pengeluaran per minggu', '', leg + `<svg class="ana-svg" viewBox="0 0 ${W} 156" role="img" aria-label="${esc(alt)}">${g}</svg>` + (txt ? anaNote(esc(txt)) : ''));
+}
+function anaFlowHTML(T) {
+  const m = T.months; if (m.length < 2 || !m.some(x => x.in > 0 || x.out > 0)) return '';
+  const W = 326, x0 = 36, x1 = 296, yb = 124, yt = 14, mx = Math.max.apply(null, m.map(x => Math.max(x.in, x.out)).concat([1])), top = niceMax(mx), Y = v => yb - v / top * (yb - yt), X = i => x0 + (x1 - x0) * i / (m.length - 1);
+  const line = (k, cls) => {
+    const full = m.slice(0, m.length - (m[m.length - 1].partial ? 1 : 0)).map((x, i) => X(i).toFixed(1) + ',' + Y(x[k]).toFixed(1)).join(' ');
+    let s = `<polyline points="${full}" class="ln ${cls}"/>`;
+    if (m[m.length - 1].partial && m.length > 1) { const a = m[m.length - 2], b = m[m.length - 1]; s += `<polyline points="${X(m.length - 2).toFixed(1)},${Y(a[k]).toFixed(1)} ${X(m.length - 1).toFixed(1)},${Y(b[k]).toFixed(1)}" class="ln ${cls} dsh"/>`; }
+    return s + `<circle cx="${X(m.length - 1).toFixed(1)}" cy="${Y(m[m.length - 1][k]).toFixed(1)}" r="4.5" class="dt ${cls}"/>`;
+  };
+  const L = m[m.length - 1], yi = Y(L.in), yo = Y(L.out), inUp = yi <= yo;
+  let g = `<line x1="${x0}" y1="${yt}" x2="${W}" y2="${yt}" class="gl"/><line x1="${x0}" y1="${(yb + yt) / 2}" x2="${W}" y2="${(yb + yt) / 2}" class="gl"/><line x1="${x0}" y1="${yb}" x2="${W}" y2="${yb}" class="bl"/>`;
+  g += [[yt, top], [(yb + yt) / 2, top / 2], [yb, 0]].map(a => `<text x="0" y="${a[0] + 4}" class="ax">${a[1] === 0 ? '0' : esc(fmtCompact(a[1]))}</text>`).join('');
+  g += line('in', 'in') + line('out', 'out');
+  const clY = v => Math.max(yt + 8, Math.min(yb - 7, v));
+  let lyI = clY(inUp ? yi - 10 : yi + 17), lyO = clY(inUp ? yo + 17 : yo - 10);
+  if (Math.abs(lyI - lyO) < 13) { if (lyI <= lyO) lyO = lyI + 13; else lyI = lyO + 13; }
+  g += `<text x="322" y="${lyI.toFixed(1)}" class="tv" text-anchor="end">Masuk ${esc(fmtCompact(L.in))}${L.partial ? '*' : ''}</text><text x="322" y="${lyO.toFixed(1)}" class="tv" text-anchor="end">Keluar ${esc(fmtCompact(L.out))}${L.partial ? '*' : ''}</text>`;
+  g += m.map((x, i) => `<text x="${X(i).toFixed(1)}" y="144" class="ax" text-anchor="middle">${esc(x.short)}</text>`).join('');
+  const en = LANG === 'en', alt = (en ? 'Cash flow ' + m.length + ' periods: ' : 'Arus kas ' + m.length + ' periode: ') + m.map(x => x.short + (en ? ' in ' : ' masuk ') + fmtRp(x.in) + (en ? ' out ' : ' keluar ') + fmtRp(x.out)).join('; ');
+  const leg = `<div class="ana-leg"><span><i class="lg-in"></i>Masuk</span><span><i class="lg-out"></i>Keluar</span></div>`;
+  const note = L.partial ? anaNote(esc('*' + (CYCLE.day > 1 ? 'Periode' : 'Bulan') + ' ini baru berjalan sampai tanggal ' + T.el + ', jadi garis putus-putus belum final.')) : '';
+  return anaCard('Arus kas ' + m.length + ' ' + (CYCLE.day > 1 ? 'periode' : 'bulan'), '', leg + `<svg class="ana-svg" viewBox="0 0 ${W} 150" role="img" aria-label="${esc(alt)}">${g}</svg>` + note);
+}
+function anaHeatHTML(T) {
+  if (T.max <= 0) return '';
+  const head = [0, 1, 2, 3, 4, 5, 6].map(i => `<span>${DAYS_S[i]}</span>`).join(''), lead = new Array(T.lead).fill('<i></i>').join('');
+  const cells = T.days.map(d => `<div class="hz lv${d.lv}${d.today ? ' td' : ''}${d.future ? ' fu' : ''}" title="${esc(fmtDM(d.d) + (d.future ? '' : ': ' + fmtRp(d.v)))}">${d.n}</div>`).join('');
+  const sp = T.spikes.length ? 'Lonjakan terbesar: ' + fmtDM(T.spikes[0].d) + ', ' + fmtRp(T.spikes[0].v) + ', sekitar ' + (Math.round(T.spikes[0].mult * 10) / 10).toLocaleString(LANG === 'en' ? 'en-US' : 'id-ID') + ' kali rata-rata harian.' + (T.spikes[1] ? ' Berikutnya ' + fmtDM(T.spikes[1].d) + ' (' + fmtRp(T.spikes[1].v) + ').' : '') : '';
+  const leg = `<div class="hz-leg"><span>Sedikit <i class="hz lv1"></i><i class="hz lv2"></i><i class="hz lv3"></i><i class="hz lv4"></i> Banyak</span><span><i class="hz td"></i> Hari ini</span></div>`;
+  return anaCard('Kalender pengeluaran', 'per hari', `<div class="hz-head">${head}</div><div class="hz-grid">${lead}${cells}</div>${leg}` + (sp ? anaNote(esc(sp)) : ''));
+}
+function anaRecurHTML(T) {
+  const R = anaRecurring(S.tx, insState().anchor);
+  if (!R.rows.length) return anaCard('Tagihan rutin terdeteksi', '', anaNote('Belum ada tagihan rutin yang terdeteksi. Pengeluaran yang berulang tiap bulan dengan nominal mirip akan tampil di sini.'));
+  const rows = R.rows.map(r => `<div class="rc-row"><span class="rc-d"><b>${r.day}</b><small>TGL</small></span><span class="rc-t"><b>${esc(r.name)}</b><small>Tiap bulan · ${r.n} periode terakhir</small></span><span class="am">${fmtRp(r.amount)}</span></div>`).join('');
+  const share = T.tout > 0 ? ' · ' + fmtPct(R.total / T.tout * 100) + ' pengeluaran' : '';
+  return anaCard('Tagihan rutin terdeteksi', esc((T.tout > 0 ? fmtPct(R.total / T.tout * 100) + ' pengeluaran' : '')), rows + `<div class="rc-tot"><span>Total per ${CYCLE.day > 1 ? 'periode' : 'bulan'}</span><b>${fmtRp(R.total)}</b></div>`);
+}
+function anaDaruratHTML() {
+  let M = null; try { M = tgModels(ymd(new Date())).filter(m => m.g.kind === 'darurat' && !m.closed)[0] || null; } catch (e) { M = null; }
+  if (!M) return anaCard('Dana darurat', '', anaNote('Belum ada target dana darurat. <button type="button" class="bud-link" data-act="nav" data-v="target">Buat target</button>'));
+  if (!M.goalKnown) return anaCard('Dana darurat', '', anaNote('Terkumpul ' + esc(fmtRp(M.saved)) + '. Nominal target belum bisa dihitung. <button type="button" class="bud-link" data-act="nav" data-v="target">Buka target</button>'));
+  const eta = M.etaYm ? ' Jika menabung ' + fmtRp(M.g.monthly) + ' per bulan, target tercapai ' + MONTHS[Number(M.etaYm.slice(5, 7)) - 1] + ' ' + M.etaYm.slice(0, 4) + '.' : '';
+  return anaCard('Dana darurat', `<b class="dd-p">${fmtPct(M.pct)}</b>`, `<div class="dd-bar" role="progressbar" aria-label="Dana darurat terkumpul" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(M.pct)}"><i style="width:${M.pct.toFixed(1)}%"></i></div>` + anaNote(esc(fmtRp(M.saved) + ' dari ' + fmtRp(M.goal) + '.' + eta)));
+}
+function anaTrenHTML() {
+  const I = insState(), T = anaTrend(S.tx, I.anchor, S.settings, new Date());
+  if (!S.tx.length) return anaEmpty('Belum Ada Catatan', 'Catat transaksi untuk melihat tren mingguan, arus kas, dan tagihan rutin.');
+  return anaWeeksHTML(T) + anaFlowHTML(T) + anaHeatHTML(T) + anaRecurHTML(T) + anaDaruratHTML();
+}
+
+/* ---------- Tab Rincian: kartu lengkap untuk periode Beranda ---------- */
+function anaRinciHTML() {
+  const C = homeCtx(), P = C.P, A = C.A, list = C.list, tin = C.tin, tout = C.tout;
+  S.bk = buildBuckets(P, A); S.cmp = compareModel(S.tx, A, new Date());
+  S.wide = !!(window.matchMedia && window.matchMedia('(min-width: 1000px)').matches);
+  if (S.tx.length === 0) return homeBarHTML(C) + anaEmpty('SaKu Masih Kosong', 'Catat pemasukan atau pengeluaran pertama Anda.');
+  const trend = `<section class="card" aria-labelledby="h-trend"><div class="card-h"><h2 id="h-trend">${P === 'month' ? 'Arus Kas Harian' : P === 'week' ? 'Arus Kas per Hari' : '7 Hari Terakhir'}</h2><span class="sub">masuk vs keluar</span></div><div class="chart" id="trend"><div class="plot"></div><div class="tip" id="tip" hidden></div></div><div class="legend"><span><i style="background:var(--in-bar)"></i>Pemasukan</span><span><i style="background:var(--out-bar)"></i>Pengeluaran</span></div></section>`;
+  const spend = spendCard(list, tout), income = incomeCard(list, tin), rinci = rinciCard(P), txc = txCard(list), cmp = cmpCard(S.cmp), pot = potMiniCard(), avg = avgCard(), acm = accMiniCard(C.s, C.e);
+  const dash = S.wide
+    ? `<div class="dash two"><div class="col">${trend}${cmp}${rinci}${txc}</div><div class="col">${acm}${pot}${avg}${spend}${income}</div></div>`
+    : `<div class="dash">${acm}${pot}${trend}${cmp}${avg}${spend}${income}${rinci}${txc}</div>`;
+  const dl = S.downloads ? `<div class="dl-row"><span class="lbl">Unduh</span><button class="btn btn-ghost btn-sm" data-act="dl-pdf">${ic('file', 16)} Laporan PDF</button><button class="btn btn-ghost btn-sm" data-act="dl-xlsx">${ic('table', 16)} Excel + grafik</button></div>` : '';
+  return homeBarHTML(C) + dl + dash;
+}
+
+/* ---------- Halaman Analisis ---------- */
+function insightHTML() {
+  if (!S.txLoaded) return skelHTML();
+  const A = anaState(), tab = A.tab;
+  const head = `<div class="page-head"><div><h1>Analisis</h1></div></div>`;
+  let ctl = '', body = '';
+  if (tab === 'wawasan') { ctl = anaStepHTML(); body = anaWawasanHTML(); }
+  else if (tab === 'tren') { ctl = anaStepHTML(); body = anaTrenHTML(); }
+  else if (tab === 'rinci') body = anaRinciHTML();
+  else body = anaKatHTML();
+  return head + anaTabsHTML() + ctl + `<div class="ana-body ana-${tab}">${body}</div>`;
+}
+VIEWS.insight = { update() {
+  $('#view').innerHTML = insightHTML();
+  if (anaState().tab === 'rinci' && S.txLoaded && S.tx.length) { drawTrend(); drawCmp(); }
+} };
+Object.assign(ACT, {
+  'ana-tab'(el) { anaState().tab = ANA_TABS.some(x => x[0] === el.dataset.v) ? el.dataset.v : 'wawasan'; VIEWS.insight.update(); enterAnim('enter-soft'); },
+  'ins-prev'() { const I = insState(); I.anchor = shiftAnchor('month', I.anchor, -insStep()); VIEWS.insight.update(); },
+  'ins-next'() { const I = insState(); I.anchor = shiftAnchor('month', I.anchor, insStep()); VIEWS.insight.update(); },
+  period(el) { S.period = el.dataset.v; S.anchor = startOfDay(new Date()); VIEWS[S.view === 'insight' ? 'insight' : 'rekap'].update(); enterAnim('enter-soft'); },
+  prev() { S.anchor = shiftAnchor(S.period, S.anchor, -1); VIEWS[S.view === 'insight' ? 'insight' : 'rekap'].update(); enterAnim('enter-soft'); },
+  next() { S.anchor = shiftAnchor(S.period, S.anchor, 1); VIEWS[S.view === 'insight' ? 'insight' : 'rekap'].update(); enterAnim('enter-soft'); },
+  today() { S.anchor = startOfDay(new Date()); VIEWS[S.view === 'insight' ? 'insight' : 'rekap'].update(); enterAnim('enter-soft'); }
+});
+/* ================= Pengantar "Tampilan baru" =================
+   Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
+   Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
+   Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
+const WN_VER = '1.10';
+const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
+function wnSeen() {
+  if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
+  try { return !!localStorage.getItem(wnStoreKey()); } catch (e) { return false; }
+}
+function wnMark() {
+  (S.wnMem || (S.wnMem = {}))[wnStoreKey()] = 1;
+  try { localStorage.setItem(wnStoreKey(), '1'); } catch (e) { /* abaikan */ }
+}
+const WN_FACET = (a, b) => `<svg viewBox="0 0 120 110" aria-hidden="true"><path d="M10 38C10 32 14 28 19 26L70 8C77 5.6 84 10 84 17V62L26 82C17 85 10 79 10 71Z" fill="#01A1FA" fill-opacity="${a}"/><path d="M44 52 98 33C105 30.6 112 35 112 42V86C112 91 109 95 104 97L52 116C48 117.5 44 114.5 44 110Z" fill="#1CCE8A" fill-opacity="${b}"/></svg>`;
+const WN_SPARK = (x, y, s, d) => `<svg class="wn-sp" style="left:${x}%;top:${y}%;width:${s}px;height:${s}px;animation-delay:${d}s" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C12.6 8.5 15.5 11.4 22 12 15.5 12.6 12.6 15.5 12 22 11.4 15.5 8.5 12.6 2 12 8.5 11.4 11.4 8.5 12 2Z"/></svg>`;
+const wnD = d => ` style="--d:${d}s"`;
+const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n, 22)}</span>` : ic(n, 22)}</span>`;
+
+function wnIllo(i) {
+  if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
+  if (i === 1) return `<div class="wn-illo" aria-hidden="true"><span class="wn-ex">Contoh</span>
+    <div class="wn-hero wn-up"${wnD(.1)}><span class="wn-fc">${WN_FACET('.28', '.34')}</span><small>Saldo keseluruhan</small><b class="n">Rp 24.750.000</b><svg viewBox="0 0 302 54" aria-hidden="true"><path class="wn-draw" pathLength="100" d="M0 42C26 40 44 46 70 33S118 30 146 24 192 33 220 20 270 13 296 7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="296" cy="7" r="5" fill="#1CCE8A" stroke="#fff" stroke-width="2.6"/></svg></div>
+    <div class="wn-two"><div class="wn-st in wn-up"${wnD(.5)}><small>${ic('down', 15)}Pemasukan</small><b class="n">Rp 12.500.000</b></div><div class="wn-st out wn-up"${wnD(.62)}><small>${ic('up', 15)}Pengeluaran</small><b class="n">Rp 8.420.000</b></div></div>
+    <div class="wn-bud wn-opt wn-up"${wnD(.78)}><svg viewBox="0 0 58 58" aria-hidden="true"><circle cx="29" cy="29" r="23" fill="none" class="wn-rt" stroke-width="7"/><circle class="wn-rf" cx="29" cy="29" r="23" fill="none" stroke="#E5A100" stroke-width="7" stroke-linecap="round" pathLength="100" stroke-dasharray="82 100" transform="rotate(-90 29 29)"/></svg><div><b>Dana tersedia bulan ini</b><small>82% terpakai · sisa 10 hari</small></div></div></div>`;
+  if (i === 2) return `<div class="wn-illo" aria-hidden="true"><span class="wn-ex">Contoh</span>
+    <div class="wn-score wn-up"${wnD(.1)}><div class="wn-rg"><svg viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="42" fill="none" class="wn-rt" stroke-width="10"/><circle class="wn-rf" cx="52" cy="52" r="42" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round" pathLength="100" stroke-dasharray="78 100" transform="rotate(-90 52 52)"/></svg><div><b class="n">78</b><small>Sehat</small></div></div>
+      <div class="wn-sub">${[['Tabungan', 82, 'var(--ana-1)', .5], ['Anggaran', 64, 'var(--ana-3)', .65], ['Konsistensi', 88, 'var(--ana-2)', .8]].map(b => `<div><span><i>${b[0]}</i><i class="n">${b[1]}</i></span><span class="wn-tr"><span class="wn-gx" style="width:${b[1]}%;background:${b[2]};animation-delay:${b[3]}s"></span></span></div>`).join('')}</div></div>
+    <div class="wn-ins wn-in"${wnD(1)}><span>${ic('bulb', 20)}</span><b>Pengeluaran bisa melewati anggaran sekitar 12 hari lagi</b></div>
+    <div class="wn-tabs wn-opt">${['Wawasan', 'Kategori', 'Tren', 'Rincian'].map((t, k) => `<span class="${k ? '' : 'on '}wn-up"${wnD(1.1 + k * .08)}>${t}</span>`).join('')}</div>
+    <div class="wn-bars wn-opt wn-up"${wnD(1.3)}><p><b>Pengeluaran per hari</b><span>7 hari</span></p><div>${[38, 54, 30, 62, 46, 72, 58].map((h, k) => `<i class="wn-gy${k === 5 ? ' hi' : ''}" style="height:${h}px;animation-delay:${.9 + k * .07}s"></i>`).join('')}</div></div></div>`;
+  return `<div class="wn-illo" aria-hidden="true">
+    <div class="wn-sh wn-fade"${wnD(.1)}><p>Menu lainnya</p><div class="wn-g4">${[['receipt', 'Tagihan', 'amb'], ['flag', 'Rencana', 'grn'], ['file', 'Laporan', 'vio'], ['sparkle', 'Tanya SaKu', 'ask']].map((a, k) => `<span class="wn-pop ${a[2]}"${wnD(.35 + k * .12)}><i>${ic(a[0], 19)}</i><b>${a[1]}</b></span>`).join('')}</div>
+      <div class="wn-g3 wn-up"${wnD(.95)}><span>${ic('wallet', 16)}Rekening</span><span>${ic('swap', 16)}Kurs</span><span>${ic('users', 16)}Teman</span></div></div>
+    <div class="wn-nav wn-up"${wnD(.7)}>${WN_NAVI('home')}${WN_NAVI('list')}<span class="wn-plus">${ic('plus', 26)}</span>${WN_NAVI('chart')}${WN_NAVI('more', true)}</div></div>`;
+}
+const WN_TXT = [
+  { chip: 'Pembaruan ' + APP_VERSION, a: 'SaKu tampil', b: 'lebih segar', p: 'Tampilan baru, menu yang lebih rapi, dan analisis keuangan yang lebih tajam. Semua data Anda tetap aman di tempatnya.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Beranda', b: 'lebih ringkas', p: 'Saldo keseluruhan, pemasukan, pengeluaran, dan anggaran bulan ini terbaca dalam sekali pandang.', cta: 'Lanjut' },
+  { chip: 'Perubahan 2', a: 'Analisis', b: 'yang lebih tajam', p: 'Skor keuangan, proyeksi akhir bulan, perbandingan periode, hingga pola harian dan kategori pengeluaran.', cta: 'Lanjut' },
+  { chip: 'Perubahan 3', a: 'Menu', b: 'lebih tertata', p: 'Tagihan, Rencana, Laporan, dan Tanya SaKu kini ada di menu Lainnya, satu ketukan dari mana pun.', cta: 'Mulai jelajahi' }
+];
+function wnPaint() {
+  const el = $('#wnew'); if (!el) return;
+  const i = S.wnI || 0, T = WN_TXT[i], last = i === WN_TXT.length - 1;
+  el.className = 'wnew s' + i;
+  el.innerHTML = `<div class="wn-card"><div class="wn-bar"><div class="wn-segs" role="img" aria-label="Layar ${i + 1} dari ${WN_TXT.length}">${WN_TXT.map((x, j) => `<span class="${j <= i ? 'on' : ''}"></span>`).join('')}</div>${last ? '' : '<button type="button" class="wn-skip" data-act="wn-skip">Lewati</button>'}</div>
+    <div class="wn-slide">${wnIllo(i)}<div class="wn-txt"><span class="wn-chip wn-up"${wnD(.15)}>${esc(T.chip)}</span><h1 id="wn-t" class="wn-up"${wnD(.25)}>${esc(T.a)}<em>${esc(T.b)}</em></h1><p class="wn-up"${wnD(.35)}>${esc(T.p)}</p></div>
+    <button type="button" class="wn-cta wn-up" id="wn-go" data-act="wn-next"${wnD(.5)}><span>${esc(T.cta)}</span>${ic(last ? 'sparkle' : 'chevr', 20)}</button>${last ? '<p class="wn-note">Pengantar ini hanya tampil sekali.</p>' : ''}</div></div>`;
+  const go = $('#wn-go'); if (go && go.focus) try { go.focus({ preventScroll: true }); } catch (e) { go.focus(); }
+}
+function wnStart() {
+  if (S.wnOn || $('#wnew')) return;
+  S.wnOn = true; S.wnI = 0; S.wnPrev = document.activeElement || null;
+  const el = document.createElement('div'); el.id = 'wnew'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'wn-t');
+  document.body.appendChild(el); document.body.classList.add('wn-open');
+  wnPaint();
+  document.addEventListener('keydown', wnKeys, true);
+  el.addEventListener('touchstart', e => { const t = e.changedTouches && e.changedTouches[0]; S.wnX = t ? t.clientX : null; }, { passive: true });
+  el.addEventListener('touchend', e => { const t = e.changedTouches && e.changedTouches[0]; if (!t || S.wnX == null) return; const dx = t.clientX - S.wnX; S.wnX = null; if (Math.abs(dx) > 60) wnStep(dx < 0 ? 1 : -1); }, { passive: true });
+}
+function wnStep(d) {
+  if (!S.wnOn) return;
+  const n = (S.wnI || 0) + d; if (n < 0) return;
+  if (n >= WN_TXT.length) { wnEnd(); return; }
+  S.wnI = n; wnPaint();
+}
+function wnKeys(e) {
+  if (!S.wnOn) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); wnEnd(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); wnStep(1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); wnStep(-1); }
+}
+function wnEnd() {
+  wnMark(); S.wnOn = false; document.removeEventListener('keydown', wnKeys, true);
+  const el = $('#wnew'); document.body.classList.remove('wn-open');
+  if (el) { el.classList.add('out'); setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 260); }
+  const f = S.wnPrev; S.wnPrev = null; if (f && f.focus && document.body.contains(f)) { try { f.focus({ preventScroll: true }); } catch (e) { /* abaikan */ } }
+  if (typeof dueMaybePopup === 'function') setTimeout(dueMaybePopup, 400);
+}
+/* Dipanggil setelah masuk dan setiap pindah halaman; menunggu bila ada pop-up lain yang tampil lebih dulu */
+function wnMaybe() {
+  if (S.wnOn || S.phase !== 'app') return;
+  const m = me(); if (!m || isAdmin() || m.role === 'admin') return;
+  let force = false, real = false; try { const f = localStorage.getItem('saku.wnew.force'); force = f === '1'; real = f === 'real'; } catch (e) { force = false; }
+  if (navigator.webdriver && !force && !real) return;   // otomasi: tes lain tidak terganggu ('1' = paksa tampil, 'real' = jalankan aturan sebenarnya)
+  if (!force && wnSeen()) return;
+  const made = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+  if (!force && made && Date.now() - made < 14 * 86400000 && typeof tourSeen === 'function' && !tourSeen()) { wnMark(); return; }
+  if ($('#pwp') || $('#duepop') || $('#sheet-root') || S.form || S.tourOn || $('#tour')) {
+    clearTimeout(S.wnT); S.wnTry = (S.wnTry || 0) + 1; if (S.wnTry < 40) S.wnT = setTimeout(wnMaybe, 1500);
+    return;
+  }
+  wnStart();
+}
+Object.assign(ACT, {
+  'wn-next'() { wnStep(1); },
+  'wn-skip'() { wnEnd(); }
 });
 /* ================= Menu Tagihan: Jatuh Tempo, Cicilan, Hutang ================= */
 const dueNow = () => dueModel(S.plan, S.tx, new Date());
@@ -8046,7 +8923,7 @@ function dueHidePopup() { const p = $('#duepop'); if (p && p.remove) p.remove();
 function dueMaybePopup() {
   if (S.phase !== 'app' || isAdmin() || !planReady()) return;
   const tk = ymd(new Date()); if (S.dueChecked === tk) return;
-  if ($('#duepop') || $('#pwp') || $('#sheet-root') || S.form) return;
+  if ($('#duepop') || $('#pwp') || $('#wnew') || $('#sheet-root') || S.form) return;
   S.dueChecked = tk;
   if (S.view === 'jatuh' || dueShownToday(tk)) return;
   const M = dueNow(); if (!M.must.length) return;
