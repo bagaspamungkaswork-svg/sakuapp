@@ -30,6 +30,17 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Buat www/firebase-config.js dari variabel repositori
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          # Berkas ini sengaja tidak disimpan di repositori. Diisi dari Settings > Secrets and variables > Actions > Variables.
+          if [ ! -f www/firebase-config.js ] && [ -n "${FIREBASE_API_KEY:-}" ] && [ -n "${FIREBASE_PROJECT_ID:-}" ]; then
+            node -e "require('fs').writeFileSync('www/firebase-config.js', 'window.CATAT_FIREBASE = ' + JSON.stringify({ apiKey: process.env.FIREBASE_API_KEY, projectId: process.env.FIREBASE_PROJECT_ID }) + ';\\n')"
+            echo "www/firebase-config.js dibuat dari variabel repositori"
+          fi
+          [ -f www/firebase-config.js ] || { echo '::warning::Tidak ada www/firebase-config.js dan variabel FIREBASE_API_KEY / FIREBASE_PROJECT_ID belum diisi; aplikasi akan meminta konfigurasi saat dibuka.'; echo 'window.CATAT_FIREBASE = null;' > www/firebase-config.js; }
       - name: Periksa berkas proyek
         run: |
           ls -la
