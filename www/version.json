@@ -1,12 +1,8 @@
 {
- "version": "1.10.0",
- "build": 10,
- "date": "2026-11-21",
+ "version": "1.10.1",
+ "build": 11,
+ "date": "2026-11-22",
  "notes": [
-  "Tampilan baru: Beranda lebih ringkas (saldo keseluruhan, pemasukan, pengeluaran, anggaran, transaksi terbaru) dengan warna biru bersentuhan hijau logo dan huruf Plus Jakarta Sans",
-  "Menu Analisis baru dengan empat tab: Wawasan (skor keuangan, proyeksi akhir bulan, kebiasaan belanja), Kategori, Tren, dan Rincian",
-  "Menu bawah berbentuk pil melayang: Beranda, Transaksi, tombol tambah, Analisis, dan Lainnya; Tagihan kini ada di Lainnya dengan pintasan lonceng di atas",
-  "Submenu baru: menu Lainnya bergaya bento, serta submenu Tagihan, Rencana, dan Kurs dengan gaya berbeda dan sidebar web dengan garis alur",
-  "Pengantar Tampilan baru yang tampil sekali setelah masuk, dengan animasi empat layar dan tombol Lewati"
+  "Intro \"Tampilan baru\" di website kini berbentuk kartu mendatar dua kolom, bukan lagi tampilan HP; kartu biru di halaman Anggaran dan Rencana lebih rapi"
  ]
 }

@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.10.0', APP_BUILD = 10;
+const APP_VERSION = '1.10.1', APP_BUILD = 11;
 const CHANGELOG = [
+  { v: '1.10.1', d: '2026-11-22', items: ['Intro "Tampilan baru" di website kini berbentuk kartu mendatar dua kolom, bukan lagi tampilan HP; kartu biru di halaman Anggaran dan Rencana lebih rapi'] },
   { v: '1.10.0', d: '2026-11-21', items: ['Tampilan baru: Beranda lebih ringkas (saldo keseluruhan, pemasukan, pengeluaran, anggaran, transaksi terbaru) dengan warna biru bersentuhan hijau logo dan huruf Plus Jakarta Sans', 'Menu Analisis baru dengan empat tab: Wawasan (skor keuangan, proyeksi akhir bulan, kebiasaan belanja), Kategori, Tren, dan Rincian', 'Menu bawah berbentuk pil melayang: Beranda, Transaksi, tombol tambah, Analisis, dan Lainnya; Tagihan kini ada di Lainnya dengan pintasan lonceng di atas', 'Submenu baru: menu Lainnya bergaya bento, serta submenu Tagihan, Rencana, dan Kurs dengan gaya berbeda dan sidebar web dengan garis alur', 'Pengantar Tampilan baru yang tampil sekali setelah masuk, dengan animasi empat layar dan tombol Lewati'] },
   { v: '1.9.2', d: '2026-11-19', items: ['Perbaikan Masuk dengan Google di edisi Firebase: permintaan ke Firebase kini memakai alamat resmi (localhost) sehingga tidak ditolak karena domain situs, dan pesan galat menjelaskan penyebab sebenarnya (Client ID tidak cocok atau domain belum diizinkan)'] },
   { v: '1.9.1', d: '2026-11-19', items: ['Pengenalan SaKu kini tampil seperti website di layar lebar (laptop dan desktop): header Masuk dan Daftar gratis, teks besar, ilustrasi besar, serta panah untuk pindah slide'] },
@@ -4982,6 +4983,7 @@ const I18N_EN = {
   "Insight": "Insights",
   "internet": "internet",
   "Internet rumah": "Home internet",
+  "Intro \"Tampilan baru\" di website kini berbentuk kartu mendatar dua kolom, bukan lagi tampilan HP; kartu biru di halaman Anggaran dan Rencana lebih rapi": "The \"New look\" intro on the website is now a wide two-column card instead of a phone layout; the blue cards on the Budget and Plans pages are tidier",
   "investasi": "investment",
   "Investasi": "Investment",
   "Isi 31 untuk akhir bulan.": "Enter 31 for end of month.",
