@@ -1,6 +1,6 @@
 # SaKu — aplikasi Android dan iOS
 
-Proyek ini membungkus aplikasi web SaKu (*Simpan, Anggaran, Keluar-masuk, Uang*) (edisi Firebase, konfigurasi `PROJECT-ID` sudah tertanam) menjadi aplikasi Android dan iOS memakai [Capacitor](https://capacitorjs.com). Satu isi aplikasi yang sama berjalan di web, Android, dan iOS.
+Proyek ini membungkus aplikasi web SaKu (*Simpan, Anggaran, Keluar-masuk, Uang*) (edisi Firebase; konfigurasi Firebase diisi saat build dari variabel repositori, tidak disimpan di repo) menjadi aplikasi Android dan iOS memakai [Capacitor](https://capacitorjs.com). Satu isi aplikasi yang sama berjalan di web, Android, dan iOS.
 
 > **Status:** proyek ini **belum pernah dikompilasi** oleh pembuatnya. Lingkungan tempat ia dibuat tidak punya Android SDK maupun Xcode. Yang sudah diuji hanyalah bagian web (termasuk mode aplikasi dengan Capacitor tiruan). Kalau build pertama gagal, salin pesan galatnya ke Claude supaya diperbaiki.
 
