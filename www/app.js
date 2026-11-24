@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.13.3', APP_BUILD = 20;
+const APP_VERSION = '1.13.4', APP_BUILD = 21;
 const CHANGELOG = [
+  { v: '1.13.4', d: '2026-11-24', items: ['Pengantar pembaruan dibedakan untuk versi web dan versi HP (isi dan ilustrasi menyesuaikan tampilan yang dipakai)'] },
   { v: '1.13.3', d: '2026-11-24', items: ['Pengantar pembaruan tampilan diperbarui: muncul sekali saat masuk pertama kali di versi ini dan menjelaskan desain baru, navigasi, dan halaman Tentang Aplikasi'] },
   { v: '1.13.2', d: '2026-11-24', items: ['Tombol Keluar (ikon) kembali di navbar atas, di antara Lainnya dan Catat'] },
   { v: '1.13.1', d: '2026-11-24', items: ['Navbar atas dirapikan: bahasa dan Keluar pindah ke footer kiri bawah, versi di tengah, tahun pembaruan di kanan bawah'] },
@@ -6546,6 +6547,15 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Kalender pengeluaran dan linimasa berdampingan dengan donat kategori, target, dan wawasan dalam dua kolom. Klik tanggal untuk melihat rinciannya.": "The spending calendar and timeline sit beside the category donut, goals, and insights in two columns. Click a date to see its details.",
+  "Kalender pengeluaran, linimasa, donat kategori, target, dan wawasan tersusun dalam satu kolom. Ketuk tanggal untuk melihat rinciannya.": "The spending calendar, timeline, category donut, goals, and insights are stacked in one column. Tap a date to see its details.",
+  "Menu pindah ke bilah atas: Beranda, Transaksi, Analisis, Tagihan, Rencana, Laporan, lalu Lainnya, Keluar, dan Catat. Bahasa dan Keluar juga ada di footer bawah.": "The menu moved to the top bar: Home, Transactions, Analysis, Bills, Plans, Reports, then More, Sign out, and Add. Language and Sign out are also in the footer.",
+  "Tab bawah berisi Beranda, Transaksi, Catat, Analisis, dan Lainnya. Menu Lainnya menampilkan Tagihan, Rencana, Laporan, Tanya SaKu, dan Tentang Aplikasi seperti kartu.": "The bottom tabs hold Home, Transactions, Add, Analysis, and More. The More menu shows Bills, Plans, Reports, Ask SaKu, and About the App as cards.",
+  "Latar biru muda, kartu bento, dan bilah navigasi baru di atas layar. Semua data Anda tetap aman di tempatnya.": "A light blue background, bento cards, and a new navigation bar at the top of the screen. All your data stays safely where it was.",
+  "Halaman baru berisi fitur SaKu dan riwayat versi, ada di menu Lainnya.": "A new page with SaKu's features and version history, in the More menu.",
+  "Versi web": "Web version",
+  "Versi HP": "Phone version",
+  "Pengantar pembaruan dibedakan untuk versi web dan versi HP (isi dan ilustrasi menyesuaikan tampilan yang dipakai)": "The what's-new introduction now differs for the web and phone versions (content and illustrations follow the layout in use)",
   "Latar biru muda, kartu bento, dan tampilan baru di seluruh aplikasi. Semua data Anda tetap aman di tempatnya.": "A light blue background, bento cards, and a fresh look across the whole app. All your data stays safely where it was.",
   "bergaya bento": "bento-style",
   "Kalender pengeluaran per hari, linimasa, donat kategori, target, dan wawasan tertata dalam satu halaman. Ketuk tanggal untuk melihat rinciannya.": "A daily spending calendar, timeline, category donut, goals, and insights on one page. Tap a date to see its details.",
@@ -8963,17 +8973,30 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
+  const WEB = !!S.wnWeb;
   if (i === 1) { const lv = [0, 2, 1, 0, 3, 4, 3, 1, 0, 2, 3, 4, 2, 1, 0, 1, 2, 3, 1, 0, 2, 4, 3, 1];
-    return `<div class="wn-illo" aria-hidden="true"><span class="wn-ex">Contoh</span><div class="wn2-cal wn-up"${wnD(.1)}><p><b>Kalender Pengeluaran</b><span>November</span></p><div class="wn2-g">${lv.map((v, k) => `<i class="l${v} wn-up"${wnD(.25 + k * .03)}>${k + 1}</i>`).join('')}</div></div><div class="wn2-two"><div class="wn2-t wn-up"${wnD(1)}><small>Pengeluaran per Kategori</small><span class="wn2-dn"></span></div><div class="wn2-t wn-up"${wnD(1.1)}><small>Target</small><b class="n">45%</b></div></div></div>`; }
-  if (i === 2) return `<div class="wn-illo" aria-hidden="true"><div class="wn2-nav wn-up"${wnD(.1)}><span class="on">${ic('home', 16)}Beranda</span><span>${ic('list', 16)}Transaksi</span><span>${ic('chart', 16)}Analisis</span><span>${ic('more', 16)}Lainnya</span><span class="out">${ic('logout', 16)}</span><span class="add">${ic('plus', 16)}Catat</span></div><div class="wn2-pop wn-up"${wnD(.5)}><span class="ask">${ic('sparkle', 18)}Tanya SaKu</span><span>${ic('wallet', 16)}Rekening</span><span>${ic('swap', 16)}Kurs</span><span>${ic('users', 16)}Teman</span><span>${ic('info', 16)}Tentang Aplikasi</span></div><div class="wn-nav wn-up"${wnD(.9)}>${WN_NAVI('home')}${WN_NAVI('list')}<span class="wn-plus">${ic('plus', 26)}</span>${WN_NAVI('chart')}${WN_NAVI('more', true)}</div></div>`;
+    const cal = `<div class="wn2-cal wn-up"${wnD(.1)}><p><b>Kalender Pengeluaran</b><span>November</span></p><div class="wn2-g">${lv.map((v, k) => `<i class="l${v} wn-up"${wnD(.25 + k * .03)}>${k + 1}</i>`).join('')}</div></div>`;
+    if (WEB) return `<div class="wn-illo wn2-web" aria-hidden="true"><span class="wn-ex">Contoh</span>${cal}<div class="wn2-three"><div class="wn2-t wn-up"${wnD(1)}><small>Linimasa Harian</small><b class="n">Rp 2 jt</b></div><div class="wn2-t wn-up"${wnD(1.1)}><small>Pengeluaran per Kategori</small><span class="wn2-dn"></span></div><div class="wn2-t wn-up"${wnD(1.2)}><small>Target</small><b class="n">45%</b></div></div></div>`;
+    return `<div class="wn-illo" aria-hidden="true"><span class="wn-ex">Contoh</span>${cal}<div class="wn2-two"><div class="wn2-t wn-up"${wnD(1)}><small>Pengeluaran per Kategori</small><span class="wn2-dn"></span></div><div class="wn2-t wn-up"${wnD(1.1)}><small>Target</small><b class="n">45%</b></div></div></div>`; }
+  if (i === 2) {
+    if (WEB) return `<div class="wn-illo wn2-web" aria-hidden="true"><div class="wn2-nav wn-up"${wnD(.1)}><span class="on">${ic('home', 16)}Beranda</span><span>${ic('list', 16)}Transaksi</span><span>${ic('chart', 16)}Analisis</span><span>${ic('receipt', 16)}Tagihan</span><span>${ic('more', 16)}Lainnya</span><span class="out">${ic('logout', 16)}</span><span class="add">${ic('plus', 16)}Catat</span></div><div class="wn2-pop wn-up"${wnD(.5)}><span class="ask">${ic('sparkle', 18)}Tanya SaKu</span><span>${ic('wallet', 16)}Rekening</span><span>${ic('swap', 16)}Kurs</span><span>${ic('users', 16)}Teman</span><span>${ic('info', 16)}Tentang Aplikasi</span></div><div class="wn2-ft wn-up"${wnD(.9)}><span class="out">ID EN · ${ic('logout', 12)} Keluar</span><b>SaKu v${esc(APP_VERSION)}</b><span>Diperbarui ${esc(String(parseYmd(CHANGELOG[0].d).getFullYear()))}</span></div></div>`;
+    return `<div class="wn-illo" aria-hidden="true"><div class="wn2-pop wn-up"${wnD(.2)}><span class="ask">${ic('sparkle', 18)}Tanya SaKu</span><span>${ic('receipt', 16)}Tagihan</span><span>${ic('flag', 16)}Rencana</span><span>${ic('file', 16)}Laporan</span><span>${ic('info', 16)}Tentang Aplikasi</span></div><div class="wn-nav wn-up"${wnD(.7)}>${WN_NAVI('home')}${WN_NAVI('list')}<span class="wn-plus">${ic('plus', 26)}</span>${WN_NAVI('chart')}${WN_NAVI('more', true)}</div></div>`; }
   return `<div class="wn-illo" aria-hidden="true"><div class="wn2-ab wn-up"${wnD(.1)}><span class="lg">${ic('wallet', 22)}</span><div><b>Tentang Aplikasi</b><small>Versi ${esc(APP_VERSION)}</small></div></div>${['Catat cepat', 'Rekening', 'Anggaran dan target', 'Laporan dan analisis'].map((t, k) => `<div class="wn2-li wn-up"${wnD(.4 + k * .12)}><span>${ic('check', 16)}</span>${t}</div>`).join('')}<div class="wn2-lg wn-up"${wnD(1)}>3 versi terbaru + rilis pertama</div></div>`;
 }
-const WN_TXT = [
-  { chip: 'Pembaruan ' + APP_VERSION, a: 'SaKu tampil', b: 'lebih segar', p: 'Latar biru muda, kartu bento, dan tampilan baru di seluruh aplikasi. Semua data Anda tetap aman di tempatnya.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Beranda', b: 'bergaya bento', p: 'Kalender pengeluaran per hari, linimasa, donat kategori, target, dan wawasan tertata dalam satu halaman. Ketuk tanggal untuk melihat rinciannya.', cta: 'Lanjut' },
-  { chip: 'Perubahan 2', a: 'Navigasi', b: 'lebih sederhana', p: 'Di komputer, menu ada di bilah atas lengkap dengan Lainnya, Keluar, dan Catat. Di HP, tab bawah dan menu Lainnya tertata seperti kartu.', cta: 'Lanjut' },
-  { chip: 'Perubahan 3', a: 'Tentang', b: 'Aplikasi', p: 'Halaman baru berisi fitur SaKu dan riwayat versi, tinggal satu ketukan dari menu.', cta: 'Mulai jelajahi' }
+const WN_TXT_M = [
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'SaKu tampil', b: 'lebih segar', p: 'Latar biru muda, kartu bento, dan tampilan baru di seluruh aplikasi. Semua data Anda tetap aman di tempatnya.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Beranda', b: 'bergaya bento', p: 'Kalender pengeluaran, linimasa, donat kategori, target, dan wawasan tersusun dalam satu kolom. Ketuk tanggal untuk melihat rinciannya.', cta: 'Lanjut' },
+  { chip: 'Perubahan 2', a: 'Navigasi', b: 'lebih sederhana', p: 'Tab bawah berisi Beranda, Transaksi, Catat, Analisis, dan Lainnya. Menu Lainnya menampilkan Tagihan, Rencana, Laporan, Tanya SaKu, dan Tentang Aplikasi seperti kartu.', cta: 'Lanjut' },
+  { chip: 'Perubahan 3', a: 'Tentang', b: 'Aplikasi', p: 'Halaman baru berisi fitur SaKu dan riwayat versi, ada di menu Lainnya.', cta: 'Mulai jelajahi' }
 ];
+const WN_TXT_W = [
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'SaKu tampil', b: 'lebih segar', p: 'Latar biru muda, kartu bento, dan bilah navigasi baru di atas layar. Semua data Anda tetap aman di tempatnya.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Beranda', b: 'bergaya bento', p: 'Kalender pengeluaran dan linimasa berdampingan dengan donat kategori, target, dan wawasan dalam dua kolom. Klik tanggal untuk melihat rinciannya.', cta: 'Lanjut' },
+  { chip: 'Perubahan 2', a: 'Navigasi', b: 'di bilah atas', p: 'Menu pindah ke bilah atas: Beranda, Transaksi, Analisis, Tagihan, Rencana, Laporan, lalu Lainnya, Keluar, dan Catat. Bahasa dan Keluar juga ada di footer bawah.', cta: 'Lanjut' },
+  { chip: 'Perubahan 3', a: 'Tentang', b: 'Aplikasi', p: 'Halaman baru berisi fitur SaKu dan riwayat versi, ada di menu Lainnya.', cta: 'Mulai jelajahi' }
+];
+let WN_TXT = WN_TXT_M;
+const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
 function wnPaint() {
   const el = $('#wnew'); if (!el) return;
   const i = S.wnI || 0, T = WN_TXT[i], last = i === WN_TXT.length - 1;
@@ -8985,7 +9008,7 @@ function wnPaint() {
 }
 function wnStart() {
   if (S.wnOn || $('#wnew')) return;
-  S.wnOn = true; S.wnI = 0; S.wnPrev = document.activeElement || null;
+  S.wnOn = true; S.wnI = 0; S.wnPrev = document.activeElement || null; S.wnWeb = wnWebNow(); WN_TXT = S.wnWeb ? WN_TXT_W : WN_TXT_M;
   const el = document.createElement('div'); el.id = 'wnew'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'wn-t');
   document.body.appendChild(el); document.body.classList.add('wn-open');
   wnPaint();

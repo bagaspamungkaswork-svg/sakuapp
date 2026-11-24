@@ -1,8 +1,8 @@
 {
- "version": "1.13.3",
- "build": 20,
+ "version": "1.13.4",
+ "build": 21,
  "date": "2026-11-24",
  "notes": [
-  "Pengantar pembaruan tampilan diperbarui: muncul sekali saat masuk pertama kali di versi ini dan menjelaskan desain baru, navigasi, dan halaman Tentang Aplikasi"
+  "Pengantar pembaruan dibedakan untuk versi web dan versi HP (isi dan ilustrasi menyesuaikan tampilan yang dipakai)"
  ]
 }
