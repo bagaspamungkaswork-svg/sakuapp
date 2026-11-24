@@ -1,8 +1,8 @@
 {
- "version": "1.13.0",
- "build": 17,
+ "version": "1.13.1",
+ "build": 18,
  "date": "2026-11-24",
  "notes": [
-  "Latar biru muda; navbar atas bergaya bento dengan menu Lainnya; sapaan Beranda besar; ruang kosong di sisi kanan halaman dirapikan; Tentang Aplikasi hanya menampilkan 3 versi terakhir dan rilis pertama"
+  "Navbar atas dirapikan: bahasa dan Keluar pindah ke footer kiri bawah, versi di tengah, tahun pembaruan di kanan bawah"
  ]
 }

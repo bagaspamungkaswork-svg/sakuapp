@@ -3171,6 +3171,20 @@ body::before { background: radial-gradient(70vmax 38vmax at 105% -6%, color-mix(
   .ana-body > .range, .ana-body > .ana-hero, .ana-body > .kpi-grid, .ana-body > .ana-h2, .ana-body > .ana-note, .ana-body > .ana-seg, .ana-body > .empty, .ana-body > .card:only-child { grid-column: 1 / -1; }
   .ana-body > .ana-card, .ana-body > .card, .ana-body > .ins-card { margin: 0; }
 }
+
+@media (min-width: 900px) { .dtop { background: color-mix(in srgb, var(--bg) 62%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2); padding: 8px 0; margin: 0 0 18px; top: 0; } }
+/* ===== Footer: bahasa + keluar, versi, tahun ===== */
+.dfoot { display: none; }
+@media (min-width: 900px) {
+  .app-ver { display: none; }
+  .dfoot { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line-2); font-size: 13px; color: var(--ink-3); }
+  .df-l { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .df-c { margin: 0; font-weight: 700; color: var(--ink-2); text-align: center; }
+  .df-r { margin: 0; text-align: right; }
+  .df-out { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--surface); color: var(--out); font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .df-out:hover { background: color-mix(in srgb, var(--out) 10%, var(--surface)); }
+}
+@media (max-width: 1099px) { .dfoot { grid-template-columns: 1fr; justify-items: center; text-align: center; } .df-r { text-align: center; } }
 </style>
 </head>
 <body>

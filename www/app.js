@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.13.0', APP_BUILD = 17;
+const APP_VERSION = '1.13.1', APP_BUILD = 18;
 const CHANGELOG = [
+  { v: '1.13.1', d: '2026-11-24', items: ['Navbar atas dirapikan: bahasa dan Keluar pindah ke footer kiri bawah, versi di tengah, tahun pembaruan di kanan bawah'] },
   { v: '1.13.0', d: '2026-11-24', items: ['Latar biru muda; navbar atas bergaya bento dengan menu Lainnya; sapaan Beranda besar; ruang kosong di sisi kanan halaman dirapikan; Tentang Aplikasi hanya menampilkan 3 versi terakhir dan rilis pertama'] },
   { v: '1.12.0', d: '2026-11-24', items: ['Tampilan seluruh aplikasi mengikuti desain baru (krem, navy, kartu bento); pengenalan SaKu harus digulir sampai habis sebelum Masuk dan Daftar; halaman Tentang Aplikasi di menu utama'] },
   { v: '1.11.1', d: '2026-11-24', items: ['Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan'] },
@@ -6543,6 +6544,8 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Diperbarui": "Updated",
+  "Navbar atas dirapikan: bahasa dan Keluar pindah ke footer kiri bawah, versi di tengah, tahun pembaruan di kanan bawah": "Top navbar tidied: language and Sign out moved to the bottom-left footer, version in the centre, update year at the bottom-right",
   "Rilis pertama": "First release",
   "Catat": "Add",
   "Latar biru muda; navbar atas bergaya bento dengan menu Lainnya; sapaan Beranda besar; ruang kosong di sisi kanan halaman dirapikan; Tentang Aplikasi hanya menampilkan 3 versi terakhir dan rilis pertama": "Light blue background; a bento-style top navbar with a More menu; a big Home greeting; empty space on the right of pages tidied; About the App shows only the last 3 versions and the first release",
@@ -7453,7 +7456,7 @@ function shellHTML() {
   const DMAIN = isAdmin() ? items.map(i => i[0]) : ['rekap', 'transaksi', 'analisis', 'tagihan', 'rencana', 'laporan'];
   const dmi = items.filter(i => DMAIN.indexOf(i[0]) < 0), dti = i => `<button type="button" class="dt-i" data-act="nav" data-v="${i[0]}" title="${esc(i[1])}">${ic(i[2], 20)}<span>${esc(i[1])}</span>${bdg(i)}</button>`;
   const dtile = (i, cls) => `<button type="button" class="dt-tile ${cls || ''}" data-act="nav" data-v="${i[0]}">${ic(i[2], 22)}<b>${esc(i[1])}</b>${bdg(i)}</button>`;
-  const dtop = `<header class="dtop"><div class="dt-brand"><div class="brand">${LOGO}${WM}</div></div><nav class="dt-nav" aria-label="Navigasi utama">${items.filter(i => DMAIN.indexOf(i[0]) >= 0).map(dti).join('')}<div class="dt-more-wrap"><button type="button" class="dt-i dt-more-b" data-act="dt-more" aria-haspopup="true" aria-expanded="false" data-more="${dmi.map(i => i[0]).join(',')}">${ic('more', 20)}<span>Lainnya</span></button><div class="dt-pop" role="menu" aria-label="Menu lainnya">${dmi.map(i => dtile(i, i[0] === 'asisten' ? 'dt-wide' : '')).join('')}<div class="dt-foot">${langSwitchHTML('lsw-dtop')}<span class="me"><span class="avatar sm">${esc(initials(m.name))}</span><span><b>${esc(m.name)}</b><small>${roleName(m.role)}</small></span></span><button type="button" class="btn btn-dark btn-sm" data-act="logout">${ic('logout', 16)} Keluar</button></div></div></div>${isAdmin() ? '' : `<button type="button" class="dt-add" data-act="add">${ic('plus', 20)}<span>Catat</span></button>`}</nav></header>`;
+  const dtop = `<header class="dtop"><div class="dt-brand"><div class="brand">${LOGO}${WM}</div></div><nav class="dt-nav" aria-label="Navigasi utama">${items.filter(i => DMAIN.indexOf(i[0]) >= 0).map(dti).join('')}<div class="dt-more-wrap"><button type="button" class="dt-i dt-more-b" data-act="dt-more" aria-haspopup="true" aria-expanded="false" data-more="${dmi.map(i => i[0]).join(',')}">${ic('more', 20)}<span>Lainnya</span></button><div class="dt-pop" role="menu" aria-label="Menu lainnya">${dmi.map(i => dtile(i, i[0] === 'asisten' ? 'dt-wide' : '')).join('')}</div></div>${isAdmin() ? '' : `<button type="button" class="dt-add" data-act="add">${ic('plus', 20)}<span>Catat</span></button>`}</nav></header>`;
   return `<div class="shell${min ? ' side-min' : ''}">
     <aside class="side" aria-label="Menu">
       <div class="side-top"><div class="brand">${LOGO}${WM}</div><button type="button" class="side-toggle" data-act="side-toggle" aria-expanded="${!min}" aria-label="${min ? 'Buka menu' : 'Ciutkan menu'}" title="${min ? 'Buka menu' : 'Ciutkan menu'}">${ic('chevl', 18)}</button></div>
@@ -7471,6 +7474,7 @@ function shellHTML() {
       <div id="mailbar" class="netbar mailbar" role="status" hidden></div>
       <div id="view"></div>
       <p class="app-ver" translate="no">SaKu v${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p>
+      <footer class="dfoot"><div class="df-l">${langSwitchHTML('lsw-foot')}<button type="button" class="df-out" data-act="logout">${ic('logout', 16)} <span>Keluar</span></button></div><p class="df-c" translate="no">SaKu v${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p><p class="df-r"><span>Diperbarui</span> <span translate="no">${esc(String(parseYmd(CHANGELOG[0].d).getFullYear()))}</span></p></footer>
     </div>
   </div>
   ${(() => {
