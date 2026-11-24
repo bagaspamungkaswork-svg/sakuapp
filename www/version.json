@@ -1,8 +1,8 @@
 {
- "version": "1.13.2",
- "build": 19,
+ "version": "1.13.3",
+ "build": 20,
  "date": "2026-11-24",
  "notes": [
-  "Tombol Keluar (ikon) kembali di navbar atas, di antara Lainnya dan Catat"
+  "Pengantar pembaruan tampilan diperbarui: muncul sekali saat masuk pertama kali di versi ini dan menjelaskan desain baru, navigasi, dan halaman Tentang Aplikasi"
  ]
 }
