@@ -1,8 +1,8 @@
 {
- "version": "1.13.5",
- "build": 22,
+ "version": "1.14.0",
+ "build": 23,
  "date": "2026-11-24",
  "notes": [
-  "Laporan PDF dan Excel mengikuti desain baru: warna biru dan navy yang sama dengan aplikasi, kalender pengeluaran (PDF dan sheet Kalender di Excel), serta footer dengan tahun pembaruan"
+  "Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda"
  ]
 }

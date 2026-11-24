@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.13.5', APP_BUILD = 22;
+const APP_VERSION = '1.14.0', APP_BUILD = 23;
 const CHANGELOG = [
+  { v: '1.14.0', d: '2026-11-24', items: ['Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda'] },
   { v: '1.13.5', d: '2026-11-24', items: ['Laporan PDF dan Excel mengikuti desain baru: warna biru dan navy yang sama dengan aplikasi, kalender pengeluaran (PDF dan sheet Kalender di Excel), serta footer dengan tahun pembaruan'] },
   { v: '1.13.4', d: '2026-11-24', items: ['Pengantar pembaruan dibedakan untuk versi web dan versi HP (isi dan ilustrasi menyesuaikan tampilan yang dipakai)'] },
   { v: '1.13.3', d: '2026-11-24', items: ['Pengantar pembaruan tampilan diperbarui: muncul sekali saat masuk pertama kali di versi ini dan menjelaskan desain baru, navigasi, dan halaman Tentang Aplikasi'] },
@@ -6595,6 +6596,22 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda": "The record form was redesigned: Quick and Detailed modes, one-tap templates, a swipeable stack of account cards, an impact summary, a calendar on the web version, and repeating entries confirmed on Home",
+  "Cepat": "Quick",
+  "Rinci": "Detailed",
+  "Templat": "Template",
+  "Simpan Templat": "Save Template",
+  "Dampak langsung": "Immediate impact",
+  "Isi jumlah untuk melihat dampaknya ke saldo dan anggaran.": "Enter an amount to see its effect on your balance and budget.",
+  "Belum ada templat. Isi form lalu tekan Templat untuk memakainya lagi sekali ketuk.": "No templates yet. Fill in the form, then press Template to reuse it with one tap.",
+  "Ulangi otomatis": "Repeat",
+  "Dicatat sendiri, kamu cukup konfirmasi di Beranda": "A confirmation card appears on Home; you only tap to record",
+  "Pilih minimal satu hari.": "Pick at least one day.",
+  "Aturan aktif": "Active rules",
+  "Catatan berulang hari ini": "Repeating entries today",
+  "Detail": "Details",
+  "Geser untuk ganti rekening": "Swipe to change account",
+  "Tanpa rekening": "No account",
   "Laporan PDF dan Excel mengikuti desain baru: warna biru dan navy yang sama dengan aplikasi, kalender pengeluaran (PDF dan sheet Kalender di Excel), serta footer dengan tahun pembaruan": "PDF and Excel reports follow the new design: the same blue and navy as the app, a spending calendar (PDF and a Calendar sheet in Excel), and a footer with the update year",
   "Kalender pengeluaran dan linimasa berdampingan dengan donat kategori, target, dan wawasan dalam dua kolom. Klik tanggal untuk melihat rinciannya.": "The spending calendar and timeline sit beside the category donut, goals, and insights in two columns. Click a date to see its details.",
   "Kalender pengeluaran, linimasa, donat kategori, target, dan wawasan tersusun dalam satu kolom. Ketuk tanggal untuk melihat rinciannya.": "The spending calendar, timeline, category donut, goals, and insights are stacked in one column. Tap a date to see its details.",
@@ -8123,16 +8140,20 @@ function intOf(v, max) {
   return isFinite(n) ? Math.min(max, Math.max(0, Math.round(n))) : 0;
 }
 function sheetHTML() {
-  return `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title" novalidate>
+  return `<div class="backdrop" data-act="sheet-bd"><form class="sheet fsheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title" novalidate>
     <div class="sheet-h"><h2 id="sh-title">Catat Transaksi</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
-    <div class="sheet-b">
+    <div class="sheet-b f-cols"><div class="f-main">
       ${S.form && !S.form.id && voiceSupport() ? voiceRowHTML() : ''}
       <div class="tgl" role="group" aria-label="Jenis transaksi"><button type="button" class="out" data-act="f-type" data-t="out" aria-pressed="true">${ic('up', 18)} Pengeluaran</button><button type="button" class="in" data-act="f-type" data-t="in" aria-pressed="false">${ic('down', 18)} Pemasukan</button></div>
-      <div class="field"><label for="f-amt">Jumlah</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="f-amt" data-money="amt" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
-      <div class="row2" id="f-accrow" hidden><div class="field" id="f-accbox"><label for="f-acc" id="f-acc-l">Dibayar dari</label><select class="input" id="f-acc" required></select></div><div class="field" id="f-tobox" hidden><label for="f-to">Masuk ke</label><select class="input" id="f-to"></select></div></div>
+      <div class="tgl fmode" role="group" aria-label="Mode pengisian"><button type="button" data-act="f-mode" data-m="cepat" aria-pressed="true">Cepat</button><button type="button" data-act="f-mode" data-m="rinci" aria-pressed="false">Rinci</button></div>
+      <div class="f-tplbox" id="f-tplbox"><div class="f-lbrow"><span class="f-lb">Templat</span><button type="button" class="lnkb" id="f-tplmng" data-act="f-tpl-mng" hidden>Kelola</button></div><div class="f-tpls" id="f-tpls"></div></div>
+      <div class="f-stkbox" id="f-stkbox" hidden><div class="f-lbrow"><span class="f-lb" id="f-stk-l">Dibayar dari</span><span class="f-stk-nav"><button type="button" data-act="f-acc-go" data-d="-1" aria-label="Rekening sebelumnya">&lsaquo;</button><span id="f-stk-c" aria-live="polite"></span><button type="button" data-act="f-acc-go" data-d="1" aria-label="Rekening berikutnya">&rsaquo;</button></span></div><div class="f-stk" id="f-stk" role="group" aria-label="Pilih rekening, geser kiri atau kanan" tabindex="0"></div></div>
+      <div class="field"><label for="f-amt">Jumlah</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="f-amt" data-money="amt" inputmode="numeric" autocomplete="off" placeholder="0"></div><div class="f-qk"><button type="button" data-act="f-plus" data-v="10000">+10 rb</button><button type="button" data-act="f-plus" data-v="25000">+25 rb</button><button type="button" data-act="f-plus" data-v="50000">+50 rb</button><button type="button" data-act="f-plus" data-v="100000">+100 rb</button><button type="button" data-act="f-plus" data-v="0">Hapus</button></div></div>
+      <div class="row2" id="f-accrow" hidden><div class="field sr-only" id="f-accbox"><label for="f-acc" id="f-acc-l">Dibayar dari</label><select class="input" id="f-acc" required></select></div><div class="field" id="f-tobox" hidden><label for="f-to">Masuk ke</label><select class="input" id="f-to"></select></div></div>
       <p class="cat-hint acc-note" id="f-accnote" role="status" hidden></p>
       <div class="field"><span class="lbl" id="cat-l">Kategori</span><div class="cat-find"><input class="input" type="search" id="f-catq" placeholder="Cari kategori…" autocomplete="off" aria-label="Cari kategori"></div><div class="cats" id="f-cats" role="radiogroup" aria-labelledby="cat-l"></div><button type="button" class="btn btn-ghost btn-sm cat-new" data-act="ck-new">${ic('plus', 16)} Tambah Kategori</button><p class="cat-hint" id="f-hint" role="status" hidden></p></div>
-      <div class="row2"><div class="field"><label for="f-date">Tanggal</label><input class="input" type="date" id="f-date"></div><div class="field"><label for="f-note">Catatan atau nama toko</label><input class="input" id="f-note" maxlength="80" autocomplete="off" placeholder="mis. Alfamart"></div></div>
+      <div class="field"><label for="f-date">Tanggal</label><input class="input" type="date" id="f-date"></div>
+      <div class="f-rinci" id="f-rinci" hidden><h3 class="f-sec">Detail</h3><div class="field"><label for="f-note">Catatan atau nama toko</label><input class="input" id="f-note" maxlength="80" autocomplete="off" placeholder="mis. Alfamart"></div>
       <div class="field" id="f-refbox" hidden><label for="f-ref">Bayar tagihan</label><select class="input" id="f-ref"></select><p class="cat-hint" id="f-refhint"></p></div>
       <section class="buy" id="f-buy"><div class="buy-h"><h3>Barang yang Dibeli</h3><span class="muted" style="font-size:12.5px">opsional</span></div>
         <div class="photo-row"><label class="btn btn-ghost btn-sm" for="f-cam">${ic('camera', 16)} Kamera</label><input type="file" id="f-cam" accept="image/*" capture="environment" hidden><label class="btn btn-ghost btn-sm" for="f-gal">${ic('image', 16)} Galeri</label><input type="file" id="f-gal" accept="image/*" hidden></div>
@@ -8140,9 +8161,11 @@ function sheetHTML() {
         <div class="items" id="f-items"></div>
         <div><button type="button" class="btn btn-ghost btn-sm" data-act="f-additem">${ic('bag', 16)} Tambah barang</button></div>
         <div class="itotal" id="f-itotal"></div></section>
+      <div class="acd" id="f-repbox"><div class="acd-h"><span><b>Ulangi otomatis</b><small>Dicatat sendiri, kamu cukup konfirmasi di Beranda</small></span><label class="check"><input type="checkbox" id="f-rep-on"> Aktif</label></div><div id="f-rep-d" hidden><div class="rp-days" id="f-rep-days"></div><p class="rp-est" id="f-rep-est"></p></div><div id="f-rep-list"></div></div></div>
       <p class="form-err" id="f-err" role="alert" hidden></p>
+    </div><aside class="f-side" aria-label="Dampak transaksi"><div class="f-imp" id="f-imp"></div><div class="f-cal" id="f-cal"></div></aside>
     </div>
-    <div class="sheet-f"><button type="button" class="btn btn-danger" id="f-del" data-act="f-del" hidden>${ic('trash', 18)} Hapus</button><button type="submit" class="btn btn-primary grow" id="f-save">Simpan</button></div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="f-del" data-act="f-del" hidden>${ic('trash', 18)} Hapus</button><button type="button" class="btn btn-ghost" id="f-tplsave" data-act="f-tpl-save">${ic('plus', 18)} Templat</button><button type="submit" class="btn btn-primary grow" id="f-save">Simpan</button></div>
   </form></div>`;
 }
 function openSheet(tx, preset) {
@@ -8154,7 +8177,7 @@ function openSheet(tx, preset) {
     cat: tx ? tx.cat : 'makan', catTouched: !!tx, date: tx && isYmd(tx.date) ? tx.date : ymd(new Date()), note: tx ? tx.note || '' : '',
     items: tx && Array.isArray(tx.items) ? tx.items.map(i => ({ n: String(i.n || ''), q: Number(i.q) || 1, p: Number(i.p) || 0 })) : [],
     photoId: tx ? tx.photo || null : null, photo: null, photoData: null, photoErr: false, removePhoto: false,
-    acc: tx ? (tx.acc || '') : payDefaultId(), to: tx ? (tx.to || '') : '', q: '', demo: !!(tx && tx.demo), ref: tx && tx.ref ? { k: tx.ref.k, id: tx.ref.id, p: tx.ref.p } : null, createdAt: tx ? tx.createdAt : null, scanning: false, scanMsg: '', ctl: null, saving: false
+    acc: tx ? (tx.acc || '') : payDefaultId(), to: tx ? (tx.to || '') : '', q: '', demo: !!(tx && tx.demo), ref: tx && tx.ref ? { k: tx.ref.k, id: tx.ref.id, p: tx.ref.p } : null, createdAt: tx ? tx.createdAt : null, scanning: false, scanMsg: '', ctl: null, saving: false, mode: tx ? 'rinci' : fmodeGet(), rep: { on: false, days: [1, 2, 3, 4, 5] }, tplMng: false
   };
   if (!tx && preset && CATS[preset.cat]) { F.type = CATS[preset.cat].type; F.cat = preset.cat; F.catTouched = true; }
   if (!CATS[F.cat] || CATS[F.cat].type !== F.type) F.cat = F.type === 'out' ? 'lain' : 'lain_in';
@@ -8163,7 +8186,7 @@ function openSheet(tx, preset) {
   $('#f-amt').value = F.amount ? dots(F.amount) : ''; $('#f-date').value = F.date; $('#f-note').value = F.note;
   paintAll();
   if (F.photoId) loadExistingPhoto();
-  if (!tx) setTimeout(() => { const a = $('#f-amt'); if (a) a.focus(); }, 60);
+  if (!tx) setTimeout(() => { const a = $('#f-amt'); if (a) a.focus({ preventScroll: true }); }, 60);
 }
 function closeSheet(silent) {
   const r = $('#sheet-root'); if (!r) return;
@@ -8172,13 +8195,14 @@ function closeSheet(silent) {
   r.remove(); S.form = null; S.cf = null; S.pay = null; S.hf = null; S.tf = null; S.rf = null; document.body.style.overflow = '';
   if (!silent && S.lastFocus && S.lastFocus.focus) { try { S.lastFocus.focus(); } catch (e) { /* abaikan */ } }
 }
-function paintAll() { paintType(); paintCats(); paintAcc(); paintRef(); paintPhoto(); paintItems(); paintTotal(); }
+function paintAll() { paintType(); paintCats(); paintAcc(); paintRef(); paintPhoto(); paintItems(); paintTotal(); paintMode(); paintTpls(); paintStack(); paintRep(); paintImpact(); }
 function paintType() {
   const F = S.form;
   $$('#sheet-root [data-act="f-type"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === F.type)));
   $('#f-buy').hidden = F.type !== 'out';
   $('#sh-title').textContent = F.id ? 'Ubah Transaksi' : 'Catat Transaksi';
   $('#f-del').hidden = !F.id; paintDel();
+  const ts = $('#f-tplsave'); if (ts) ts.hidden = !!F.id;
 }
 function paintDel() {
   const b = $('#f-del'); if (!b) return;
@@ -8272,7 +8296,7 @@ function onMoney(el) {
   if (k === 'hf-amt') { if (S.hf) { S.hf.amount = v; hfHints(); } return; }
   if (k === 'hf-inst') { hfHints(); return; }
   if (!F) return;
-  if (k === 'amt') { F.amount = v; F.amountTouched = v > 0; if (v === 0) paintTotal(); }
+  if (k === 'amt') { F.amount = v; F.amountTouched = v > 0; if (v === 0) paintTotal(); paintImpact(); }
   else if (k === 'item') { const it = F.items[Number(el.dataset.i)]; if (it) it.p = v; paintTotal(); }
 }
 async function loadExistingPhoto() {
@@ -8351,6 +8375,7 @@ async function saveForm() {
     if (!tt || (axk === 'ewallet' && tt.kind !== 'ewallet')) return fail(axk === 'ewallet' ? 'Pilih e-wallet tujuan.' : 'Pilih rekening tujuan.');
     if (F.to === (F.acc || '')) return fail('Rekening asal dan tujuan tidak boleh sama.');
   }
+  if (!F.id && F.mode === 'rinci' && F.rep.on && !F.rep.days.length) return fail('Pilih minimal satu hari untuk pengulangan.');
   const btn = $('#f-save'); F.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
   const base = S.db.doc('ledger/' + S.me.id); let newPhoto = null;
   try {
@@ -8365,6 +8390,7 @@ async function saveForm() {
     if (F.acc && accById(F.acc)) data.acc = F.acc;
     if (axk && F.to) data.to = F.to;
     await (F.id ? base.collection('tx').doc(F.id) : base.collection('tx').doc()).set(data);
+    try { await repAdd(F, data); } catch (e) { /* aturan gagal disimpan: catatan tetap aman */ }
     if (oldId && oldId !== photoId) { try { await base.collection('photos').doc(oldId).delete(); } catch (e) { /* abaikan */ } }
     const edit = !!F.id, nowD = new Date(); closeSheet(); toast(edit ? 'Transaksi diperbarui' : 'Transaksi tersimpan');
     if (F.date >= ymd(new Date(nowD.getFullYear(), nowD.getMonth(), 1))) scheduleReminder();
@@ -8500,11 +8526,11 @@ const ACT = {
   'sheet-close'() { closeSheet(); },
   'f-type'(el) {
     const F = S.form; if (!F || F.type === el.dataset.t) return;
-    F.type = el.dataset.t; F.cat = F.type === 'out' ? 'makan' : 'gaji'; F.catTouched = false; F.ref = null; paintType(); paintCats(); paintAcc(); paintRef();
+    F.type = el.dataset.t; F.cat = F.type === 'out' ? 'makan' : 'gaji'; F.catTouched = false; F.ref = null; paintType(); paintCats(); paintAcc(); paintRef(); paintImpact();
   },
   'f-cat'(el) {
     const F = S.form; F.cat = el.dataset.id; F.catTouched = true;
-    $$('#f-cats .cat').forEach(b => b.setAttribute('aria-checked', String(b.dataset.id === F.cat))); paintHint(); paintAcc();
+    $$('#f-cats .cat').forEach(b => b.setAttribute('aria-checked', String(b.dataset.id === F.cat))); paintHint(); paintAcc(); paintImpact();
   },
   'f-additem'() { const F = S.form; F.items.push({ n: '', q: 1, p: 0 }); paintItems(); paintTotal(); const ins = $$('#f-items [data-k="n"]'); if (ins.length) ins[ins.length - 1].focus(); },
   'f-item-rm'(el) { const F = S.form; F.items.splice(Number(el.dataset.i), 1); paintItems(); paintTotal(); },
@@ -8513,6 +8539,165 @@ const ACT = {
   'f-scan-stop'() { const F = S.form; if (F && F.ctl) F.ctl.abort(); },
   'f-del'() { deleteTx(); }
 };
+
+/* ================= Catat transaksi v1.14: mode, templat, kartu rekening, dampak, kalender, ulangi ================= */
+const FMODE_KEY = 'saku.fmode';
+const fmodeGet = () => { try { return localStorage.getItem(FMODE_KEY) === 'rinci' ? 'rinci' : 'cepat'; } catch (e) { return 'cepat'; } };
+const fmodeSet = m => { try { localStorage.setItem(FMODE_KEY, m); } catch (e) { /* abaikan */ } };
+const DOW_S = [1, 2, 3, 4, 5, 6, 0];
+const tplList = () => (S.settings && Array.isArray(S.settings.tpls) ? S.settings.tpls : []).filter(t => t && t.id && CATS[t.cat]);
+const repList = () => (S.settings && Array.isArray(S.settings.reps) ? S.settings.reps : []).filter(r => r && r.id && CATS[r.cat] && Array.isArray(r.days));
+function paintMode() {
+  const F = S.form, sh = $('#sheet'); if (!F || !sh) return;
+  const m = F.mode === 'rinci' ? 'rinci' : 'cepat'; sh.dataset.mode = m;
+  $$('#sheet [data-act="f-mode"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
+  const r = $('#f-rinci'); if (r) r.hidden = m !== 'rinci';
+}
+function paintTpls() {
+  const F = S.form, box = $('#f-tpls'); if (!F || !box) return;
+  const list = tplList(), bx = $('#f-tplbox'); bx.hidden = !!F.id; if (F.id) return;
+  box.innerHTML = list.length ? list.map(t => `<span class="tp-w"><button type="button" class="tp" data-act="f-tpl" data-id="${esc(t.id)}"><b>${esc(t.n)}</b><span>${esc(CATS[t.cat].label)}${accById(t.acc) ? ' · ' + esc(accById(t.acc).name) : ''}</span><em>${fmtRp(t.amount)}</em></button>${F.tplMng ? `<button type="button" class="tp-x" data-act="f-tpl-del" data-id="${esc(t.id)}" aria-label="Hapus templat ${esc(t.n)}">${ic('x', 14)}</button>` : ''}</span>`).join('') : '<p class="tp-none">Belum ada templat. Isi form lalu tekan Templat untuk memakainya lagi sekali ketuk.</p>';
+  const mg = $('#f-tplmng'); mg.hidden = !list.length; mg.textContent = F.tplMng ? 'Selesai' : 'Kelola';
+}
+const stkItems = F => { const list = accList().slice(); if (!accRequired(F) || F.acc === '') list.push({ id: '', kind: 'cash', brand: '', name: 'Tanpa rekening' }); return list; };
+function paintStack() {
+  const F = S.form, box = $('#f-stk'); if (!F || !box) return;
+  const wrap = $('#f-stkbox'), list = accList(); wrap.hidden = !list.length; if (!list.length) return;
+  if (F.acc && !accById(F.acc)) F.acc = '';
+  if (!F.acc && accRequired(F)) { F.acc = list[0].id; const s = $('#f-acc'); if (s) s.value = F.acc; }
+  const items = stkItems(F), n = items.length, sig = items.map(a => a.id).join('|'), cur = Math.max(0, items.findIndex(a => a.id === (F.acc || '')));
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    box.innerHTML = items.map((a, i) => `<button type="button" class="fk" data-act="f-acc-pick" data-i="${i}" data-id="${esc(a.id)}" tabindex="-1" style="--bc:${esc(brandOf(a).color)}"><span class="fk-s"><span>${esc(a.name)}</span><span class="fk-sv"></span></span><span class="fk-f"><span class="fk-t">${accChip(a)}<span class="fk-n"><b>${esc(a.name)}</b><small>${esc(ACC_KIND_LABEL[a.kind] || '')}</small></span></span><span class="fk-b"><small>Saldo</small><b class="fk-bv"></b></span></span></button>`).join('');
+  }
+  $$('#f-stk .fk').forEach((el, i) => {
+    const r = (i - cur + n) % n, sal = saldoTxt(accAvail(F, items[i].id));
+    el.dataset.r = r > 2 ? '3' : String(r); el.style.zIndex = String(10 - r);
+    el.setAttribute('aria-label', (r === 0 ? 'Dipilih: ' : 'Pilih ') + items[i].name + ', saldo ' + sal);
+    el.querySelector('.fk-sv').textContent = sal; el.querySelector('.fk-bv').textContent = sal;
+  });
+  $('#f-stk-c').textContent = (cur + 1) + '/' + n;
+  $('#f-stk-l').textContent = $('#f-acc-l') ? $('#f-acc-l').textContent : 'Dibayar dari';
+  $$('#f-stkbox .f-stk-nav button').forEach(b => { b.disabled = n < 2; });
+}
+function impactOf(F) {
+  const amt = Math.round(F.amount) || 0, out = F.type === 'out', dv = $('#f-date') && isYmd($('#f-date').value) ? $('#f-date').value : F.date, rows = [];
+  const list = S.tx.filter(t => t.id !== F.id && !isXfer(t)), st = S.settings || {};
+  if (accList().length && accById(F.acc)) { const b0 = accAvail(F, F.acc), b1 = b0 + (out ? -amt : amt); rows.push({ k: 'Saldo ' + accLabel(F.acc), v: saldoTxt(b0) + ' → ' + saldoTxt(b1), c: b1 < 0 ? 'bad' : '' }); }
+  const d = parseYmd(dv), rg = rangeFor('month', d), s = ymd(rg.start), e = ymd(rg.end), tk = ymd(new Date());
+  if (out) {
+    const dayOut = sumType(list.filter(t => t.date === dv), 'out') + amt, s30 = ymd(addDays(d, -30)), avg = sumType(list.filter(t => t.date >= s30 && t.date < dv), 'out') / 30;
+    rows.push({ k: 'Pengeluaran ' + (dv === tk ? 'hari ini' : fmtDateLong(d)), v: fmtRp(dayOut) + (avg > 0 ? ' · ' + (dayOut / avg).toFixed(1).replace('.', ',') + '× rata-rata' : ''), c: avg > 0 && dayOut > avg * 2 ? 'warn' : '' });
+    const bud = Number(st.budget) || 0, inM = list.filter(t => t.date >= s && t.date <= e && t.type === 'out' && !potOf(t) && !debtOf(t)), sp = sumType(inM, 'out');
+    if (bud > 0) {
+      const p0 = Math.round(sp / bud * 100), p1 = Math.round((sp + amt) / bud * 100), left = bud - sp - amt, days = dv <= e && tk <= e ? dayDiff(new Date(), rg.end) + 1 : 0;
+      rows.push({ k: 'Anggaran bulan', v: p0 + '% → ' + p1 + '%', c: p1 > 100 ? 'bad' : p1 >= 85 ? 'warn' : '', bar: Math.min(100, p1), over: p1 > 100 });
+      rows.push({ k: left >= 0 ? 'Sisa anggaran' + (days > 0 ? ' per hari' : '') : 'Lewat anggaran', v: left >= 0 ? fmtRp(days > 0 ? Math.max(0, left) / days : left) : fmtRp(-left), c: left < 0 ? 'bad' : '' });
+    }
+    const cb = Number((st.catBudgets || {})[F.cat]) || 0;
+    if (cb > 0 && !potOf({ cat: F.cat, type: F.type })) { const c0 = sumType(inM.filter(t => t.cat === F.cat), 'out'), q0 = Math.round(c0 / cb * 100), q1 = Math.round((c0 + amt) / cb * 100); rows.push({ k: 'Anggaran ' + CATS[F.cat].label, v: q0 + '% → ' + q1 + '%', c: q1 > 100 ? 'bad' : q1 >= 85 ? 'warn' : '' }); }
+  } else {
+    rows.push({ k: 'Pemasukan bulan ini', v: fmtRp(sumType(list.filter(t => t.date >= s && t.date <= e), 'in') + amt), c: '' });
+  }
+  return rows;
+}
+function paintImpact() {
+  const F = S.form, box = $('#f-imp'); if (!F || !box) return;
+  if (!(Math.round(F.amount) > 0)) box.innerHTML = '<h3>Dampak langsung</h3><p class="im-none">Isi jumlah untuk melihat dampaknya ke saldo dan anggaran.</p>';
+  else box.innerHTML = '<h3>Dampak langsung</h3>' + impactOf(F).map(r => `<div class="im-r${r.c ? ' ' + r.c : ''}"><span>${esc(r.k)}</span><b>${esc(r.v)}</b></div>` + (r.bar != null ? `<div class="im-bar"><i${r.over ? ' class="over"' : ''} style="width:${r.bar}%"></i></div>` : '')).join('');
+  paintCal(); repEst();
+}
+function paintCal() {
+  const F = S.form, box = $('#f-cal'); if (!F || !box) return;
+  const dv = $('#f-date') && isYmd($('#f-date').value) ? $('#f-date').value : F.date, d = parseYmd(dv), rg = rangeFor('month', d);
+  const bd = byDayOf(S.tx.filter(t => t.id !== F.id && !isXfer(t))), days = []; for (let x = new Date(rg.start); x <= rg.end; x = addDays(x, 1)) days.push(ymd(x));
+  const add = F.type === 'out' ? (Math.round(F.amount) || 0) : 0, outs = days.map(k => ((bd[k] || { out: 0 }).out) + (k === dv ? add : 0)), mx = Math.max(1, ...outs), lead = (rg.start.getDay() + 6) % 7;
+  box.innerHTML = `<div class="cal-h"><b>Kalender pengeluaran</b><span>${esc(rangeLabel('month', rg, d))}</span></div><div class="fc-g">${DOW_S.map(i => `<span class="fc-w">${esc(DAYS_S[i])}</span>`).join('')}${Array.from({ length: lead }, () => '<span></span>').join('')}${days.map((k, i) => { const v = outs[i], lv = v <= 0 ? 0 : Math.min(4, Math.max(1, Math.ceil(v / mx * 4))); return `<button type="button" class="fc-d l${lv}${k === dv ? ' sel' : ''}" data-act="f-cal-day" data-d="${k}" aria-pressed="${k === dv}" aria-label="${esc(fmtDateLong(parseYmd(k)))}: ${v > 0 ? esc(fmtRp(v)) : '-'}">${parseYmd(k).getDate()}</button>`; }).join('')}</div>`;
+}
+function repEst() {
+  const F = S.form, el = $('#f-rep-est'); if (!F || !el) return;
+  const R = F.rep, amt = Math.round(F.amount) || 0;
+  el.textContent = !R.on ? '' : !R.days.length ? 'Pilih minimal satu hari.' : (amt > 0 ? 'Perkiraan sebulan ' + fmtRp(Math.round(amt * R.days.length * 4.3 / 1000) * 1000) + '. ' : '') + 'Tiap hari terpilih muncul kartu konfirmasi di Beranda.';
+}
+function paintRep() {
+  const F = S.form, box = $('#f-repbox'); if (!F || !box) return;
+  box.hidden = !!F.id; if (F.id) return;
+  const R = F.rep; $('#f-rep-on').checked = R.on; $('#f-rep-d').hidden = !R.on;
+  $('#f-rep-days').innerHTML = DOW_S.map(d => `<button type="button" aria-pressed="${R.days.indexOf(d) >= 0}" data-act="f-rep-day" data-d="${d}">${esc(DAYS_S[d])}</button>`).join('');
+  const rl = repList(); $('#f-rep-list').innerHTML = rl.length ? '<div class="f-sec">Aturan aktif</div>' + rl.map(r => `<div class="rp-li"><span>${esc(r.n)} · ${r.days.slice().sort((a, b) => DOW_S.indexOf(a) - DOW_S.indexOf(b)).map(d => esc(DAYS_S[d])).join(' ')}</span><button type="button" data-act="f-rep-del" data-id="${esc(r.id)}" aria-label="Hapus aturan ${esc(r.n)}">Hapus</button></div>`).join('') : '';
+  repEst();
+}
+async function saveReps(next, msg) {
+  S.settings = Object.assign({}, S.settings, { reps: next });
+  const ok = await saveSet({ reps: next }, msg); try { if (!S.form) renderView(); } catch (e) { /* abaikan */ } return ok;
+}
+async function repAdd(F, data) {
+  const R = F.rep; if (F.id || F.mode !== 'rinci' || !R || !R.on || !R.days.length) return;
+  const reps = repList().slice(); if (reps.length >= 12) { toast('Aturan berulang penuh (maksimal 12).'); return; }
+  reps.push({ id: 'r' + Date.now().toString(36), n: (data.note || CATS[data.cat].label).slice(0, 24), type: data.type, amount: data.amount, cat: data.cat, acc: data.acc || '', note: data.note || '', days: R.days.slice(), start: data.date, last: data.date });
+  await saveReps(reps);
+}
+function repDue() {
+  if (S.canWrite === false) return [];
+  const now = new Date(), tk = ymd(now), dow = now.getDay();
+  return repList().filter(r => r.days.indexOf(dow) >= 0 && r.last !== tk && String(r.start || '') <= tk);
+}
+function repCardHTML() {
+  const due = repDue(); if (!due.length) return '';
+  return `<section class="card rep-card" aria-labelledby="h-rep" style="margin-bottom:16px"><div class="card-h"><h2 id="h-rep">Catatan berulang hari ini</h2></div><ul class="rep-ul">${due.map(r => `<li><span class="rep-n"><b>${esc(r.n)}</b><small>${esc(CATS[r.cat].label)}${accById(r.acc) ? ' · ' + esc(accById(r.acc).name) : ''}</small></span><b class="rep-a ${r.type === 'in' ? 'in' : 'out'}">${r.type === 'in' ? '+' : '-'}${fmtRp(r.amount)}</b><button type="button" class="btn btn-primary btn-sm" data-act="rep-do" data-id="${esc(r.id)}">Catat</button><button type="button" class="btn btn-ghost btn-sm" data-act="rep-skip" data-id="${esc(r.id)}">Lewati</button></li>`).join('')}</ul></section>`;
+}
+Object.assign(ACT, {
+  'f-mode'(el) { const F = S.form; if (!F) return; F.mode = el.dataset.m === 'rinci' ? 'rinci' : 'cepat'; fmodeSet(F.mode); paintMode(); },
+  'f-plus'(el) { const F = S.form; if (!F) return; const v = Number(el.dataset.v) || 0; F.amount = v === 0 ? 0 : Math.min(999999999999, (F.amount || 0) + v); F.amountTouched = F.amount > 0; $('#f-amt').value = F.amount ? dots(F.amount) : ''; if (!F.amount) paintTotal(); paintAccNote(); paintImpact(); },
+  'f-tpl'(el) {
+    const F = S.form, t = tplList().filter(x => x.id === el.dataset.id)[0]; if (!F || !t) return;
+    F.type = t.type === 'in' ? 'in' : 'out'; F.cat = t.cat; F.catTouched = true; F.amount = Math.round(t.amount) || 0; F.amountTouched = true; F.ref = null;
+    if (t.acc && accById(t.acc)) F.acc = t.acc;
+    $('#f-amt').value = F.amount ? dots(F.amount) : ''; if (t.note) $('#f-note').value = t.note;
+    paintType(); paintCats(); paintAcc(); paintRef(); paintTotal(); paintImpact();
+  },
+  'f-tpl-mng'() { const F = S.form; if (!F) return; F.tplMng = !F.tplMng; paintTpls(); },
+  async 'f-tpl-del'(el) { const next = tplList().filter(t => t.id !== el.dataset.id); S.settings = Object.assign({}, S.settings, { tpls: next }); paintTpls(); await saveSet({ tpls: next }, 'Templat dihapus'); },
+  async 'f-tpl-save'() {
+    const F = S.form; if (!F || F.id) return;
+    const amt = Math.round(F.amount) || 0, note = ($('#f-note').value || '').trim();
+    if (!(amt > 0) || !CATS[F.cat]) { toast('Isi jumlah dan pilih kategori dulu untuk menyimpan templat.'); return; }
+    const list = tplList().slice(), n = (note || CATS[F.cat].label).slice(0, 24), dup = list.filter(t => t.n.toLowerCase() === n.toLowerCase() && t.cat === F.cat)[0];
+    if (!dup && list.length >= 8) { toast('Templat penuh (maksimal 8). Hapus satu lewat Kelola.'); return; }
+    const rec = { id: dup ? dup.id : 't' + Date.now().toString(36), n, type: F.type, amount: amt, cat: F.cat, acc: F.acc || '', note: note.slice(0, 80) };
+    const next = dup ? list.map(t => t === dup ? rec : t) : list.concat(rec);
+    S.settings = Object.assign({}, S.settings, { tpls: next }); paintTpls();
+    await saveSet({ tpls: next }, 'Templat ' + n + ' disimpan');
+  },
+  'f-acc-pick'(el) {
+    const F = S.form; if (!F) return; if (S.stkSwiped && Date.now() - S.stkSwiped < 350) return;
+    const id = el.dataset.id; if ((F.acc || '') === id) return;
+    F.acc = id; const s = $('#f-acc'); if (s) s.value = id; paintAcc(); paintImpact();
+  },
+  'f-acc-go'(el) {
+    const F = S.form; if (!F) return; const items = stkItems(F); if (items.length < 2) return;
+    const cur = Math.max(0, items.findIndex(a => a.id === (F.acc || ''))), nx = items[(cur + Number(el.dataset.d) + items.length) % items.length];
+    S.stkSwiped = 0; ACT['f-acc-pick']({ dataset: { id: nx.id } });
+  },
+  'f-cal-day'(el) { const F = S.form; if (!F) return; F.date = el.dataset.d; $('#f-date').value = F.date; paintImpact(); },
+  'f-rep-day'(el) { const F = S.form; if (!F) return; const d = Number(el.dataset.d), i = F.rep.days.indexOf(d); if (i >= 0) F.rep.days.splice(i, 1); else F.rep.days.push(d); paintRep(); },
+  async 'f-rep-del'(el) { await saveReps(repList().filter(r => r.id !== el.dataset.id), 'Aturan berulang dihapus'); paintRep(); },
+  async 'rep-do'(el) {
+    const r = repList().filter(x => x.id === el.dataset.id)[0]; if (!r || el.disabled) return; el.disabled = true;
+    const tk = ymd(new Date()), now = new Date().toISOString(), data = { type: r.type === 'in' ? 'in' : 'out', amount: Math.round(r.amount), cat: r.cat, date: tk, note: r.note || '', items: [], photo: null, createdAt: now, updatedAt: now };
+    if (r.acc && accById(r.acc)) data.acc = r.acc;
+    try { await S.db.doc('ledger/' + S.me.id).collection('tx').doc().set(data); await saveReps(repList().map(x => x.id === r.id ? Object.assign({}, x, { last: tk }) : x), 'Tercatat: ' + r.n); }
+    catch (e) { el.disabled = false; toast(dbErrMsg(e)); }
+  },
+  async 'rep-skip'(el) { const tk = ymd(new Date()); await saveReps(repList().map(x => x.id === el.dataset.id ? Object.assign({}, x, { last: tk }) : x), 'Dilewati untuk hari ini'); }
+});
+(function () {
+  let x0 = null;
+  document.addEventListener('pointerdown', e => { const b = e.target.closest ? e.target.closest('#f-stk') : null; x0 = b ? e.clientX : null; });
+  document.addEventListener('pointerup', e => { if (x0 == null) return; const dx = e.clientX - x0; x0 = null; if (Math.abs(dx) > 36) { ACT['f-acc-go']({ dataset: { d: dx < 0 ? '1' : '-1' } }); S.stkSwiped = Date.now(); } });
+  document.addEventListener('keydown', e => { if (!S.form || !e.target.closest || !e.target.closest('#f-stk')) return; if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); ACT['f-acc-go']({ dataset: { d: e.key === 'ArrowRight' ? '1' : '-1' } }); } });
+  document.addEventListener('change', e => { const el = e.target; if (!el || !S.form) return; if (el.id === 'f-rep-on') { S.form.rep.on = el.checked; paintRep(); } else if (el.id === 'f-date') { S.form.date = el.value; paintImpact(); } });
+})();
 document.addEventListener('click', e => {
   const tgt = e.target, hit = tgt.closest ? tgt.closest('.hit') : null, hit2 = tgt.closest ? tgt.closest('.hit2') : null;
   if (hit) { showTip(hit); return; }
@@ -8669,7 +8854,7 @@ function rekapHTML() {
   }
   const recent = S.tx.filter(t => !isXfer(t)).slice(0, 3);
   const rec = `<section class="card hm-recent" aria-labelledby="h-rec"><div class="card-h"><h2 id="h-rec">Transaksi terbaru</h2><button type="button" class="lnk" data-act="nav" data-v="transaksi">Lihat semua</button></div>${recent.length ? recent.map(t => txRow(t)).join('') : '<div class="empty-s">Belum ada transaksi.</div>'}</section>`;
-  return head + demo + hero + homeBentoHTML(C, budAdd, rec);
+  return head + demo + repCardHTML() + hero + homeBentoHTML(C, budAdd, rec);
 }
 function homeExtraHTML(C, list) {
   let out = '';
@@ -9005,7 +9190,7 @@ Object.assign(ACT, {
    Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
    Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
    Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
-const WN_VER = '1.13';
+const WN_VER = '1.14';
 const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
 function wnSeen() {
   if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
@@ -9023,26 +9208,23 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
   const WEB = !!S.wnWeb;
-  if (i === 1) { const lv = [0, 2, 1, 0, 3, 4, 3, 1, 0, 2, 3, 4, 2, 1, 0, 1, 2, 3, 1, 0, 2, 4, 3, 1];
-    const cal = `<div class="wn2-cal wn-up"${wnD(.1)}><p><b>Kalender Pengeluaran</b><span>November</span></p><div class="wn2-g">${lv.map((v, k) => `<i class="l${v} wn-up"${wnD(.25 + k * .03)}>${k + 1}</i>`).join('')}</div></div>`;
-    if (WEB) return `<div class="wn-illo wn2-web" aria-hidden="true"><span class="wn-ex">Contoh</span>${cal}<div class="wn2-three"><div class="wn2-t wn-up"${wnD(1)}><small>Linimasa Harian</small><b class="n">Rp 2 jt</b></div><div class="wn2-t wn-up"${wnD(1.1)}><small>Pengeluaran per Kategori</small><span class="wn2-dn"></span></div><div class="wn2-t wn-up"${wnD(1.2)}><small>Target</small><b class="n">45%</b></div></div></div>`;
-    return `<div class="wn-illo" aria-hidden="true"><span class="wn-ex">Contoh</span>${cal}<div class="wn2-two"><div class="wn2-t wn-up"${wnD(1)}><small>Pengeluaran per Kategori</small><span class="wn2-dn"></span></div><div class="wn2-t wn-up"${wnD(1.1)}><small>Target</small><b class="n">45%</b></div></div></div>`; }
-  if (i === 2) {
-    if (WEB) return `<div class="wn-illo wn2-web" aria-hidden="true"><div class="wn2-nav wn-up"${wnD(.1)}><span class="on">${ic('home', 16)}Beranda</span><span>${ic('list', 16)}Transaksi</span><span>${ic('chart', 16)}Analisis</span><span>${ic('receipt', 16)}Tagihan</span><span>${ic('more', 16)}Lainnya</span><span class="out">${ic('logout', 16)}</span><span class="add">${ic('plus', 16)}Catat</span></div><div class="wn2-pop wn-up"${wnD(.5)}><span class="ask">${ic('sparkle', 18)}Tanya SaKu</span><span>${ic('wallet', 16)}Rekening</span><span>${ic('swap', 16)}Kurs</span><span>${ic('users', 16)}Teman</span><span>${ic('info', 16)}Tentang Aplikasi</span></div><div class="wn2-ft wn-up"${wnD(.9)}><span class="out">ID EN · ${ic('logout', 12)} Keluar</span><b>SaKu v${esc(APP_VERSION)}</b><span>Diperbarui ${esc(String(parseYmd(CHANGELOG[0].d).getFullYear()))}</span></div></div>`;
-    return `<div class="wn-illo" aria-hidden="true"><div class="wn2-pop wn-up"${wnD(.2)}><span class="ask">${ic('sparkle', 18)}Tanya SaKu</span><span>${ic('receipt', 16)}Tagihan</span><span>${ic('flag', 16)}Rencana</span><span>${ic('file', 16)}Laporan</span><span>${ic('info', 16)}Tentang Aplikasi</span></div><div class="wn-nav wn-up"${wnD(.7)}>${WN_NAVI('home')}${WN_NAVI('list')}<span class="wn-plus">${ic('plus', 26)}</span>${WN_NAVI('chart')}${WN_NAVI('more', true)}</div></div>`; }
-  return `<div class="wn-illo" aria-hidden="true"><div class="wn2-ab wn-up"${wnD(.1)}><span class="lg">${ic('wallet', 22)}</span><div><b>Tentang Aplikasi</b><small>Versi ${esc(APP_VERSION)}</small></div></div>${['Catat cepat', 'Rekening', 'Anggaran dan target', 'Laporan dan analisis'].map((t, k) => `<div class="wn2-li wn-up"${wnD(.4 + k * .12)}><span>${ic('check', 16)}</span>${t}</div>`).join('')}<div class="wn2-lg wn-up"${wnD(1)}>3 versi terbaru + rilis pertama</div></div>`;
+  if (i === 1) return `<div class="wn-illo" aria-hidden="true"><div class="wn3-seg wn-up"${wnD(.1)}><span class="on">Cepat</span><span>Rinci</span></div><div class="wn3-row wn-up"${wnD(.4)}><div class="wn3-tp"><b>Kopi pagi</b>Rp 22.000</div><div class="wn3-tp"><b>Bensin</b>Rp 50.000</div><div class="wn3-tp"><b>Listrik</b>Rp 410.000</div></div><div class="wn3-amt wn-up"${wnD(.7)}><small>JUMLAH</small>Rp 47.500</div><div class="wn3-chips wn-up"${wnD(.9)}><span>+10 rb</span><span>+25 rb</span><span>+50 rb</span><span>+100 rb</span></div></div>`;
+  if (i === 2) return `<div class="wn-illo" aria-hidden="true"><div class="wn3-stk wn-up"${wnD(.2)}><i><span>TUNAI</span><span>Rp 85.000</span></i><i><span>OCBC NISP</span><span>Rp 13.935</span></i><i>GOPAY · DIPAKAI<b>Rp 213.935</b></i></div></div>`;
+  const imp = `<div class="wn3-imp wn-up"${wnD(.2)}><div><span>Saldo GoPay</span><b>213.935 → 166.435</b></div><div><span>Anggaran Makanan</span><b>62% → 71%</b></div><div><span>Pengeluaran hari ini</span><b>Rp 171.500</b></div></div>`;
+  if (WEB) { const lv = [0, 2, 1, 0, 3, 4, 3, 1, 0, 2, 3, 4, 2, 1, 0, 1]; return `<div class="wn-illo wn2-web" aria-hidden="true">${imp}<div class="wn2-cal wn-up"${wnD(.6)}><p><b>Kalender pengeluaran</b><span>November</span></p><div class="wn2-g">${lv.map((v, k) => `<i class="l${v}">${k + 1}</i>`).join('')}</div></div></div>`; }
+  return `<div class="wn-illo" aria-hidden="true">${imp}<div class="wn3-days wn-up"${wnD(.6)}>${['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((d, k) => `<i${k < 5 ? ' class="on"' : ''}>${d}</i>`).join('')}</div></div>`;
 }
 const WN_TXT_M = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'SaKu tampil', b: 'lebih segar', p: 'Latar biru muda, kartu bento, dan tampilan baru di seluruh aplikasi. Semua data Anda tetap aman di tempatnya.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Beranda', b: 'bergaya bento', p: 'Kalender pengeluaran, linimasa, donat kategori, target, dan wawasan tersusun dalam satu kolom. Ketuk tanggal untuk melihat rinciannya.', cta: 'Lanjut' },
-  { chip: 'Perubahan 2', a: 'Navigasi', b: 'lebih sederhana', p: 'Tab bawah berisi Beranda, Transaksi, Catat, Analisis, dan Lainnya. Menu Lainnya menampilkan Tagihan, Rencana, Laporan, Tanya SaKu, dan Tentang Aplikasi seperti kartu.', cta: 'Lanjut' },
-  { chip: 'Perubahan 3', a: 'Tentang', b: 'Aplikasi', p: 'Halaman baru berisi fitur SaKu dan riwayat versi, ada di menu Lainnya.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Catat transaksi', b: 'lebih mudah', p: 'Form catat dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk, dan ringkasan dampak.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Cepat atau', b: 'Rinci', p: 'Mode Cepat hanya menampilkan yang penting. Ketuk Rinci untuk catatan, barang, foto struk, dan pengulangan. Templat menyimpan catatan yang sering dipakai.', cta: 'Lanjut' },
+  { chip: 'Perubahan 2', a: 'Pilih rekening', b: 'dengan geser', p: 'Rekening tampil sebagai kartu bertumpuk. Geser ke kiri atau kanan, atau ketuk kartu di belakang, untuk berganti. Saldo tiap rekening terlihat langsung.', cta: 'Lanjut' },
+  { chip: 'Perubahan 3', a: 'Lihat dampak', b: 'sebelum simpan', p: 'Di bawah form ada ringkasan saldo, pengeluaran hari itu, dan anggaran. Catatan berulang meminta konfirmasi lewat kartu di Beranda.', cta: 'Mulai jelajahi' }
 ];
 const WN_TXT_W = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'SaKu tampil', b: 'lebih segar', p: 'Latar biru muda, kartu bento, dan bilah navigasi baru di atas layar. Semua data Anda tetap aman di tempatnya.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Beranda', b: 'bergaya bento', p: 'Kalender pengeluaran dan linimasa berdampingan dengan donat kategori, target, dan wawasan dalam dua kolom. Klik tanggal untuk melihat rinciannya.', cta: 'Lanjut' },
-  { chip: 'Perubahan 2', a: 'Navigasi', b: 'di bilah atas', p: 'Menu pindah ke bilah atas: Beranda, Transaksi, Analisis, Tagihan, Rencana, Laporan, lalu Lainnya, Keluar, dan Catat. Bahasa dan Keluar juga ada di footer bawah.', cta: 'Lanjut' },
-  { chip: 'Perubahan 3', a: 'Tentang', b: 'Aplikasi', p: 'Halaman baru berisi fitur SaKu dan riwayat versi, ada di menu Lainnya.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Catat transaksi', b: 'lebih mudah', p: 'Form catat kini dua kolom: isian di kiri, dampak dan kalender di kanan. Ada mode Cepat dan Rinci serta templat sekali klik.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Cepat atau', b: 'Rinci', p: 'Mode Cepat hanya menampilkan yang penting. Klik Rinci untuk catatan, barang, foto struk, dan pengulangan. Templat menyimpan catatan yang sering dipakai.', cta: 'Lanjut' },
+  { chip: 'Perubahan 2', a: 'Pilih rekening', b: 'dengan geser', p: 'Rekening tampil sebagai kartu bertumpuk. Klik tombol panah, tekan panah di keyboard, atau klik kartu di belakang untuk berganti.', cta: 'Lanjut' },
+  { chip: 'Perubahan 3', a: 'Dampak dan', b: 'kalender', p: 'Panel kanan menunjukkan saldo, anggaran, dan kalender pengeluaran. Klik tanggal di kalender untuk memindahkan tanggal catatan.', cta: 'Mulai jelajahi' }
 ];
 let WN_TXT = WN_TXT_M;
 const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
@@ -11892,12 +12074,13 @@ function paintAcc() {
     if (!tos.some(a => a.id === F.to)) F.to = tos.length ? tos[0].id : '';
     $('#f-to').innerHTML = tos.map(a => opt(a, F.to, false)).join('');
   }
+  paintStack();
   paintAccNote();
 }
 const ACC_KIND_LABEL = { bank: 'Bank', ewallet: 'E-Wallet', cash: 'Tunai' };
 document.addEventListener('change', e => {
   const el = e.target; if (!el || !S.form) return;
-  if (el.id === 'f-acc') { S.form.acc = el.value; paintAcc(); }
+  if (el.id === 'f-acc') { S.form.acc = el.value; paintAcc(); paintImpact(); }
   else if (el.id === 'f-to') S.form.to = el.value;
 });
 document.addEventListener('input', e => {
