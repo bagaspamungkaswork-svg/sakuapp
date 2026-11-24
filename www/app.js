@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.11.0', APP_BUILD = 14;
+const APP_VERSION = '1.11.1', APP_BUILD = 15;
 const CHANGELOG = [
+  { v: '1.11.1', d: '2026-11-24', items: ['Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan'] },
   { v: '1.11.0', d: '2026-11-24', items: ['Beranda baru bergaya bento: kalender pengeluaran per hari (ketuk tanggal untuk rincian), linimasa harian, dan kartu anggaran serta transaksi terbaru tertata dalam grid'] },
   { v: '1.10.3', d: '2026-11-24', items: ['Halaman Rekening dirapikan (jarak antar kartu seragam, ringkasan ganda disembunyikan); submenu baru Tentang Aplikasi di Pengaturan'] },
   { v: '1.10.2', d: '2026-11-24', items: ['Masuk dan Daftar bisa langsung dengan Google (tombol Google kini di atas formulir); pengenalan SaKu kini cukup digulir ke bawah tanpa tombol Lanjut'] },
@@ -6538,6 +6539,9 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Hemat": "Frugal",
+  "Lihat semua target": "See all goals",
+  "Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan": "Home: frugal-day markers and weekly summary on the calendar, plus category donut, goals, and insight cards",
   "Kalender Pengeluaran": "Spending Calendar",
   "Tidak ada transaksi pada hari ini.": "No transactions on this day.",
   "Linimasa Harian": "Daily Timeline",
@@ -8570,17 +8574,52 @@ function rekapHTML() {
   const rec = `<section class="card hm-recent" aria-labelledby="h-rec"><div class="card-h"><h2 id="h-rec">Transaksi terbaru</h2><button type="button" class="lnk" data-act="nav" data-v="transaksi">Lihat semua</button></div>${recent.length ? recent.map(t => txRow(t)).join('') : '<div class="empty-s">Belum ada transaksi.</div>'}</section>`;
   return head + demo + hero + homeBentoHTML(C, budAdd, rec);
 }
+function homeExtraHTML(C, list) {
+  let out = '';
+  try {
+    const cat = {}; let tot = 0;
+    list.filter(t => t.type !== 'in').forEach(t => { const a = Number(t.amount) || 0; cat[t.cat] = (cat[t.cat] || 0) + a; tot += a; });
+    const ent = Object.entries(cat).sort((a, b) => b[1] - a[1]);
+    if (tot > 0) {
+      const top = ent.slice(0, 5), rest = ent.slice(5).reduce((s, x) => s + x[1], 0), R = 40, Cc = 2 * Math.PI * R; let off = 0;
+      const segs = top.map(x => ({ l: catOf(x[0]).label, v: x[1], c: 'var(--s' + (catOf(x[0]).slot || 1) + ')' })).concat(rest > 0 ? [{ l: 'Lainnya', v: rest, c: 'var(--ink-3)' }] : []);
+      const arcs = segs.map(g => { const len = g.v / tot * Cc, a = `<circle cx="56" cy="56" r="${R}" fill="none" stroke-width="16" style="stroke:${g.c}" stroke-dasharray="${Math.max(0, len - 2).toFixed(2)} ${(Cc - Math.max(0, len - 2)).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 56 56)"/>`; off += len; return a; }).join('');
+      const lg = segs.map(g => `<li><i style="background:${g.c}"></i><span>${esc(g.l)}</span><b>${Math.round(g.v / tot * 100)}%</b><small>${esc(rpC(g.v))}</small></li>`).join('');
+      out += `<section class="card dn-card" aria-labelledby="h-dn"><div class="card-h"><h2 id="h-dn">Pengeluaran per Kategori</h2></div><div class="dn"><svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="Donat pengeluaran per kategori, total ${esc(fmtRp(tot))}"><circle cx="56" cy="56" r="${R}" fill="none" stroke-width="16" style="stroke:var(--sunken)"/>${arcs}<text x="56" y="60" text-anchor="middle" class="dn-t">${esc(rpC(tot))}</text></svg><ul class="dn-l">${lg}</ul></div></section>`;
+    }
+  } catch (e) { /* abaikan */ }
+  try {
+    if (planReady()) {
+      const ms = tgModels(ymd(new Date())).filter(m => !m.done).slice(0, 3);
+      if (ms.length) {
+        const rg = ms.map(m => { const p = Math.max(0, Math.min(100, Math.round(m.pct || 0))), r = 22, c = 2 * Math.PI * r; return `<li><svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="${r}" fill="none" stroke-width="7" style="stroke:var(--sunken)"/><circle cx="28" cy="28" r="${r}" fill="none" stroke-width="7" stroke-linecap="round" style="stroke:var(--accent)" stroke-dasharray="${(c * p / 100).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 28 28)"/><text x="28" y="32" text-anchor="middle" class="rg-t">${p}%</text></svg><span><b>${esc(m.g.name)}</b><small>${esc(rpC(m.saved))} / ${esc(rpC(m.goal))}</small></span></li>`; }).join('');
+        out += `<section class="card rg-card" aria-labelledby="h-rg"><div class="card-h"><h2 id="h-rg">Target</h2><button type="button" class="lnk" data-act="nav" data-v="target">Lihat semua target</button></div><ul class="rg">${rg}</ul></section>`;
+      }
+    }
+  } catch (e) { /* abaikan */ }
+  try {
+    const P = anaPeriod(S.tx, C.A, S.settings, new Date());
+    if (P && P.has) {
+      const ins = anaInsights(P).slice(0, 2).map(it => { const x = anaText(it); return `<div class="ins-card"><span class="hm-ic tone-${it.tone}">${ic(anaIc(it.k, it.tone), 21)}</span><span class="ins-tt"><span class="ins-t">${esc(x.t)}</span><span class="ins-s">${esc(x.s)}</span></span></div>`; }).join('');
+      if (ins) out += `<section class="card in-card" aria-labelledby="h-in"><div class="card-h"><h2 id="h-in">Wawasan untuk Anda</h2></div>${ins}</section>`;
+    }
+  } catch (e) { /* abaikan */ }
+  return out;
+}
 function homeBentoHTML(C, budAdd, rec) {
   const mr = rangeFor('month', C.A), s = ymd(mr.start), e = ymd(mr.end), today = ymd(startOfDay(new Date()));
   const list = S.tx.filter(t => t.date >= s && t.date <= e && !isXfer(t)), bd = byDayOf(list), days = [];
   for (let d = new Date(mr.start); d <= mr.end; d = addDays(d, 1)) days.push(ymd(d));
   const outs = days.map(k => (bd[k] || { out: 0 }).out), mx = Math.max(1, ...outs);
+  const elp = days.filter(k => k <= today).length || 1, avgO = outs.reduce((a, b) => a + b, 0) / elp;
   let sel = S.calSel; if (!sel || sel < s || sel > e) sel = today >= s && today <= e ? today : days[days.length - 1];
   const lead = (mr.start.getDay() + 6) % 7, wk = [1, 2, 3, 4, 5, 6, 0].map(i => `<span>${esc(DAYS_S[i])}</span>`).join('');
   const cells = Array.from({ length: lead }, () => '<span></span>').concat(days.map(k => {
     const o = bd[k] || { in: 0, out: 0 }, lv = o.out <= 0 ? 0 : Math.min(4, Math.max(1, Math.ceil(o.out / mx * 4))), dd = parseYmd(k);
-    return `<button type="button" class="cal-d l${lv}${k > today ? ' fut' : ''}${o.in > 0 ? ' inc' : ''}${k === today ? ' today' : ''}" data-act="cal-day" data-d="${k}" aria-pressed="${k === sel}" aria-label="${esc(fmtDateLong(dd))}: ${o.out > 0 ? esc(fmtRp(o.out)) : '-'}">${dd.getDate()}</button>`;
+    return `<button type="button" class="cal-d l${lv}${k > today ? ' fut' : ''}${k <= today && o.out < avgO * 0.5 ? ' hemat' : ''}${o.in > 0 ? ' inc' : ''}${k === today ? ' today' : ''}" data-act="cal-day" data-d="${k}" aria-pressed="${k === sel}" aria-label="${esc(fmtDateLong(dd))}: ${o.out > 0 ? esc(fmtRp(o.out)) : '-'}">${dd.getDate()}</button>`;
   })).join('');
+  const wks = []; days.forEach((k, i) => { const w = Math.floor((lead + i) / 7); wks[w] = (wks[w] || 0) + outs[i]; });
+  const wmx = Math.max(1, ...wks.map(x => x || 0)), wkHTML = '<div class="cal-wk">' + wks.map((v, i) => `<div><span>Minggu ${i + 1}</span><span class="tl-bar"><i style="width:${Math.max(3, Math.round((v || 0) / wmx * 100))}%"></i></span><b>${esc(rpC(v || 0))}</b></div>`).join('') + '</div>';
   const dl = list.filter(t => t.date === sel), so = bd[sel] || { in: 0, out: 0 }, cat = {};
   dl.filter(t => t.type !== 'in').forEach(t => { cat[t.cat] = (cat[t.cat] || 0) + (Number(t.amount) || 0); });
   const top = Object.entries(cat).sort((a, b) => b[1] - a[1])[0];
@@ -8588,10 +8627,10 @@ function homeBentoHTML(C, budAdd, rec) {
     <div class="cal-st"><span><small>Pemasukan</small><b class="pos">${fmtRp(so.in)}</b></span><span><small>Pengeluaran</small><b class="neg">${fmtRp(so.out)}</b></span></div>
     ${top ? `<p class="cal-top">Terbanyak: <b>${esc(catOf(top[0]).label)}</b> · ${fmtRp(top[1])}</p>` : ''}
     ${dl.length ? '<div class="cal-tx">' + dl.slice(0, 6).map(t => txRow(t)).join('') + '</div>' : '<div class="empty-s">Tidak ada transaksi pada hari ini.</div>'}</div>`;
-  const cal = `<section class="card cal-card" aria-labelledby="h-cal"><div class="card-h"><h2 id="h-cal">Kalender Pengeluaran</h2><span class="cal-lg" aria-hidden="true"><small>Sedikit</small><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><small>Banyak</small></span></div><div class="cal-w" aria-hidden="true">${wk}</div><div class="cal-g">${cells}</div>${det}</section>`;
+  const cal = `<section class="card cal-card" aria-labelledby="h-cal"><div class="card-h"><h2 id="h-cal">Kalender Pengeluaran</h2><span class="cal-lg" aria-hidden="true"><small>Sedikit</small><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><small>Banyak</small><i class="hm"></i><small>Hemat</small></span></div><div class="cal-w" aria-hidden="true">${wk}</div><div class="cal-g">${cells}</div>${wkHTML}${det}</section>`;
   const act = days.filter(k => (bd[k] || { out: 0 }).out > 0 && k <= today).reverse().slice(0, 6);
   const tl = `<section class="card tl-card" aria-labelledby="h-tl"><div class="card-h"><h2 id="h-tl">Linimasa Harian</h2></div>${act.length ? '<ul class="tl">' + act.map(k => { const o = bd[k], dd = parseYmd(k); return `<li><button type="button" data-act="cal-day" data-d="${k}" aria-label="${esc(fmtDateLong(dd))}"><span class="tl-d"><b>${dd.getDate()}</b><small>${esc(DAYS_S[dd.getDay()])}</small></span><span class="tl-b"><span class="tl-bar"><i style="width:${Math.max(4, Math.round(o.out / mx * 100))}%"></i></span></span><b class="tl-v">${esc(rpC(o.out))}</b></button></li>`; }).join('') + '</ul>' : '<div class="empty-s">Belum ada pengeluaran pada periode ini.</div>'}</section>`;
-  return `<div class="bento"><div class="b-col">${cal}</div><div class="b-col">${budAdd}${tl}${rec}</div></div>`;
+  return `<div class="bento"><div class="b-col">${cal}</div><div class="b-col">${budAdd}${tl}${homeExtraHTML(C, list)}${rec}</div></div>`;
 }
 VIEWS.rekap = { update() {
   const hadFocus = !!(document.activeElement && document.activeElement.id === 'ba-amt');

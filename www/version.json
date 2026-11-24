@@ -1,8 +1,8 @@
 {
- "version": "1.11.0",
- "build": 14,
+ "version": "1.11.1",
+ "build": 15,
  "date": "2026-11-24",
  "notes": [
-  "Beranda baru bergaya bento: kalender pengeluaran per hari (ketuk tanggal untuk rincian), linimasa harian, dan kartu anggaran serta transaksi terbaru tertata dalam grid"
+  "Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan"
  ]
 }
