@@ -2,10 +2,11 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.14.1', APP_BUILD = 24;
+const APP_VERSION = '1.14.2', APP_BUILD = 25;
 const CHANGELOG = [
+  { v: '1.14.2', d: '2026-11-25', items: ['Penulisan \"templat\" diperbaiki menjadi \"template\" di seluruh aplikasi'] },
   { v: '1.14.1', d: '2026-11-25', items: ['Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan'] },
-  { v: '1.14.0', d: '2026-11-24', items: ['Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda'] },
+  { v: '1.14.0', d: '2026-11-24', items: ['Form catat transaksi dirombak: mode Cepat dan Rinci, template sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda'] },
   { v: '1.13.5', d: '2026-11-24', items: ['Laporan PDF dan Excel mengikuti desain baru: warna biru dan navy yang sama dengan aplikasi, kalender pengeluaran (PDF dan sheet Kalender di Excel), serta footer dengan tahun pembaruan'] },
   { v: '1.13.4', d: '2026-11-24', items: ['Pengantar pembaruan dibedakan untuk versi web dan versi HP (isi dan ilustrasi menyesuaikan tampilan yang dipakai)'] },
   { v: '1.13.3', d: '2026-11-24', items: ['Pengantar pembaruan tampilan diperbarui: muncul sekali saat masuk pertama kali di versi ini dan menjelaskan desain baru, navigasi, dan halaman Tentang Aplikasi'] },
@@ -6606,14 +6607,14 @@ const I18N_EN = {
   "kini bisa diatur": "is now editable",
   "dihitung otomatis": "calculated automatically",
   "Bawaan": "Default",
-  "Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda": "The record form was redesigned: Quick and Detailed modes, one-tap templates, a swipeable stack of account cards, an impact summary, a calendar on the web version, and repeating entries confirmed on Home",
+  "Form catat transaksi dirombak: mode Cepat dan Rinci, template sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda": "The record form was redesigned: Quick and Detailed modes, one-tap templates, a swipeable stack of account cards, an impact summary, a calendar on the web version, and repeating entries confirmed on Home",
   "Cepat": "Quick",
   "Rinci": "Detailed",
-  "Templat": "Template",
-  "Simpan Templat": "Save Template",
+  "Template": "Template",
+  "Simpan Template": "Save Template",
   "Dampak langsung": "Immediate impact",
   "Isi jumlah untuk melihat dampaknya ke saldo dan anggaran.": "Enter an amount to see its effect on your balance and budget.",
-  "Belum ada templat. Isi form lalu tekan Templat untuk memakainya lagi sekali ketuk.": "No templates yet. Fill in the form, then press Template to reuse it with one tap.",
+  "Belum ada template. Isi form lalu tekan Template untuk memakainya lagi sekali ketuk.": "No templates yet. Fill in the form, then press Template to reuse it with one tap.",
   "Ulangi otomatis": "Repeat",
   "Dicatat sendiri, kamu cukup konfirmasi di Beranda": "A confirmation card appears on Home; you only tap to record",
   "Pilih minimal satu hari.": "Pick at least one day.",
@@ -8156,7 +8157,7 @@ function sheetHTML() {
       ${S.form && !S.form.id && voiceSupport() ? voiceRowHTML() : ''}
       <div class="tgl" role="group" aria-label="Jenis transaksi"><button type="button" class="out" data-act="f-type" data-t="out" aria-pressed="true">${ic('up', 18)} Pengeluaran</button><button type="button" class="in" data-act="f-type" data-t="in" aria-pressed="false">${ic('down', 18)} Pemasukan</button></div>
       <div class="tgl fmode" role="group" aria-label="Mode pengisian"><button type="button" data-act="f-mode" data-m="cepat" aria-pressed="true">Cepat</button><button type="button" data-act="f-mode" data-m="rinci" aria-pressed="false">Rinci</button></div>
-      <div class="f-tplbox" id="f-tplbox"><div class="f-lbrow"><span class="f-lb">Templat</span><button type="button" class="lnkb" id="f-tplmng" data-act="f-tpl-mng" hidden>Kelola</button></div><div class="f-tpls" id="f-tpls"></div></div>
+      <div class="f-tplbox" id="f-tplbox"><div class="f-lbrow"><span class="f-lb">Template</span><button type="button" class="lnkb" id="f-tplmng" data-act="f-tpl-mng" hidden>Kelola</button></div><div class="f-tpls" id="f-tpls"></div></div>
       <div class="f-stkbox" id="f-stkbox" hidden><div class="f-lbrow"><span class="f-lb" id="f-stk-l">Dibayar dari</span><span class="f-stk-nav"><button type="button" data-act="f-acc-go" data-d="-1" aria-label="Rekening sebelumnya">&lsaquo;</button><span id="f-stk-c" aria-live="polite"></span><button type="button" data-act="f-acc-go" data-d="1" aria-label="Rekening berikutnya">&rsaquo;</button></span></div><div class="f-stk" id="f-stk" role="group" aria-label="Pilih rekening, geser kiri atau kanan" tabindex="0"></div></div>
       <div class="field"><label for="f-amt">Jumlah</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="f-amt" data-money="amt" inputmode="numeric" autocomplete="off" placeholder="0"></div><div class="f-qk"><button type="button" data-act="f-plus" data-v="10000">+10 rb</button><button type="button" data-act="f-plus" data-v="25000">+25 rb</button><button type="button" data-act="f-plus" data-v="50000">+50 rb</button><button type="button" data-act="f-plus" data-v="100000">+100 rb</button><button type="button" data-act="f-plus" data-v="0">Hapus</button></div></div>
       <div class="row2" id="f-accrow" hidden><div class="field sr-only" id="f-accbox"><label for="f-acc" id="f-acc-l">Dibayar dari</label><select class="input" id="f-acc" required></select></div><div class="field" id="f-tobox" hidden><label for="f-to">Masuk ke</label><select class="input" id="f-to"></select></div></div>
@@ -8175,7 +8176,7 @@ function sheetHTML() {
       <p class="form-err" id="f-err" role="alert" hidden></p>
     </div><aside class="f-side" aria-label="Dampak transaksi"><div class="f-imp" id="f-imp"></div><div class="f-cal" id="f-cal"></div></aside>
     </div>
-    <div class="sheet-f"><button type="button" class="btn btn-danger" id="f-del" data-act="f-del" hidden>${ic('trash', 18)} Hapus</button><button type="button" class="btn btn-ghost" id="f-tplsave" data-act="f-tpl-save">${ic('plus', 18)} Templat</button><button type="submit" class="btn btn-primary grow" id="f-save">Simpan</button></div>
+    <div class="sheet-f"><button type="button" class="btn btn-danger" id="f-del" data-act="f-del" hidden>${ic('trash', 18)} Hapus</button><button type="button" class="btn btn-ghost" id="f-tplsave" data-act="f-tpl-save">${ic('plus', 18)} Template</button><button type="submit" class="btn btn-primary grow" id="f-save">Simpan</button></div>
   </form></div>`;
 }
 function openSheet(tx, preset) {
@@ -8550,7 +8551,7 @@ const ACT = {
   'f-del'() { deleteTx(); }
 };
 
-/* ================= Catat transaksi v1.14: mode, templat, kartu rekening, dampak, kalender, ulangi ================= */
+/* ================= Catat transaksi v1.14: mode, template, kartu rekening, dampak, kalender, ulangi ================= */
 const FMODE_KEY = 'saku.fmode';
 const fmodeGet = () => { try { return localStorage.getItem(FMODE_KEY) === 'rinci' ? 'rinci' : 'cepat'; } catch (e) { return 'cepat'; } };
 const fmodeSet = m => { try { localStorage.setItem(FMODE_KEY, m); } catch (e) { /* abaikan */ } };
@@ -8566,7 +8567,7 @@ function paintMode() {
 function paintTpls() {
   const F = S.form, box = $('#f-tpls'); if (!F || !box) return;
   const list = tplList(), bx = $('#f-tplbox'); bx.hidden = !!F.id; if (F.id) return;
-  box.innerHTML = list.length ? list.map(t => `<span class="tp-w"><button type="button" class="tp" data-act="f-tpl" data-id="${esc(t.id)}"><b>${esc(t.n)}</b><span>${esc(CATS[t.cat].label)}${accById(t.acc) ? ' · ' + esc(accById(t.acc).name) : ''}</span><em>${fmtRp(t.amount)}</em></button>${F.tplMng ? `<button type="button" class="tp-x" data-act="f-tpl-del" data-id="${esc(t.id)}" aria-label="Hapus templat ${esc(t.n)}">${ic('x', 14)}</button>` : ''}</span>`).join('') : '<p class="tp-none">Belum ada templat. Isi form lalu tekan Templat untuk memakainya lagi sekali ketuk.</p>';
+  box.innerHTML = list.length ? list.map(t => `<span class="tp-w"><button type="button" class="tp" data-act="f-tpl" data-id="${esc(t.id)}"><b>${esc(t.n)}</b><span>${esc(CATS[t.cat].label)}${accById(t.acc) ? ' · ' + esc(accById(t.acc).name) : ''}</span><em>${fmtRp(t.amount)}</em></button>${F.tplMng ? `<button type="button" class="tp-x" data-act="f-tpl-del" data-id="${esc(t.id)}" aria-label="Hapus template ${esc(t.n)}">${ic('x', 14)}</button>` : ''}</span>`).join('') : '<p class="tp-none">Belum ada template. Isi form lalu tekan Template untuk memakainya lagi sekali ketuk.</p>';
   const mg = $('#f-tplmng'); mg.hidden = !list.length; mg.textContent = F.tplMng ? 'Selesai' : 'Kelola';
 }
 const stkItems = F => { const list = accList().slice(); if (!accRequired(F) || F.acc === '') list.push({ id: '', kind: 'cash', brand: '', name: 'Tanpa rekening' }); return list; };
@@ -8667,17 +8668,17 @@ Object.assign(ACT, {
     paintType(); paintCats(); paintAcc(); paintRef(); paintTotal(); paintImpact();
   },
   'f-tpl-mng'() { const F = S.form; if (!F) return; F.tplMng = !F.tplMng; paintTpls(); },
-  async 'f-tpl-del'(el) { const next = tplList().filter(t => t.id !== el.dataset.id); S.settings = Object.assign({}, S.settings, { tpls: next }); paintTpls(); await saveSet({ tpls: next }, 'Templat dihapus'); },
+  async 'f-tpl-del'(el) { const next = tplList().filter(t => t.id !== el.dataset.id); S.settings = Object.assign({}, S.settings, { tpls: next }); paintTpls(); await saveSet({ tpls: next }, 'Template dihapus'); },
   async 'f-tpl-save'() {
     const F = S.form; if (!F || F.id) return;
     const amt = Math.round(F.amount) || 0, note = ($('#f-note').value || '').trim();
-    if (!(amt > 0) || !CATS[F.cat]) { toast('Isi jumlah dan pilih kategori dulu untuk menyimpan templat.'); return; }
+    if (!(amt > 0) || !CATS[F.cat]) { toast('Isi jumlah dan pilih kategori dulu untuk menyimpan template.'); return; }
     const list = tplList().slice(), n = (note || CATS[F.cat].label).slice(0, 24), dup = list.filter(t => t.n.toLowerCase() === n.toLowerCase() && t.cat === F.cat)[0];
-    if (!dup && list.length >= 8) { toast('Templat penuh (maksimal 8). Hapus satu lewat Kelola.'); return; }
+    if (!dup && list.length >= 8) { toast('Template penuh (maksimal 8). Hapus satu lewat Kelola.'); return; }
     const rec = { id: dup ? dup.id : 't' + Date.now().toString(36), n, type: F.type, amount: amt, cat: F.cat, acc: F.acc || '', note: note.slice(0, 80) };
     const next = dup ? list.map(t => t === dup ? rec : t) : list.concat(rec);
     S.settings = Object.assign({}, S.settings, { tpls: next }); paintTpls();
-    await saveSet({ tpls: next }, 'Templat ' + n + ' disimpan');
+    await saveSet({ tpls: next }, 'Template ' + n + ' disimpan');
   },
   'f-acc-pick'(el) {
     const F = S.form; if (!F) return; if (S.stkSwiped && Date.now() - S.stkSwiped < 350) return;

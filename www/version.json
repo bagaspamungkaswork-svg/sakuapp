@@ -1,8 +1,8 @@
 {
- "version": "1.14.1",
- "build": 24,
+ "version": "1.14.2",
+ "build": 25,
  "date": "2026-11-25",
  "notes": [
-  "Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan"
+  "Penulisan \"templat\" diperbaiki menjadi \"template\" di seluruh aplikasi"
  ]
 }
