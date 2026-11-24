@@ -1,8 +1,8 @@
 {
- "version": "1.10.2",
- "build": 12,
+ "version": "1.10.3",
+ "build": 13,
  "date": "2026-11-24",
  "notes": [
-  "Masuk dan Daftar bisa langsung dengan Google (tombol Google kini di atas formulir); pengenalan SaKu kini cukup digulir ke bawah tanpa tombol Lanjut"
+  "Halaman Rekening dirapikan (jarak antar kartu seragam, ringkasan ganda disembunyikan); submenu baru Tentang Aplikasi di Pengaturan"
  ]
 }

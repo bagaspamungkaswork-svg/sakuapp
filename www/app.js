@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.10.2', APP_BUILD = 12;
+const APP_VERSION = '1.10.3', APP_BUILD = 13;
 const CHANGELOG = [
+  { v: '1.10.3', d: '2026-11-24', items: ['Halaman Rekening dirapikan (jarak antar kartu seragam, ringkasan ganda disembunyikan); submenu baru Tentang Aplikasi di Pengaturan'] },
   { v: '1.10.2', d: '2026-11-24', items: ['Masuk dan Daftar bisa langsung dengan Google (tombol Google kini di atas formulir); pengenalan SaKu kini cukup digulir ke bawah tanpa tombol Lanjut'] },
   { v: '1.10.1', d: '2026-11-22', items: ['Intro "Tampilan baru" di website kini berbentuk kartu mendatar dua kolom, bukan lagi tampilan HP; kartu biru di halaman Anggaran dan Rencana lebih rapi'] },
   { v: '1.10.0', d: '2026-11-21', items: ['Tampilan baru: Beranda lebih ringkas (saldo keseluruhan, pemasukan, pengeluaran, anggaran, transaksi terbaru) dengan warna biru bersentuhan hijau logo dan huruf Plus Jakarta Sans', 'Menu Analisis baru dengan empat tab: Wawasan (skor keuangan, proyeksi akhir bulan, kebiasaan belanja), Kategori, Tren, dan Rincian', 'Menu bawah berbentuk pil melayang: Beranda, Transaksi, tombol tambah, Analisis, dan Lainnya; Tagihan kini ada di Lainnya dengan pintasan lonceng di atas', 'Submenu baru: menu Lainnya bergaya bento, serta submenu Tagihan, Rencana, dan Kurs dengan gaya berbeda dan sidebar web dengan garis alur', 'Pengantar Tampilan baru yang tampil sekali setelah masuk, dengan animasi empat layar dan tombol Lewati'] },
@@ -6536,6 +6537,27 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Tentang Aplikasi": "About the App",
+  "Buku kas pribadi yang rapi: catat, atur, dan pantau uang Anda dari HP maupun laptop.": "A tidy personal cash book: record, manage, and monitor your money from your phone or laptop.",
+  "Yang bisa Anda lakukan": "What you can do",
+  "Catat cepat": "Quick entry",
+  "Ketik atau ucapkan pengeluaran, kategori dipilihkan.": "Type or say an expense and the category is picked for you.",
+  "Pisahkan saldo bank, e-wallet, dan tunai.": "Keep bank, e-wallet, and cash balances apart.",
+  "Anggaran dan target": "Budgets and goals",
+  "Atur batas belanja dan kejar tujuan tabungan.": "Set spending limits and chase savings goals.",
+  "Laporan dan analisis": "Reports and analysis",
+  "Grafik arus kas, kategori, dan tren bulanan.": "Charts of cash flow, categories, and monthly trends.",
+  "Asisten yang menjawab soal uang Anda.": "An assistant that answers questions about your money.",
+  "Pengingat": "Reminders",
+  "Tagihan, cicilan, dan utang tidak terlewat.": "Never miss a bill, installment, or debt.",
+  "Prinsip SaKu": "SaKu principles",
+  "Data milik Anda": "Your data is yours",
+  "Cadangkan atau pindahkan kapan saja lewat Cadangan Data.": "Back up or move it any time through Data Backup.",
+  "Sederhana": "Simple",
+  "Satu buku kas, tanpa istilah rumit.": "One cash book, no complicated jargon.",
+  "Kata sandi dan keluar otomatis menjaga akun Anda.": "Your password and auto sign-out keep your account safe.",
+  "Ada masukan atau kendala? Hubungi administrator SaKu yang membuat akun Anda.": "Got feedback or a problem? Contact the SaKu administrator who created your account.",
+  "Halaman Rekening dirapikan (jarak antar kartu seragam, ringkasan ganda disembunyikan); submenu baru Tentang Aplikasi di Pengaturan": "Accounts page tidied (even card spacing, duplicate summary hidden); new About the App submenu in Settings",
   "Tentang SaKu": "About SaKu",
   "tepat di akhir": "right at the end",
   "Terakhir diunduh:": "Last downloaded:",
@@ -7910,9 +7932,19 @@ function subOpen(k) {
   }
   return !!st[k];
 }
+function aboutHTML() {
+  const f = [['mic', 'Catat cepat', 'Ketik atau ucapkan pengeluaran, kategori dipilihkan.'], ['wallet', 'Rekening', 'Pisahkan saldo bank, e-wallet, dan tunai.'], ['target', 'Anggaran dan target', 'Atur batas belanja dan kejar tujuan tabungan.'], ['chart', 'Laporan dan analisis', 'Grafik arus kas, kategori, dan tren bulanan.'], ['star', 'Tanya SaKu', 'Asisten yang menjawab soal uang Anda.'], ['bell', 'Pengingat', 'Tagihan, cicilan, dan utang tidak terlewat.']];
+  const p = [['lock', 'Data milik Anda', 'Cadangkan atau pindahkan kapan saja lewat Cadangan Data.'], ['check', 'Sederhana', 'Satu buku kas, tanpa istilah rumit.'], ['shield', 'Aman', 'Kata sandi dan keluar otomatis menjaga akun Anda.']];
+  const tile = x => `<li class="ab-t"><span class="ab-i" aria-hidden="true">${ic(x[0], 20)}</span><b>${x[1]}</b><small>${x[2]}</small></li>`;
+  return `<div class="ab"><div class="ab-hero"><span class="ab-logo" aria-hidden="true">${ic('wallet', 26)}</span><div><b class="ab-n">SaKu</b><small>Semua uang ada di SaKu.</small></div><span class="ab-v" translate="no">v${esc(APP_VERSION)}</span></div>
+    <p class="ab-p">Buku kas pribadi yang rapi: catat, atur, dan pantau uang Anda dari HP maupun laptop.</p>
+    <h3 class="ver-h">Yang bisa Anda lakukan</h3><ul class="ab-g">${f.map(tile).join('')}</ul>
+    <h3 class="ver-h">Prinsip SaKu</h3><ul class="ab-g ab-g3">${p.map(tile).join('')}</ul>
+    <p class="ab-help">Ada masukan atau kendala? Hubungi administrator SaKu yang membuat akun Anda.</p></div>`;
+}
 function verBodyHTML() {
   const upd = typeof updNative === 'function' && updNative() ? `<div class="btn-row ver-act"><button type="button" class="btn btn-ghost btn-sm" data-act="upd-check">${ic('download', 16)} Cek pembaruan</button></div>` : '';
-  return `${upd}<h3 class="ver-h">Yang baru</h3><ol class="ver-list">` + CHANGELOG.map((c, i) => `<li class="ver-item"><div class="ver-top"><b class="ver-v" translate="no">v${esc(c.v)}</b><span class="ver-d" translate="no">${esc(fmtDateLong(parseYmd(c.d)))}</span>${i === 0 ? '<span class="ver-now">Versi ini</span>' : ''}</div><ul class="ver-notes">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul></li>`).join('') + '</ol>';
+  return `${upd}${aboutHTML()}<h3 class="ver-h">Yang baru</h3><ol class="ver-list">` + CHANGELOG.map((c, i) => `<li class="ver-item"><div class="ver-top"><b class="ver-v" translate="no">v${esc(c.v)}</b><span class="ver-d" translate="no">${esc(fmtDateLong(parseYmd(c.d)))}</span>${i === 0 ? '<span class="ver-now">Versi ini</span>' : ''}</div><ul class="ver-notes">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul></li>`).join('') + '</ol>';
 }
 function subMenu(k, title, hint, body) {
   const on = subOpen(k);
@@ -7941,7 +7973,7 @@ VIEWS.akun = {
         <p class="form-err" id="pw-err" role="alert" hidden></p><p class="form-ok" id="pw-ok" role="status" hidden></p><button class="btn btn-primary" type="submit">Simpan kata sandi</button></form>`)}
       ${adm ? `<div id="bk-legacy" hidden>${subMenu('bk', 'Cadangan Catatan Lama', bkHint(), bkSubBody(true))}</div>` : subMenu('bk', 'Cadangan Data', bkHint(), bkSubBody())}
       ${adm ? '' : `<section class="card"><h2 class="t">Pengingat Dana Menipis</h2><p class="desc">Beberapa detik setelah Anda menyimpan transaksi, muncul notifikasi beremoji dengan kata penyemangat bila pengeluaran bulan ini sudah mendekati 70% dari dana atau anggaran Anda.</p><label class="check"><input type="checkbox" id="rem-on" checked> Aktifkan pengingat</label><div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" data-act="rem-test">${ic('bell', 16)} Coba tampilkan</button></div></section>`}
-      ${subMenu('ver', 'Tentang SaKu', 'Versi ' + APP_VERSION + ' · build ' + APP_BUILD, verBodyHTML())}
+      ${subMenu('ver', 'Tentang Aplikasi', 'SaKu · versi ' + APP_VERSION + ' · build ' + APP_BUILD, verBodyHTML())}
       ${adm && !extraDataActs().length ? '' : `<section class="card"><h2 class="t">Data</h2><p class="desc" id="data-desc"></p><div class="btn-row" id="data-acts"></div></section>`}</div>`;
   },
   update() {
@@ -11842,7 +11874,7 @@ VIEWS.rekening = {
     const cards = rows.map(a => {
       const b = bal[a.id], dl = !a.virt && S.armed && S.armed.key === 'rkdel:' + a.id;
       return `<li class="rk-card ${a.id === def ? 'is-def' : ''}"><div class="rk-top">${accChip(a)}<span class="rk-n"><b>${esc(a.name)}</b><small>${esc(a.virt ? 'Transaksi yang tidak memilih rekening' : ACC_KIND_LABEL[a.kind] + (brandOf(a).name !== a.name ? ' · ' + brandOf(a).name : ''))}${a.id === def ? ' · <em class="def-b">Bawaan pembayaran</em>' : ''}</small></span><span class="rk-s ${b.saldo < 0 ? 'neg' : ''}">${saldoTxt(b.saldo)}</span></div>
-        <div class="rk-stats"><span><small>Masuk · ${esc(lbl)}</small><b class="pos">+${fmtRp(b.pin)}</b></span><span><small>Keluar · ${esc(lbl)}</small><b class="neg">-${fmtRp(b.pout)}</b></span><span><small>Total masuk</small><b>${fmtRp(b.in + b.xin)}</b></span><span><small>Total keluar</small><b>${fmtRp(b.out + b.xout)}</b></span></div>
+        <div class="rk-stats"><span><small>Masuk · ${esc(lbl)}</small><b class="pos">+${fmtRp(b.pin)}</b></span><span><small>Keluar · ${esc(lbl)}</small><b class="neg">-${fmtRp(b.pout)}</b></span>${b.in + b.xin !== b.pin || b.out + b.xout !== b.pout ? `<span><small>Total masuk</small><b>${fmtRp(b.in + b.xin)}</b></span><span><small>Total keluar</small><b>${fmtRp(b.out + b.xout)}</b></span>` : ''}</div>
         ${a.virt ? '' : `<div class="btn-row rk-acts">${a.id === def ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-act="rk-def" data-id="${esc(a.id)}">${ic('check', 16)} Jadikan bawaan</button>`}<button type="button" class="btn btn-ghost btn-sm" data-act="rk-edit" data-id="${esc(a.id)}">${ic('edit', 16)} Ubah</button><button type="button" class="btn btn-ghost btn-sm ${dl ? 'armed' : ''}" data-act="rk-del" data-id="${esc(a.id)}">${dl ? 'Yakin hapus?' : ic('trash', 16) + ' Hapus'}</button></div>`}</li>`;
     }).join('');
     const hasEw = list.some(a => a.kind === 'ewallet');
