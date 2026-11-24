@@ -1,8 +1,8 @@
 {
- "version": "1.10.3",
- "build": 13,
+ "version": "1.11.0",
+ "build": 14,
  "date": "2026-11-24",
  "notes": [
-  "Halaman Rekening dirapikan (jarak antar kartu seragam, ringkasan ganda disembunyikan); submenu baru Tentang Aplikasi di Pengaturan"
+  "Beranda baru bergaya bento: kalender pengeluaran per hari (ketuk tanggal untuk rincian), linimasa harian, dan kartu anggaran serta transaksi terbaru tertata dalam grid"
  ]
 }

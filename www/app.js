@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.10.3', APP_BUILD = 13;
+const APP_VERSION = '1.11.0', APP_BUILD = 14;
 const CHANGELOG = [
+  { v: '1.11.0', d: '2026-11-24', items: ['Beranda baru bergaya bento: kalender pengeluaran per hari (ketuk tanggal untuk rincian), linimasa harian, dan kartu anggaran serta transaksi terbaru tertata dalam grid'] },
   { v: '1.10.3', d: '2026-11-24', items: ['Halaman Rekening dirapikan (jarak antar kartu seragam, ringkasan ganda disembunyikan); submenu baru Tentang Aplikasi di Pengaturan'] },
   { v: '1.10.2', d: '2026-11-24', items: ['Masuk dan Daftar bisa langsung dengan Google (tombol Google kini di atas formulir); pengenalan SaKu kini cukup digulir ke bawah tanpa tombol Lanjut'] },
   { v: '1.10.1', d: '2026-11-22', items: ['Intro "Tampilan baru" di website kini berbentuk kartu mendatar dua kolom, bukan lagi tampilan HP; kartu biru di halaman Anggaran dan Rencana lebih rapi'] },
@@ -6537,6 +6538,12 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Kalender Pengeluaran": "Spending Calendar",
+  "Tidak ada transaksi pada hari ini.": "No transactions on this day.",
+  "Linimasa Harian": "Daily Timeline",
+  "Terbanyak": "Top",
+  "Ada pemasukan": "Income day",
+  "Beranda baru bergaya bento: kalender pengeluaran per hari (ketuk tanggal untuk rincian), linimasa harian, dan kartu anggaran serta transaksi terbaru tertata dalam grid": "New bento-style Home: a daily spending calendar (tap a date for details), a daily timeline, and budget and recent-transaction cards laid out in a grid",
   "Tentang Aplikasi": "About the App",
   "Buku kas pribadi yang rapi: catat, atur, dan pantau uang Anda dari HP maupun laptop.": "A tidy personal cash book: record, manage, and monitor your money from your phone or laptop.",
   "Yang bisa Anda lakukan": "What you can do",
@@ -8385,6 +8392,7 @@ const ACT = {
   'dl-xlsx'() { exportXlsx(); },
   'rem-close'() { hideReminder(); },
   'rem-test'() { showReminder(fundStatus(new Date()) || sampleStatus()); },
+  'cal-day'(el) { S.calSel = el.dataset.d; renderView(); },
   'demo-add'() { addDemo(); },
   'demo-del'() { if (!arm('demo')) { renderView(); return; } disarm(); delDemo(); },
   'sheet-bd'() { closeSheet(); },
@@ -8560,7 +8568,30 @@ function rekapHTML() {
   }
   const recent = S.tx.filter(t => !isXfer(t)).slice(0, 3);
   const rec = `<section class="card hm-recent" aria-labelledby="h-rec"><div class="card-h"><h2 id="h-rec">Transaksi terbaru</h2><button type="button" class="lnk" data-act="nav" data-v="transaksi">Lihat semua</button></div>${recent.length ? recent.map(t => txRow(t)).join('') : '<div class="empty-s">Belum ada transaksi.</div>'}</section>`;
-  return head + demo + hero + budAdd + rec;
+  return head + demo + hero + homeBentoHTML(C, budAdd, rec);
+}
+function homeBentoHTML(C, budAdd, rec) {
+  const mr = rangeFor('month', C.A), s = ymd(mr.start), e = ymd(mr.end), today = ymd(startOfDay(new Date()));
+  const list = S.tx.filter(t => t.date >= s && t.date <= e && !isXfer(t)), bd = byDayOf(list), days = [];
+  for (let d = new Date(mr.start); d <= mr.end; d = addDays(d, 1)) days.push(ymd(d));
+  const outs = days.map(k => (bd[k] || { out: 0 }).out), mx = Math.max(1, ...outs);
+  let sel = S.calSel; if (!sel || sel < s || sel > e) sel = today >= s && today <= e ? today : days[days.length - 1];
+  const lead = (mr.start.getDay() + 6) % 7, wk = [1, 2, 3, 4, 5, 6, 0].map(i => `<span>${esc(DAYS_S[i])}</span>`).join('');
+  const cells = Array.from({ length: lead }, () => '<span></span>').concat(days.map(k => {
+    const o = bd[k] || { in: 0, out: 0 }, lv = o.out <= 0 ? 0 : Math.min(4, Math.max(1, Math.ceil(o.out / mx * 4))), dd = parseYmd(k);
+    return `<button type="button" class="cal-d l${lv}${k > today ? ' fut' : ''}${o.in > 0 ? ' inc' : ''}${k === today ? ' today' : ''}" data-act="cal-day" data-d="${k}" aria-pressed="${k === sel}" aria-label="${esc(fmtDateLong(dd))}: ${o.out > 0 ? esc(fmtRp(o.out)) : '-'}">${dd.getDate()}</button>`;
+  })).join('');
+  const dl = list.filter(t => t.date === sel), so = bd[sel] || { in: 0, out: 0 }, cat = {};
+  dl.filter(t => t.type !== 'in').forEach(t => { cat[t.cat] = (cat[t.cat] || 0) + (Number(t.amount) || 0); });
+  const top = Object.entries(cat).sort((a, b) => b[1] - a[1])[0];
+  const det = `<div class="cal-det"><div class="cal-dh"><b>${esc(fmtDateLong(parseYmd(sel)))}</b><span><b>${dl.length}</b> transaksi</span></div>
+    <div class="cal-st"><span><small>Pemasukan</small><b class="pos">${fmtRp(so.in)}</b></span><span><small>Pengeluaran</small><b class="neg">${fmtRp(so.out)}</b></span></div>
+    ${top ? `<p class="cal-top">Terbanyak: <b>${esc(catOf(top[0]).label)}</b> · ${fmtRp(top[1])}</p>` : ''}
+    ${dl.length ? '<div class="cal-tx">' + dl.slice(0, 6).map(t => txRow(t)).join('') + '</div>' : '<div class="empty-s">Tidak ada transaksi pada hari ini.</div>'}</div>`;
+  const cal = `<section class="card cal-card" aria-labelledby="h-cal"><div class="card-h"><h2 id="h-cal">Kalender Pengeluaran</h2><span class="cal-lg" aria-hidden="true"><small>Sedikit</small><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><small>Banyak</small></span></div><div class="cal-w" aria-hidden="true">${wk}</div><div class="cal-g">${cells}</div>${det}</section>`;
+  const act = days.filter(k => (bd[k] || { out: 0 }).out > 0 && k <= today).reverse().slice(0, 6);
+  const tl = `<section class="card tl-card" aria-labelledby="h-tl"><div class="card-h"><h2 id="h-tl">Linimasa Harian</h2></div>${act.length ? '<ul class="tl">' + act.map(k => { const o = bd[k], dd = parseYmd(k); return `<li><button type="button" data-act="cal-day" data-d="${k}" aria-label="${esc(fmtDateLong(dd))}"><span class="tl-d"><b>${dd.getDate()}</b><small>${esc(DAYS_S[dd.getDay()])}</small></span><span class="tl-b"><span class="tl-bar"><i style="width:${Math.max(4, Math.round(o.out / mx * 100))}%"></i></span></span><b class="tl-v">${esc(rpC(o.out))}</b></button></li>`; }).join('') + '</ul>' : '<div class="empty-s">Belum ada pengeluaran pada periode ini.</div>'}</section>`;
+  return `<div class="bento"><div class="b-col">${cal}</div><div class="b-col">${budAdd}${tl}${rec}</div></div>`;
 }
 VIEWS.rekap = { update() {
   const hadFocus = !!(document.activeElement && document.activeElement.id === 'ba-amt');

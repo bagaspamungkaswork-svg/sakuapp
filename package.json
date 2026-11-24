@@ -1,6 +1,6 @@
 {
   "name": "saku-mobile",
-  "version": "1.10.3",
+  "version": "1.11.0",
   "private": true,
   "description": "SaKu: pembungkus aplikasi Android dan iOS (Capacitor)",
   "scripts": {
