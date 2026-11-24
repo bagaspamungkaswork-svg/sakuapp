@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.12.0', APP_BUILD = 16;
+const APP_VERSION = '1.13.0', APP_BUILD = 17;
 const CHANGELOG = [
+  { v: '1.13.0', d: '2026-11-24', items: ['Latar biru muda; navbar atas bergaya bento dengan menu Lainnya; sapaan Beranda besar; ruang kosong di sisi kanan halaman dirapikan; Tentang Aplikasi hanya menampilkan 3 versi terakhir dan rilis pertama'] },
   { v: '1.12.0', d: '2026-11-24', items: ['Tampilan seluruh aplikasi mengikuti desain baru (krem, navy, kartu bento); pengenalan SaKu harus digulir sampai habis sebelum Masuk dan Daftar; halaman Tentang Aplikasi di menu utama'] },
   { v: '1.11.1', d: '2026-11-24', items: ['Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan'] },
   { v: '1.11.0', d: '2026-11-24', items: ['Beranda baru bergaya bento: kalender pengeluaran per hari (ketuk tanggal untuk rincian), linimasa harian, dan kartu anggaran serta transaksi terbaru tertata dalam grid'] },
@@ -6542,6 +6543,9 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Rilis pertama": "First release",
+  "Catat": "Add",
+  "Latar biru muda; navbar atas bergaya bento dengan menu Lainnya; sapaan Beranda besar; ruang kosong di sisi kanan halaman dirapikan; Tentang Aplikasi hanya menampilkan 3 versi terakhir dan rilis pertama": "Light blue background; a bento-style top navbar with a More menu; a big Home greeting; empty space on the right of pages tidied; About the App shows only the last 3 versions and the first release",
   "Mengenal SaKu lebih dekat": "Get to know SaKu better",
   "Tampilan seluruh aplikasi mengikuti desain baru (krem, navy, kartu bento); pengenalan SaKu harus digulir sampai habis sebelum Masuk dan Daftar; halaman Tentang Aplikasi di menu utama": "The whole app follows the new design (cream, navy, bento cards); the SaKu introduction must be scrolled to the end before Sign in and Sign up; an About the App page in the main menu",
   "Hemat": "Frugal",
@@ -7446,6 +7450,10 @@ function shellHTML() {
   const side = items.map(grp).join('');
   const min = sideMin();
   const tab = i => `<button class="tab" data-act="nav" data-v="${i[0]}"><span class="pill">${ic(i[2], 22)}${bdg(i)}</span><span>${i[3]}</span></button>`;
+  const DMAIN = isAdmin() ? items.map(i => i[0]) : ['rekap', 'transaksi', 'analisis', 'tagihan', 'rencana', 'laporan'];
+  const dmi = items.filter(i => DMAIN.indexOf(i[0]) < 0), dti = i => `<button type="button" class="dt-i" data-act="nav" data-v="${i[0]}" title="${esc(i[1])}">${ic(i[2], 20)}<span>${esc(i[1])}</span>${bdg(i)}</button>`;
+  const dtile = (i, cls) => `<button type="button" class="dt-tile ${cls || ''}" data-act="nav" data-v="${i[0]}">${ic(i[2], 22)}<b>${esc(i[1])}</b>${bdg(i)}</button>`;
+  const dtop = `<header class="dtop"><div class="dt-brand"><div class="brand">${LOGO}${WM}</div></div><nav class="dt-nav" aria-label="Navigasi utama">${items.filter(i => DMAIN.indexOf(i[0]) >= 0).map(dti).join('')}<div class="dt-more-wrap"><button type="button" class="dt-i dt-more-b" data-act="dt-more" aria-haspopup="true" aria-expanded="false" data-more="${dmi.map(i => i[0]).join(',')}">${ic('more', 20)}<span>Lainnya</span></button><div class="dt-pop" role="menu" aria-label="Menu lainnya">${dmi.map(i => dtile(i, i[0] === 'asisten' ? 'dt-wide' : '')).join('')}<div class="dt-foot">${langSwitchHTML('lsw-dtop')}<span class="me"><span class="avatar sm">${esc(initials(m.name))}</span><span><b>${esc(m.name)}</b><small>${roleName(m.role)}</small></span></span><button type="button" class="btn btn-dark btn-sm" data-act="logout">${ic('logout', 16)} Keluar</button></div></div></div>${isAdmin() ? '' : `<button type="button" class="dt-add" data-act="add">${ic('plus', 20)}<span>Catat</span></button>`}</nav></header>`;
   return `<div class="shell${min ? ' side-min' : ''}">
     <aside class="side" aria-label="Menu">
       <div class="side-top"><div class="brand">${LOGO}${WM}</div><button type="button" class="side-toggle" data-act="side-toggle" aria-expanded="${!min}" aria-label="${min ? 'Buka menu' : 'Ciutkan menu'}" title="${min ? 'Buka menu' : 'Ciutkan menu'}">${ic('chevl', 18)}</button></div>
@@ -7457,6 +7465,7 @@ function shellHTML() {
       </div>
     </aside>
     <div class="main">
+      ${dtop}
       <div class="topbar"><div class="brand">${LOGO}${WM}</div><div class="top-r">${langSwitchHTML('lsw-top')}${isAdmin() ? '' : `<button type="button" class="top-bell" data-act="nav" data-v="jatuh" aria-label="Jatuh tempo" title="Jatuh tempo">${ic('bell', 20)}<span class="nbadge" data-due-badge hidden></span></button>`}<button class="avatar sm" data-act="nav" data-v="akun" aria-label="Pengaturan akun">${esc(initials(m.name))}</button></div></div>
       <div id="netbar" class="netbar" role="status" hidden></div>
       <div id="mailbar" class="netbar mailbar" role="status" hidden></div>
@@ -7514,9 +7523,10 @@ function moreSet(v) {
 }
 function setNav() {
   const cur = leafGroup(S.view);
-  $$('.nav-i[data-v], .tab[data-v], .more-i[data-v]').forEach(b => { if (b.dataset.v === cur) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  $$('.nav-i[data-v], .tab[data-v], .more-i[data-v], .dt-i[data-v], .dt-tile[data-v]').forEach(b => { if (b.dataset.v === cur) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   const tm = $('.tab-more'); if (tm && tm.dataset && tm.dataset.more) { const on = tm.dataset.more.split(',').indexOf(cur) >= 0; if (on) tm.setAttribute('aria-current', 'page'); else tm.removeAttribute('aria-current'); }
-  moreSet(false);
+  moreSet(false); dtMoreClose();
+  const dm = $('.dt-more-b'); if (dm && dm.dataset.more) { if (dm.dataset.more.split(',').indexOf(cur) >= 0) dm.setAttribute('aria-current', 'page'); else dm.removeAttribute('aria-current'); }
   const leaf = S.view === 'kategori' ? ((S.catView && S.catView.back) || 'rekap') : S.view;
   $$('.nav-s[data-v]').forEach(b => { if (b.dataset.v === leaf) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   const ag = $('.nav-g.shut[data-g="' + cur + '"]'); if (ag) navFoldSet(cur, false);
@@ -7958,9 +7968,11 @@ function aboutHTML() {
     <h3 class="ver-h">Prinsip SaKu</h3><ul class="ab-g ab-g3">${p.map(tile).join('')}</ul>
     <p class="ab-help">Ada masukan atau kendala? Hubungi administrator SaKu yang membuat akun Anda.</p></div>`;
 }
+function aboutLog() { const n = CHANGELOG.length; return n > 4 ? CHANGELOG.slice(0, 3).concat([CHANGELOG[n - 1]]) : CHANGELOG; }
+function dtMoreClose() { $$('.dt-more-wrap.open').forEach(w => { w.classList.remove('open'); const b = w.querySelector('.dt-more-b'); if (b) b.setAttribute('aria-expanded', 'false'); }); }
 function verBodyHTML() {
   const upd = typeof updNative === 'function' && updNative() ? `<div class="btn-row ver-act"><button type="button" class="btn btn-ghost btn-sm" data-act="upd-check">${ic('download', 16)} Cek pembaruan</button></div>` : '';
-  return `${upd}${aboutHTML()}<h3 class="ver-h">Yang baru</h3><ol class="ver-list">` + CHANGELOG.map((c, i) => `<li class="ver-item"><div class="ver-top"><b class="ver-v" translate="no">v${esc(c.v)}</b><span class="ver-d" translate="no">${esc(fmtDateLong(parseYmd(c.d)))}</span>${i === 0 ? '<span class="ver-now">Versi ini</span>' : ''}</div><ul class="ver-notes">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul></li>`).join('') + '</ol>';
+  return `${upd}${aboutHTML()}<h3 class="ver-h">Yang baru</h3><ol class="ver-list">` + aboutLog().map((c, i) => `<li class="ver-item"><div class="ver-top"><b class="ver-v" translate="no">v${esc(c.v)}</b><span class="ver-d" translate="no">${esc(fmtDateLong(parseYmd(c.d)))}</span>${i === 0 ? '<span class="ver-now">Versi ini</span>' : ''}${i === 3 && CHANGELOG.length > 4 ? '<span class="ver-now">Rilis pertama</span>' : ''}</div><ul class="ver-notes">${c.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul></li>`).join('') + '</ol>';
 }
 function subMenu(k, title, hint, body) {
   const on = subOpen(k);
@@ -8405,6 +8417,7 @@ const ACT = {
   'rem-close'() { hideReminder(); },
   'rem-test'() { showReminder(fundStatus(new Date()) || sampleStatus()); },
   'cal-day'(el) { S.calSel = el.dataset.d; renderView(); },
+  'dt-more'(el) { const w = el.closest('.dt-more-wrap'); if (!w) return; const on = !w.classList.contains('open'); w.classList.toggle('open', on); el.setAttribute('aria-expanded', String(on)); },
   'demo-add'() { addDemo(); },
   'demo-del'() { if (!arm('demo')) { renderView(); return; } disarm(); delDemo(); },
   'sheet-bd'() { closeSheet(); },
@@ -14281,5 +14294,7 @@ async function submitSetup() {
     prepareLedger(r.account.id); enterApp(r.account);
   } catch (e) { err.textContent = e.userMessage || 'Gagal membuat akun.'; err.hidden = false; btn.disabled = false; btn.textContent = 'Buat akun admin'; }
 }
+document.addEventListener('click', e => { if (!(e.target.closest && e.target.closest('.dt-more-wrap'))) dtMoreClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') dtMoreClose(); });
 netBoot();
 })();

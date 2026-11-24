@@ -1,8 +1,8 @@
 {
- "version": "1.12.0",
- "build": 16,
+ "version": "1.13.0",
+ "build": 17,
  "date": "2026-11-24",
  "notes": [
-  "Tampilan seluruh aplikasi mengikuti desain baru (krem, navy, kartu bento); pengenalan SaKu harus digulir sampai habis sebelum Masuk dan Daftar; halaman Tentang Aplikasi di menu utama"
+  "Latar biru muda; navbar atas bergaya bento dengan menu Lainnya; sapaan Beranda besar; ruang kosong di sisi kanan halaman dirapikan; Tentang Aplikasi hanya menampilkan 3 versi terakhir dan rilis pertama"
  ]
 }
