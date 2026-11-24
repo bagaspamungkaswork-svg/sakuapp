@@ -2967,6 +2967,31 @@ body.wn-open { overflow: hidden; }
 .fbrules summary { cursor: pointer; font-weight: 700; }
 .fbrules pre { margin: 10px 0 0; max-height: 260px; overflow: auto; font: 12px/1.5 var(--f-code); color: var(--ink); white-space: pre; -webkit-user-select: all; user-select: all; }
 .fbcfg textarea.input { min-height: 150px; padding: 12px 14px; font: 13px/1.5 var(--f-code); resize: vertical; }
+
+/* ===== Pengenalan SaKu: gulir vertikal (tanpa tombol Lanjut) ===== */
+.ld-top { position: relative; }
+.ld-top::after { content: ""; position: absolute; left: 20px; right: 20px; bottom: 0; height: 3px; border-radius: 3px; background: linear-gradient(var(--accent), var(--accent)) left / calc(var(--p, 0) * 100%) 100% no-repeat, var(--line); }
+.ld-track { display: block; overflow-x: hidden; overflow-y: auto; scroll-snap-type: none; overscroll-behavior: contain; scroll-behavior: smooth; }
+.ld-track:focus-visible { outline: none; }
+.ld-slide { display: flex; flex: none; width: 100%; min-height: 100%; scroll-snap-align: none; scroll-snap-stop: normal; overflow: visible; justify-content: center; padding: 22px 20px; position: relative; }
+.ld-slide + .ld-slide { border-top: 1px dashed var(--line); }
+.ld-slide:first-child::after { content: ""; position: absolute; left: 50%; bottom: 10px; width: 11px; height: 11px; margin-left: -6px; border-right: 2.5px solid var(--ink-3); border-bottom: 2.5px solid var(--ink-3); transform: rotate(45deg); animation: ld-bob 1.6s ease-in-out infinite; }
+@keyframes ld-bob { 0%, 100% { transform: translateY(0) rotate(45deg); opacity: .5; } 50% { transform: translateY(7px) rotate(45deg); opacity: 1; } }
+.ld.last .ld-skip { visibility: visible; }
+.ld-dots, .ld-arrow, .ld-count { display: none !important; }
+.ld-cta2 { grid-template-rows: 1fr; visibility: visible; }
+@media (min-width: 960px) and (min-height: 560px) {
+  .ld-foot { display: none; }
+  .ld-slide { padding: 0 var(--ld-gx); }
+  .ld-slide:nth-child(even) .ld-txt { order: 2; }
+  .ld-slide:nth-child(even) .ld-art { order: 1; }
+  .ld-slide:first-child::after { bottom: 22px; }
+  .ld-top::after { left: var(--ld-gx); right: var(--ld-gx); }
+}
+@media (prefers-reduced-motion: reduce) { .ld-slide:first-child::after { animation: none; } .ld-track { scroll-behavior: auto; } }
+
+.ax-or.ax-top { margin: 0 0 14px; }
+.ax-top .ax-sep { order: 2; }
 </style>
 </head>
 <body>

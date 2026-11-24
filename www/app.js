@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.10.1', APP_BUILD = 11;
+const APP_VERSION = '1.10.2', APP_BUILD = 12;
 const CHANGELOG = [
+  { v: '1.10.2', d: '2026-11-24', items: ['Masuk dan Daftar bisa langsung dengan Google (tombol Google kini di atas formulir); pengenalan SaKu kini cukup digulir ke bawah tanpa tombol Lanjut'] },
   { v: '1.10.1', d: '2026-11-22', items: ['Intro "Tampilan baru" di website kini berbentuk kartu mendatar dua kolom, bukan lagi tampilan HP; kartu biru di halaman Anggaran dan Rencana lebih rapi'] },
   { v: '1.10.0', d: '2026-11-21', items: ['Tampilan baru: Beranda lebih ringkas (saldo keseluruhan, pemasukan, pengeluaran, anggaran, transaksi terbaru) dengan warna biru bersentuhan hijau logo dan huruf Plus Jakarta Sans', 'Menu Analisis baru dengan empat tab: Wawasan (skor keuangan, proyeksi akhir bulan, kebiasaan belanja), Kategori, Tren, dan Rincian', 'Menu bawah berbentuk pil melayang: Beranda, Transaksi, tombol tambah, Analisis, dan Lainnya; Tagihan kini ada di Lainnya dengan pintasan lonceng di atas', 'Submenu baru: menu Lainnya bergaya bento, serta submenu Tagihan, Rencana, dan Kurs dengan gaya berbeda dan sidebar web dengan garis alur', 'Pengantar Tampilan baru yang tampil sekali setelah masuk, dengan animasi empat layar dan tombol Lewati'] },
   { v: '1.9.2', d: '2026-11-19', items: ['Perbaikan Masuk dengan Google di edisi Firebase: permintaan ke Firebase kini memakai alamat resmi (localhost) sehingga tidak ditolak karena domain situs, dan pesan galat menjelaskan penyebab sebenarnya (Client ID tidak cocok atau domain belum diizinkan)'] },
@@ -5438,6 +5439,9 @@ const I18N_EN = {
   "Masuk dengan akun Google (Netlify dan Firebase, perlu diaktifkan oleh pemilik situs)": "Sign in with a Google account (Netlify and Firebase; the site owner needs to enable it)",
   "Masuk dengan Email/Kata sandi belum diaktifkan. Di Firebase Console buka Authentication → Sign-in method → Email/Password → Enable.": "Log in with Email/Password isn't enabled yet. In the Firebase Console, open Authentication → Sign-in method → Email/Password → Enable.",
   "Masuk dengan Google": "Log in with Google",
+  "Lanjutkan dengan Google": "Continue with Google",
+  "atau isi data": "or fill in your details",
+  "Masuk dan Daftar bisa langsung dengan Google (tombol Google kini di atas formulir); pengenalan SaKu kini cukup digulir ke bawah tanpa tombol Lanjut": "You can sign in or sign up with Google right away (the Google button is now above the form); the SaKu introduction is now a simple scroll with no Next button",
   "Masuk dengan Google belum diaktifkan di Firebase. Buka Authentication → Sign-in method → Google → Enable (dan pastikan Authentication sudah dimulai).": "Sign in with Google is not enabled in Firebase. Open Authentication → Sign-in method → Google → Enable (and make sure Authentication has been started).",
   "Masuk dengan Google belum diatur di edisi ini.": "Sign in with Google has not been set up in this edition.",
   "Masuk ke": "To account",
@@ -7169,6 +7173,7 @@ function loginHTML() {
           <button type="button" data-act="auth-tab" data-v="masuk" aria-pressed="true">Masuk</button>
           <button type="button" data-act="auth-tab" data-v="daftar" aria-pressed="false">Daftar</button>
         </div>
+        ${axGoogleHTML()}
         <form class="login-form" id="login-form" novalidate hidden>
           <h2>Masuk</h2>
           <p class="sub">Pakai username dan kata sandi akun Anda. Belum punya akun? Pilih Daftar.</p>
@@ -7182,7 +7187,6 @@ function loginHTML() {
           <button class="btn btn-primary" id="l-btn" type="submit">Masuk</button>
           ${axForgotLinkHTML()}
         </form>
-        ${axGoogleHTML()}
         <form class="login-form" id="reg-form" novalidate hidden>
           <h2>Daftar Akun</h2>
           <p class="sub">${S.mailv ? 'Isi data diri Anda. Akun aktif setelah Anda mengonfirmasi email.' : 'Isi data diri Anda. Akun aktif setelah disetujui admin.'}</p>
@@ -7235,7 +7239,7 @@ function updateLogin() {
   if (none) { const el = $('#l-setup'), html = setupHTML(); if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; } }
   const err = $('#l-err');
   if (S.loginMsg && err) { err.textContent = S.loginMsg; err.hidden = false; S.loginMsg = ''; }
-  axPaint(ext, ready && !ext && tab === 'masuk');
+  axPaint(ext, ready && !ext && !done);
 }
 /* ================= Batas waktu login (tidak ada aktivitas) ================= */
 const DEFAULT_SESSION_MIN = 20, ACT_KEY = 'catatuang.act.v1';
@@ -11131,7 +11135,7 @@ function landingSet(i) {
   L.i = i; L.root.classList.toggle('last', last);
   $$('.ld-dot', L.root).forEach((d, k) => { if (k === i) d.setAttribute('aria-current', 'true'); else d.removeAttribute('aria-current'); });
   const nx = $('#ld-next', L.root), lg = $('#ld-login', L.root), onNx = document.activeElement === nx, onLg = document.activeElement === lg;
-  nx.hidden = last; lg.hidden = !last;
+  nx.hidden = true; lg.hidden = false;
   const pv = $('#ld-prev', L.root), na = $('#ld-nexta', L.root), ct = $('#ld-count', L.root);     // kontrol layar lebar: aria-disabled (bukan disabled) supaya fokus tidak hilang di ujung
   if (pv) pv.setAttribute('aria-disabled', i === 0 ? 'true' : 'false');
   if (na) na.setAttribute('aria-disabled', last ? 'true' : 'false');
@@ -11147,14 +11151,16 @@ function landingGo(i) {
   const L = LD_cur; if (!L) return;
   i = Math.max(0, Math.min(LD_N - 1, i));
   L.go = i; L.goUntil = Date.now() + 900;
-  try { L.track.scrollTo({ left: i * L.track.clientWidth, behavior: landingReduce() ? 'auto' : 'smooth' }); } catch (e) { L.track.scrollLeft = i * L.track.clientWidth; }
+  const sl = $('.ld-slide[data-i="' + i + '"]', L.root), top = sl ? sl.offsetTop : i * L.track.clientHeight;
+  try { L.track.scrollTo({ top, behavior: landingReduce() ? 'auto' : 'smooth' }); } catch (e) { L.track.scrollTop = top; }
   landingSet(i);
 }
 function landingOnScroll() {
   const L = LD_cur; if (!L || L.raf) return;
   L.raf = requestAnimationFrame(() => {
     L.raf = 0; if (LD_cur !== L) return;
-    const w = L.track.clientWidth || 1, idx = Math.max(0, Math.min(LD_N - 1, Math.round(L.track.scrollLeft / w)));
+    const h = L.track.clientHeight || 1, mx = Math.max(1, L.track.scrollHeight - h), idx = Math.max(0, Math.min(LD_N - 1, Math.round(L.track.scrollTop / h)));
+    L.root.style.setProperty('--p', Math.max(0, Math.min(1, L.track.scrollTop / mx)).toFixed(3));
     if (L.go != null) { if (idx === L.go || Date.now() > L.goUntil) L.go = null; else return; }     // gulir otomatis ke tujuan: abaikan slide yang dilewati
     if (idx !== L.i) landingSet(idx);
   });
@@ -11210,9 +11216,7 @@ function landingShow() {
       return;
     }
     if (inUpd) return;
-    if (k === 'ArrowRight') { e.preventDefault(); landingGo(L.i + 1); }
-    else if (k === 'ArrowLeft') { e.preventDefault(); landingGo(L.i - 1); }
-    else if (k === 'Home') { e.preventDefault(); landingGo(0); }
+    if (k === 'Home') { e.preventDefault(); landingGo(0); }
     else if (k === 'End') { e.preventDefault(); landingGo(LD_N - 1); }
     else if (k === 'Escape') { e.preventDefault(); landingClose('skip'); }
   };
@@ -11221,7 +11225,7 @@ function landingShow() {
     if (root.contains(e.target) || e.target.closest('#upd, #intro')) return;
     const f = $('.ld-btn:not([hidden])', root) || root; try { f.focus({ preventScroll: true }); } catch (x) { /* abaikan */ }
   };
-  L.onResize = () => { if (LD_cur === L) { try { L.track.scrollTo({ left: L.i * L.track.clientWidth, behavior: 'auto' }); } catch (e) { /* abaikan */ } } };
+  L.onResize = () => { if (LD_cur === L) { try { L.track.scrollTo({ top: L.i * L.track.clientHeight, behavior: 'auto' }); } catch (e) { /* abaikan */ } } };
   root.addEventListener('click', e => {
     const b = e.target.closest ? e.target.closest('[data-ld]') : null; if (!b || !root.contains(b)) return;
     const a = b.dataset.ld;
@@ -11233,6 +11237,7 @@ function landingShow() {
     else if (a === 'login') landingClose('login');
     else if (a === 'signup') landingClose('signup');
   });
+  L.track.tabIndex = 0; L.track.setAttribute('role', 'region'); L.track.setAttribute('aria-label', 'Pengenalan SaKu, gulir ke bawah');
   L.track.addEventListener('scroll', landingOnScroll, { passive: true });
   document.addEventListener('keydown', L.onKey, true); document.addEventListener('focusin', L.onFocus, true); window.addEventListener('resize', L.onResize);
   document.body.appendChild(root);
@@ -11297,9 +11302,9 @@ function axForgotLinkHTML() {
 function axGoogleHTML() {
   if (!axGoogleOn()) return '';
   const btn = axNative()
-    ? `<button type="button" class="ax-gnative" id="g-native" data-act="g-native">${AX_G_SVG}<span>Masuk dengan Google</span></button>`
+    ? `<button type="button" class="ax-gnative" id="g-native" data-act="g-native">${AX_G_SVG}<span>Lanjutkan dengan Google</span></button>`
     : '<div class="ax-gbtn" id="g-btn"></div>';
-  return `<div class="ax-or" id="g-wrap" hidden><div class="ax-sep" aria-hidden="true"><span>atau</span></div>${btn}</div>`;
+  return `<div class="ax-or ax-top" id="g-wrap" hidden>${btn}<div class="ax-sep" aria-hidden="true"><span>atau isi data</span></div></div>`;
 }
 function axPanelsHTML() {
   if (!S.resetMail) return '';
@@ -11385,7 +11390,7 @@ function axRenderGoogle(kind) {
     axInitGsi();
     const w = Math.max(200, Math.min(320, Math.floor(holder.clientWidth || 320)));
     holder.textContent = '';
-    window.google.accounts.id.renderButton(holder, { type: 'standard', theme: axDark() ? 'filled_black' : 'outline', size: 'large', text: kind === 'glink' ? 'continue_with' : 'signin_with', shape: 'pill', logo_alignment: 'left', width: w, locale: LANG === 'en' ? 'en' : 'id' });
+    window.google.accounts.id.renderButton(holder, { type: 'standard', theme: axDark() ? 'filled_black' : 'outline', size: 'large', text: 'continue_with', shape: 'pill', logo_alignment: 'left', width: w, locale: LANG === 'en' ? 'en' : 'id' });
     holder.dataset.st = 'done';
   }).catch(() => {
     if (!holder.isConnected) return;

@@ -1,8 +1,8 @@
 {
- "version": "1.10.1",
- "build": 11,
- "date": "2026-11-22",
+ "version": "1.10.2",
+ "build": 12,
+ "date": "2026-11-24",
  "notes": [
-  "Intro \"Tampilan baru\" di website kini berbentuk kartu mendatar dua kolom, bukan lagi tampilan HP; kartu biru di halaman Anggaran dan Rencana lebih rapi"
+  "Masuk dan Daftar bisa langsung dengan Google (tombol Google kini di atas formulir); pengenalan SaKu kini cukup digulir ke bawah tanpa tombol Lanjut"
  ]
 }
