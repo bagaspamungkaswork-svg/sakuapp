@@ -1,8 +1,8 @@
 {
- "version": "1.13.4",
- "build": 21,
+ "version": "1.13.5",
+ "build": 22,
  "date": "2026-11-24",
  "notes": [
-  "Pengantar pembaruan dibedakan untuk versi web dan versi HP (isi dan ilustrasi menyesuaikan tampilan yang dipakai)"
+  "Laporan PDF dan Excel mengikuti desain baru: warna biru dan navy yang sama dengan aplikasi, kalender pengeluaran (PDF dan sheet Kalender di Excel), serta footer dengan tahun pembaruan"
  ]
 }
