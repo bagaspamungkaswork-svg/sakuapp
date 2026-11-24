@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.11.1', APP_BUILD = 15;
+const APP_VERSION = '1.12.0', APP_BUILD = 16;
 const CHANGELOG = [
+  { v: '1.12.0', d: '2026-11-24', items: ['Tampilan seluruh aplikasi mengikuti desain baru (krem, navy, kartu bento); pengenalan SaKu harus digulir sampai habis sebelum Masuk dan Daftar; halaman Tentang Aplikasi di menu utama'] },
   { v: '1.11.1', d: '2026-11-24', items: ['Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan'] },
   { v: '1.11.0', d: '2026-11-24', items: ['Beranda baru bergaya bento: kalender pengeluaran per hari (ketuk tanggal untuk rincian), linimasa harian, dan kartu anggaran serta transaksi terbaru tertata dalam grid'] },
   { v: '1.10.3', d: '2026-11-24', items: ['Halaman Rekening dirapikan (jarak antar kartu seragam, ringkasan ganda disembunyikan); submenu baru Tentang Aplikasi di Pengaturan'] },
@@ -3048,6 +3049,7 @@ const NAV_GROUPS = [
   { id: 'rekening', label: 'Pengaturan Rekening', tab: 'Rekening', icon: 'wallet', def: 'rekening' },
   { id: 'kurs', label: 'Kurs', tab: 'Kurs', icon: 'swap', def: 'konversi' },
   { id: 'teman', label: 'Teman', tab: 'Teman', icon: 'users', def: 'teman' },
+  { id: 'tentang', label: 'Tentang Aplikasi', tab: 'Tentang', icon: 'info', def: 'tentang' },
   { id: 'akun', label: 'Pengaturan', tab: 'Akun', icon: 'settings', def: 'akun' }
 ];
 const LEAF = {
@@ -3069,6 +3071,7 @@ const LEAF = {
   konversi: { g: 'kurs', path: '/kurs', title: 'Konversi Mata Uang', sub: 'Konversi', ico: 'swap', tone: 'blue', hint: 'Hitung cepat' },
   pasar: { g: 'kurs', path: '/kurs/pasar', title: 'Kurs & Indeks', sub: 'Kurs & Indeks', ico: 'trendup', tone: 'grn', hint: 'Pasar langsung' },
   teman: { g: 'teman', path: '/teman', title: 'Teman' },
+  tentang: { g: 'tentang', path: '/tentang', title: 'Tentang Aplikasi' },
   akun: { g: 'akun', path: '/akun', title: 'Pengaturan' },
   kategoriku: { g: 'akun', path: '/akun/kategori', title: 'Kategori Saya' },
   admin: { g: 'admin', path: '/admin', title: 'Administrator' },
@@ -3135,7 +3138,7 @@ function routeReset() {
 /* halaman yang boleh dibuka akun ini */
 function routeAllowed(view) {
   if (!view || !LEAF[view] || view === 'kategori') return false;
-  if (isAdmin()) return view === 'admin' || view === 'akun';
+  if (isAdmin()) return view === 'admin' || view === 'akun' || view === 'tentang';
   return view !== 'admin' || isHelper();
 }
 function routeFirstView() {
@@ -6539,6 +6542,8 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Mengenal SaKu lebih dekat": "Get to know SaKu better",
+  "Tampilan seluruh aplikasi mengikuti desain baru (krem, navy, kartu bento); pengenalan SaKu harus digulir sampai habis sebelum Masuk dan Daftar; halaman Tentang Aplikasi di menu utama": "The whole app follows the new design (cream, navy, bento cards); the SaKu introduction must be scrolled to the end before Sign in and Sign up; an About the App page in the main menu",
   "Hemat": "Frugal",
   "Lihat semua target": "See all goals",
   "Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan": "Home: frugal-day markers and weekly summary on the calendar, plus category donut, goals, and insight cards",
@@ -7408,7 +7413,7 @@ function rejectReg(id) {
 }
 
 function navItems() {
-  if (isAdmin()) return [['admin', 'Administrator', 'shield', 'Admin'], ['akun', 'Pengaturan', 'settings', 'Akun']];
+  if (isAdmin()) return [['admin', 'Administrator', 'shield', 'Admin'], ['tentang', 'Tentang Aplikasi', 'info', 'Tentang'], ['akun', 'Pengaturan', 'settings', 'Akun']];
   const items = NAV_GROUPS.map(g => [g.id, g.label, g.icon, g.tab]);
   if (isHelper()) items.splice(items.length - 1, 0, ['admin', 'Admin', 'shield', 'Admin']);   // admin pembantu: semua menu biasa + menu Admin sebelum Pengaturan
   return items;
@@ -7477,7 +7482,7 @@ function shellHTML() {
         ${mk('laporan', 'mi-rep', `<span class="mi-top"><span class="mi-ic">${ic('file', 20)}</span><b>Laporan</b></span><small>Ringkasan dan ekspor</small>`)}
       </div>
       <div class="more-sec"><span>Alat dan akun</span></div>
-      <div class="more-tiles">${['rekening', 'kurs', 'teman', 'admin', 'akun'].map(tile).join('')}</div>
+      <div class="more-tiles">${['rekening', 'kurs', 'teman', 'tentang', 'admin', 'akun'].map(tile).join('')}</div>
     </div>`;
   })()}
   ${isAdmin() ? '' : `<button class="fab" data-act="add" aria-label="Catat transaksi">${ic('plus', 26)}<span class="fab-t">Catat transaksi</span></button>${askFabHTML()}`}`;
@@ -7558,7 +7563,7 @@ function countUp(el, to) {
 }
 function renderView() {
   const v = $('#view'); if (!v) return;
-  if (isAdmin()) { if (S.view !== 'admin' && S.view !== 'akun') S.view = 'admin'; }
+  if (isAdmin()) { if (S.view !== 'admin' && S.view !== 'akun' && S.view !== 'tentang') S.view = 'admin'; }
   else if (S.view === 'admin' && !isHelper()) S.view = 'rekap';
   if (S.view === 'kategori' && !S.catView) S.view = 'rekap';
   if (!VIEWS[S.view]) S.view = isAdmin() ? 'admin' : 'rekap';
@@ -7970,6 +7975,9 @@ function paintSub() {
 function openSub(k) { (S.sub || (S.sub = {}))[k] = true; paintSub(); }
 
 /* ================= Tampilan: Pengaturan ================= */
+VIEWS.tentang = { update() {
+  $('#view').innerHTML = `<div class="page-head"><div><p class="hello">Mengenal SaKu lebih dekat</p><h1>Tentang Aplikasi</h1></div></div><div class="stack"><section class="card">${verBodyHTML()}</section></div>`;
+} };
 VIEWS.akun = {
   mount(v) {
     const adm = isAdmin();
@@ -7984,7 +7992,7 @@ VIEWS.akun = {
         <p class="form-err" id="pw-err" role="alert" hidden></p><p class="form-ok" id="pw-ok" role="status" hidden></p><button class="btn btn-primary" type="submit">Simpan kata sandi</button></form>`)}
       ${adm ? `<div id="bk-legacy" hidden>${subMenu('bk', 'Cadangan Catatan Lama', bkHint(), bkSubBody(true))}</div>` : subMenu('bk', 'Cadangan Data', bkHint(), bkSubBody())}
       ${adm ? '' : `<section class="card"><h2 class="t">Pengingat Dana Menipis</h2><p class="desc">Beberapa detik setelah Anda menyimpan transaksi, muncul notifikasi beremoji dengan kata penyemangat bila pengeluaran bulan ini sudah mendekati 70% dari dana atau anggaran Anda.</p><label class="check"><input type="checkbox" id="rem-on" checked> Aktifkan pengingat</label><div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" data-act="rem-test">${ic('bell', 16)} Coba tampilkan</button></div></section>`}
-      ${subMenu('ver', 'Tentang Aplikasi', 'SaKu · versi ' + APP_VERSION + ' · build ' + APP_BUILD, verBodyHTML())}
+      <section class="card"><h2 class="t">Tentang Aplikasi</h2><p class="desc">SaKu · versi ${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p><button type="button" class="btn btn-ghost" data-act="nav" data-v="tentang">Buka</button></section>
       ${adm && !extraDataActs().length ? '' : `<section class="card"><h2 class="t">Data</h2><p class="desc" id="data-desc"></p><div class="btn-row" id="data-acts"></div></section>`}</div>`;
   },
   update() {
@@ -11207,7 +11215,7 @@ const LD_CHEV_R = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="
 function landingHTML() {
   const slides = LD_SLIDES.map((s, i) => `<section class="ld-slide${i === 0 ? ' on' : ''}" role="group" aria-roledescription="slide" aria-label="Slide ${i + 1} dari ${LD_N}" data-i="${i}">
       <div class="ld-art">${s.art()}</div>
-      <div class="ld-txt"><h2 class="ld-h"><span class="ld-ht">${i === 0 ? 'Semua uang ada di <span class="ld-mark">SaKu.</span>' : s.t}</span></h2><p class="ld-p">${s.p}</p></div>
+      <div class="ld-txt"><h2 class="ld-h"><span class="ld-ht">${i === 0 ? 'Semua uang ada di <span class="ld-mark">SaKu.</span>' : s.t}</span></h2><p class="ld-p">${s.p}</p>${i === LD_N - 1 ? `<div class="ld-end"><button type="button" class="btn btn-primary" data-ld="login"><span translate="no">${LANG === 'en' ? 'Sign in' : 'Masuk'}</span></button><button type="button" class="btn btn-ghost" data-ld="signup">Daftar gratis</button></div>` : ''}</div>
     </section>`).join('');
   const dotH = Array.from({ length: LD_N }, (_, i) => `<button type="button" class="ld-dot" data-ld="dot" data-i="${i}" aria-label="Ke slide ${i + 1}"${i === 0 ? ' aria-current="true"' : ''}><i></i></button>`).join('');
   const masuk = LANG === 'en' ? 'Sign in' : 'Masuk';     // "Masuk" di kamus berarti "In" (pemasukan), jadi label tombol ini ditulis langsung
@@ -11320,7 +11328,7 @@ function landingShow() {
     if (inUpd) return;
     if (k === 'Home') { e.preventDefault(); landingGo(0); }
     else if (k === 'End') { e.preventDefault(); landingGo(LD_N - 1); }
-    else if (k === 'Escape') { e.preventDefault(); landingClose('skip'); }
+    else if (k === 'Escape') { e.preventDefault(); }
   };
   L.onFocus = e => {                                     // pengaman bagi peramban tanpa `inert`: fokus tidak boleh lari ke layar masuk di belakang
     if (LD_cur !== L || !e.target || !e.target.closest) return;

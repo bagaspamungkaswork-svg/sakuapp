@@ -1,8 +1,8 @@
 {
- "version": "1.11.1",
- "build": 15,
+ "version": "1.12.0",
+ "build": 16,
  "date": "2026-11-24",
  "notes": [
-  "Beranda: penanda hari hemat dan ringkasan per minggu di kalender, serta kartu donat kategori, target, dan wawasan"
+  "Tampilan seluruh aplikasi mengikuti desain baru (krem, navy, kartu bento); pengenalan SaKu harus digulir sampai habis sebelum Masuk dan Daftar; halaman Tentang Aplikasi di menu utama"
  ]
 }
