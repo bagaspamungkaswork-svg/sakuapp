@@ -1,8 +1,8 @@
 {
- "version": "1.13.1",
- "build": 18,
+ "version": "1.13.2",
+ "build": 19,
  "date": "2026-11-24",
  "notes": [
-  "Navbar atas dirapikan: bahasa dan Keluar pindah ke footer kiri bawah, versi di tengah, tahun pembaruan di kanan bawah"
+  "Tombol Keluar (ikon) kembali di navbar atas, di antara Lainnya dan Catat"
  ]
 }
