@@ -1,8 +1,8 @@
 {
- "version": "1.14.0",
- "build": 23,
- "date": "2026-11-24",
+ "version": "1.14.1",
+ "build": 24,
+ "date": "2026-11-25",
  "notes": [
-  "Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda"
+  "Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan"
  ]
 }

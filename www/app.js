@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.14.0', APP_BUILD = 23;
+const APP_VERSION = '1.14.1', APP_BUILD = 24;
 const CHANGELOG = [
+  { v: '1.14.1', d: '2026-11-25', items: ['Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan'] },
   { v: '1.14.0', d: '2026-11-24', items: ['Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda'] },
   { v: '1.13.5', d: '2026-11-24', items: ['Laporan PDF dan Excel mengikuti desain baru: warna biru dan navy yang sama dengan aplikasi, kalender pengeluaran (PDF dan sheet Kalender di Excel), serta footer dengan tahun pembaruan'] },
   { v: '1.13.4', d: '2026-11-24', items: ['Pengantar pembaruan dibedakan untuk versi web dan versi HP (isi dan ilustrasi menyesuaikan tampilan yang dipakai)'] },
@@ -6596,6 +6597,15 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan": "The Cash / No account card now has a Make real account button: a Cash account is created and every transaction without an account is moved to it, so its balance can be edited, moved and set as default",
+  "Jadikan rekening asli": "Make real account",
+  "Transaksi tanpa rekening dihitung otomatis. Jadikan rekening asli agar saldonya bisa diubah, dipindah, dan jadi bawaan.": "Transactions without an account are totalled automatically. Make it a real account so its balance can be edited, moved and set as default.",
+  "Rekening asli": "Real account",
+  "Tunai kini rekening asli": "Cash is now a real account",
+  "Rekening Tunai": "Cash account",
+  "kini bisa diatur": "is now editable",
+  "dihitung otomatis": "calculated automatically",
+  "Bawaan": "Default",
   "Form catat transaksi dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda": "The record form was redesigned: Quick and Detailed modes, one-tap templates, a swipeable stack of account cards, an impact summary, a calendar on the web version, and repeating entries confirmed on Home",
   "Cepat": "Quick",
   "Rinci": "Detailed",
@@ -9190,7 +9200,7 @@ Object.assign(ACT, {
    Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
    Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
    Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
-const WN_VER = '1.14';
+const WN_VER = '1.14.1';
 const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
 function wnSeen() {
   if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
@@ -9207,24 +9217,16 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
-  const WEB = !!S.wnWeb;
-  if (i === 1) return `<div class="wn-illo" aria-hidden="true"><div class="wn3-seg wn-up"${wnD(.1)}><span class="on">Cepat</span><span>Rinci</span></div><div class="wn3-row wn-up"${wnD(.4)}><div class="wn3-tp"><b>Kopi pagi</b>Rp 22.000</div><div class="wn3-tp"><b>Bensin</b>Rp 50.000</div><div class="wn3-tp"><b>Listrik</b>Rp 410.000</div></div><div class="wn3-amt wn-up"${wnD(.7)}><small>JUMLAH</small>Rp 47.500</div><div class="wn3-chips wn-up"${wnD(.9)}><span>+10 rb</span><span>+25 rb</span><span>+50 rb</span><span>+100 rb</span></div></div>`;
-  if (i === 2) return `<div class="wn-illo" aria-hidden="true"><div class="wn3-stk wn-up"${wnD(.2)}><i><span>TUNAI</span><span>Rp 85.000</span></i><i><span>OCBC NISP</span><span>Rp 13.935</span></i><i>GOPAY · DIPAKAI<b>Rp 213.935</b></i></div></div>`;
-  const imp = `<div class="wn3-imp wn-up"${wnD(.2)}><div><span>Saldo GoPay</span><b>213.935 → 166.435</b></div><div><span>Anggaran Makanan</span><b>62% → 71%</b></div><div><span>Pengeluaran hari ini</span><b>Rp 171.500</b></div></div>`;
-  if (WEB) { const lv = [0, 2, 1, 0, 3, 4, 3, 1, 0, 2, 3, 4, 2, 1, 0, 1]; return `<div class="wn-illo wn2-web" aria-hidden="true">${imp}<div class="wn2-cal wn-up"${wnD(.6)}><p><b>Kalender pengeluaran</b><span>November</span></p><div class="wn2-g">${lv.map((v, k) => `<i class="l${v}">${k + 1}</i>`).join('')}</div></div></div>`; }
-  return `<div class="wn-illo" aria-hidden="true">${imp}<div class="wn3-days wn-up"${wnD(.6)}>${['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((d, k) => `<i${k < 5 ? ' class="on"' : ''}>${d}</i>`).join('')}</div></div>`;
+  if (i === 1) return `<div class="wn-illo" aria-hidden="true"><div class="wn4-c wn4-v wn-up"${wnD(.1)}><span>TUNAI / TANPA REKENING</span><b>Rp 343.145</b><small>dihitung otomatis</small></div><div class="wn4-ar wn-up"${wnD(.5)}>&darr;</div><div class="wn4-c wn4-r wn-up"${wnD(.8)}><span>TUNAI &middot; REKENING ASLI</span><b>Rp 343.145</b><div class="wn4-bt"><i>Ubah</i><i>Pindah saldo</i><i>Bawaan</i></div></div></div>`;
+  return '';
 }
 const WN_TXT_M = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Catat transaksi', b: 'lebih mudah', p: 'Form catat dirombak: mode Cepat dan Rinci, templat sekali ketuk, kartu rekening bertumpuk, dan ringkasan dampak.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Cepat atau', b: 'Rinci', p: 'Mode Cepat hanya menampilkan yang penting. Ketuk Rinci untuk catatan, barang, foto struk, dan pengulangan. Templat menyimpan catatan yang sering dipakai.', cta: 'Lanjut' },
-  { chip: 'Perubahan 2', a: 'Pilih rekening', b: 'dengan geser', p: 'Rekening tampil sebagai kartu bertumpuk. Geser ke kiri atau kanan, atau ketuk kartu di belakang, untuk berganti. Saldo tiap rekening terlihat langsung.', cta: 'Lanjut' },
-  { chip: 'Perubahan 3', a: 'Lihat dampak', b: 'sebelum simpan', p: 'Di bawah form ada ringkasan saldo, pengeluaran hari itu, dan anggaran. Catatan berulang meminta konfirmasi lewat kartu di Beranda.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Rekening Tunai', b: 'kini bisa diatur', p: 'Kartu Tunai / Tanpa rekening sekarang bisa dijadikan rekening asli lewat satu ketukan.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Jadikan', b: 'rekening asli', p: 'Ketuk Jadikan rekening asli di halaman Rekening. Semua transaksi tanpa rekening pindah ke rekening Tunai, saldo tetap sama, dan bisa diubah, dipindah, atau jadi bawaan.', cta: 'Mulai jelajahi' }
 ];
 const WN_TXT_W = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Catat transaksi', b: 'lebih mudah', p: 'Form catat kini dua kolom: isian di kiri, dampak dan kalender di kanan. Ada mode Cepat dan Rinci serta templat sekali klik.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Cepat atau', b: 'Rinci', p: 'Mode Cepat hanya menampilkan yang penting. Klik Rinci untuk catatan, barang, foto struk, dan pengulangan. Templat menyimpan catatan yang sering dipakai.', cta: 'Lanjut' },
-  { chip: 'Perubahan 2', a: 'Pilih rekening', b: 'dengan geser', p: 'Rekening tampil sebagai kartu bertumpuk. Klik tombol panah, tekan panah di keyboard, atau klik kartu di belakang untuk berganti.', cta: 'Lanjut' },
-  { chip: 'Perubahan 3', a: 'Dampak dan', b: 'kalender', p: 'Panel kanan menunjukkan saldo, anggaran, dan kalender pengeluaran. Klik tanggal di kalender untuk memindahkan tanggal catatan.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Rekening Tunai', b: 'kini bisa diatur', p: 'Kartu Tunai / Tanpa rekening sekarang bisa dijadikan rekening asli dengan satu klik.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Jadikan', b: 'rekening asli', p: 'Klik Jadikan rekening asli di halaman Rekening. Semua transaksi tanpa rekening pindah ke rekening Tunai, saldo tetap sama, dan bisa diubah, dipindah, atau jadi bawaan.', cta: 'Mulai jelajahi' }
 ];
 let WN_TXT = WN_TXT_M;
 const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
@@ -12228,7 +12230,7 @@ VIEWS.rekening = {
       const b = bal[a.id], dl = !a.virt && S.armed && S.armed.key === 'rkdel:' + a.id;
       return `<li class="rk-card ${a.id === def ? 'is-def' : ''}"><div class="rk-top">${accChip(a)}<span class="rk-n"><b>${esc(a.name)}</b><small>${esc(a.virt ? 'Transaksi yang tidak memilih rekening' : ACC_KIND_LABEL[a.kind] + (brandOf(a).name !== a.name ? ' · ' + brandOf(a).name : ''))}${a.id === def ? ' · <em class="def-b">Bawaan pembayaran</em>' : ''}</small></span><span class="rk-s ${b.saldo < 0 ? 'neg' : ''}">${saldoTxt(b.saldo)}</span></div>
         <div class="rk-stats"><span><small>Masuk · ${esc(lbl)}</small><b class="pos">+${fmtRp(b.pin)}</b></span><span><small>Keluar · ${esc(lbl)}</small><b class="neg">-${fmtRp(b.pout)}</b></span>${b.in + b.xin !== b.pin || b.out + b.xout !== b.pout ? `<span><small>Total masuk</small><b>${fmtRp(b.in + b.xin)}</b></span><span><small>Total keluar</small><b>${fmtRp(b.out + b.xout)}</b></span>` : ''}</div>
-        ${a.virt ? '' : `<div class="btn-row rk-acts">${a.id === def ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-act="rk-def" data-id="${esc(a.id)}">${ic('check', 16)} Jadikan bawaan</button>`}<button type="button" class="btn btn-ghost btn-sm" data-act="rk-edit" data-id="${esc(a.id)}">${ic('edit', 16)} Ubah</button><button type="button" class="btn btn-ghost btn-sm ${dl ? 'armed' : ''}" data-act="rk-del" data-id="${esc(a.id)}">${dl ? 'Yakin hapus?' : ic('trash', 16) + ' Hapus'}</button></div>`}</li>`;
+        ${a.virt ? `<div class="rk-real"><p class="rk-hint">Transaksi tanpa rekening dihitung otomatis. Jadikan rekening asli agar saldonya bisa diubah, dipindah, dan jadi bawaan.</p><button type="button" class="btn btn-primary btn-sm ${S.armed && S.armed.key === 'rkreal' ? 'armed' : ''}" data-act="rk-real" ${S.rkBusy ? 'disabled' : ''}>${S.rkBusy ? 'Memindahkan ' + esc(S.rkProg || '') + '…' : S.armed && S.armed.key === 'rkreal' ? 'Yakin? ' + rkOrphans().length + ' transaksi dipindah ke rekening Tunai' : ic('check', 16) + ' Jadikan rekening asli'}</button></div>` : `<div class="btn-row rk-acts">${a.id === def ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-act="rk-def" data-id="${esc(a.id)}">${ic('check', 16)} Jadikan bawaan</button>`}<button type="button" class="btn btn-ghost btn-sm" data-act="rk-edit" data-id="${esc(a.id)}">${ic('edit', 16)} Ubah</button><button type="button" class="btn btn-ghost btn-sm ${dl ? 'armed' : ''}" data-act="rk-del" data-id="${esc(a.id)}">${dl ? 'Yakin hapus?' : ic('trash', 16) + ' Hapus'}</button></div>`}</li>`;
     }).join('');
     const hasEw = list.some(a => a.kind === 'ewallet');
     top.innerHTML = subnavHTML('rekening') + `<div class="page-head"><div><p class="hello">Saldo menurut bank, e-wallet, dan tunai</p><h1>Rekening</h1></div></div>
@@ -12291,6 +12293,42 @@ Object.assign(ACT, {
   async 'rk-def'(el) { await saveSet({ payDefault: el.dataset.id }, 'Rekening bawaan pembayaran diatur'); },
   'rk-topup'() { openSheet(null, { cat: 'topup_ewallet' }); },
   'rk-move'() { openSheet(null, { cat: 'pindah_saldo' }); }
+});
+
+/* Jadikan rekening asli: kartu bayangan "Tunai / Tanpa rekening" diubah jadi rekening Tunai sungguhan.
+   Transaksi yang belum punya rekening (atau rekeningnya sudah dihapus) diberi acc rekening baru. Saldo awal 0, jadi saldo tidak berubah.
+   Rekening baru ditandai from:'virt' agar kalau proses terputus, ketukan berikutnya memakai rekening yang sama. */
+const rkOrphans = () => S.tx.filter(t => !(t.acc && accById(t.acc)) || (accXf(t) && !accById(t.to)));
+Object.assign(ACT, {
+  async 'rk-real'() {
+    if (S.rkBusy) return;
+    if (!arm('rkreal')) { VIEWS.rekening.update(); return; }
+    disarm();
+    const list = accList(); let acc = list.filter(a => a.from === 'virt')[0] || null;
+    S.rkBusy = true; S.rkProg = ''; VIEWS.rekening.update();
+    try {
+      if (!acc) {
+        if (list.length >= 40) { toast('Jumlah rekening sudah mencapai batas (40).'); return; }
+        const used = list.map(a => String(a.name).toLowerCase()); let nm = 'Tunai', k = 2;
+        while (used.indexOf(nm.toLowerCase()) >= 0) nm = 'Tunai ' + k++;
+        acc = { id: mkId('a'), kind: 'cash', brand: '', name: nm, open: 0, from: 'virt' };
+        const patch = { accts: list.concat([acc]) }; if (!payDefaultId()) patch.payDefault = acc.id;
+        if (!(await saveSet(patch))) return;
+      }
+      const base = S.db.doc('ledger/' + S.me.id), rows = rkOrphans(), now = new Date().toISOString(); let done = 0, bad = 0;
+      for (const ch of chunksOf(rows, 4)) {
+        await Promise.all(ch.map(t => {
+          const p = { updatedAt: now };
+          if (!(t.acc && accById(t.acc))) p.acc = acc.id;
+          if (accXf(t) && !accById(t.to)) p.to = acc.id;
+          return base.collection('tx').doc(t.id).update(p).then(() => { done++; }, () => { bad++; });
+        }));
+        S.rkProg = (done + bad) + ' dari ' + rows.length; VIEWS.rekening.update();
+      }
+      toast(bad ? done + ' transaksi dipindah, ' + bad + ' gagal. Ketuk lagi untuk mengulang.' : acc.name + ' kini rekening asli (' + done + ' transaksi dipindah)');
+    } catch (e) { toast(dbErrMsg(e)); }
+    finally { S.rkBusy = false; S.rkProg = ''; VIEWS.rekening.update(); }
+  }
 });
 
 /* ================= Tur menu: sekali, saat akun baru pertama kali masuk ================= */
