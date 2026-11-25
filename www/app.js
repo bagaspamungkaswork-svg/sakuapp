@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.18.1', APP_BUILD = 32;
+const APP_VERSION = '1.20.0', APP_BUILD = 34;
 const CHANGELOG = [
+  { v: '1.20.0', d: '2026-11-25', items: ['Patungan: tagih teman untuk IndiHome, Netflix, dan layanan digital lain. Unggah bukti bayar Anda dulu, kirim tautan lewat WhatsApp, teman mengunggah bukti transfer sendiri, termasuk bayar sekaligus beberapa periode (bulanan sampai tahunan).'] },
   { v: '1.18.1', d: '2026-11-25', items: ['Tampilan layar lebar dirapikan: daftar saldo rekening di Analisis tidak lagi meluber, ruang kosong di sisi kanan dimanfaatkan (form Rekening, Rincian), label tanggal grafik tidak menumpuk, dan diagram kategori tidak menimpa daftar.'] },
   { v: '1.18.0', d: '2026-11-25', items: ['Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar.'] },
   { v: '1.17.0', d: '2026-11-25', items: ['Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya.'] },
@@ -2953,8 +2954,8 @@ async function vaultEnable() {
    transaksi biasa yang membawa tautan ref {k, id, p}. Status lunas/belum selalu dihitung dari transaksi,
    jadi menghapus atau mengubah transaksi otomatis ikut mengubah status. */
 /*PLANCLEAN:BEGIN*/
-const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish'];
-const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120 };
+const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish', 'patung'];
+const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120, patung: 40 };
 const PLAN_BYTES = 250000;
 const CICILAN_KIND_IDS = ['kpr', 'mobil', 'hp', 'multi'];
 const TARGET_KIND_IDS = ['darurat', 'tabungan', 'investasi', 'haji', 'nikah', 'rumah', 'kendaraan', 'liburan', 'pendidikan', 'lain'];
@@ -3056,6 +3057,28 @@ function planClean(c, d, stamp) {
     if (d.done === true) o.done = true;
     return { ok: Object.assign(o, base) };
   }
+    if (c === 'patung') {
+      const name = str(d.name, 40); if (!name) return fail('Isi nama layanan.');
+      const total = int(d.total, 0, 1e10); if (total < 1) return fail('Isi nominal tagihan.');
+      const cycle = [1, 3, 6, 12].indexOf(Number(d.cycle)) >= 0 ? Number(d.cycle) : 1;
+      const start = str(d.start, 7); if (!isMon(start)) return fail('Pilih bulan mulai.');
+      const end = str(d.end, 7); if (end && (!isMon(end) || monN(end) < monN(start))) return fail('Bulan berakhir tidak valid.');
+      const ids = {}, people = [];
+      for (const p0 of (Array.isArray(d.people) ? d.people : []).slice(0, 12)) {
+        const p = p0 && typeof p0 === 'object' ? p0 : {}, id = String(p.id || '');
+        if (!/^[a-z0-9]{6,16}$/.test(id) || ids[id]) return fail('Data teman tidak valid.');
+        const n = str(p.n, 30), a = int(p.a, 0, 1e10); if (!n) return fail('Isi nama setiap teman.'); if (a < 1) return fail('Isi bagian ' + n + '.');
+        ids[id] = 1; people.push({ id, n, a, ph: String(p.ph == null ? '' : p.ph).replace(/[^0-9]/g, '').slice(0, 16) });
+      }
+      if (!people.length) return fail('Tambahkan minimal satu teman.');
+      const accts = (Array.isArray(d.accts) ? d.accts : []).slice(0, 4).map(a => { const o = a && typeof a === 'object' ? a : {}; return { b: str(o.b, 20), no: str(o.no, 30), n: str(o.n, 40) }; }).filter(a => a.b && a.no);
+      if (!accts.length) return fail('Isi minimal satu rekening tujuan transfer.');
+      const bill = {}, bsrc = d.bill && typeof d.bill === 'object' && !Array.isArray(d.bill) ? d.bill : {};
+      Object.keys(bsrc).slice(0, 120).forEach(k => { if (isMon(k)) { const v = bsrc[k] && typeof bsrc[k] === 'object' ? bsrc[k] : {}; bill[k] = { at: str(v.at, 40), ph: /^[a-z0-9]{8,32}$/.test(String(v.ph)) ? String(v.ph) : '' }; } });
+      const pay = {}, psrc = d.pay && typeof d.pay === 'object' && !Array.isArray(d.pay) ? d.pay : {};
+      Object.keys(psrc).forEach(id => { if (ids[id] && Array.isArray(psrc[id])) pay[id] = psrc[id].map(String).filter(isMon).slice(0, 240); });
+      return { ok: Object.assign({ name, ico: ['net', 'tv', 'music', 'game', 'cloud', 'lain'].indexOf(d.ico) >= 0 ? d.ico : 'lain', total, cycle, start, end, day: int(d.day, 1, 28), people, accts, bill, pay, show: d.show !== false, note: str(d.note, 120) }, base) };
+    }
   return fail('Jenis data tidak dikenal.');
 }
 /*PLANCLEAN:END*/
@@ -3286,6 +3309,7 @@ const LEAF = {
   target: { g: 'rencana', path: '/rencana/target', title: 'Target', sub: 'Target', ico: 'target', tone: 'grn' },
   simpanan: { g: 'rencana', path: '/rencana/simpanan', title: 'Simpanan', sub: 'Simpanan', ico: 'wallet', tone: 'vio' },
   ramean: { g: 'rencana', path: '/rencana/ramean', title: 'Jajan Ramean', sub: 'Jajan Ramean', ico: 'users', tone: 'ora' },
+  patungan: { g: 'rencana', path: '/rencana/patungan', title: 'Patungan', sub: 'Patungan', ico: 'receipt', tone: 'vio' },
   perjalanan: { g: 'rencana', path: '/rencana/perjalanan', title: 'Perjalanan', sub: 'Perjalanan', ico: 'plane', tone: 'tea' },
   wishlist: { g: 'rencana', path: '/rencana/wishlist', title: 'Wishlist', sub: 'Wishlist', ico: 'heart', tone: 'pink' },
   laporan: { g: 'laporan', path: '/laporan', title: 'Laporan' },
@@ -3320,6 +3344,7 @@ function subVal(k) {
   if (k === 'target') return n('target') ? n('target') + ' target' : 'Belum ada';
   if (k === 'simpanan') { const t = pocketModel(S.tx, new Date(), 1).total; return t > 0 ? rpC(t) : 'Belum ada'; }
   if (k === 'ramean') return n('ramean') ? n('ramean') + ' acara' : 'Belum ada';
+  if (k === 'patungan') { const w = typeof patWaitN === 'function' ? patWaitN() : 0; return w ? w + ' menunggu' : n('patung') ? n('patung') + ' layanan' : 'Belum ada'; }
   if (k === 'perjalanan') return n('trip') ? n('trip') + ' rencana' : 'Belum ada';
   if (k === 'wishlist') { const w = (S.plan.wish || []).filter(x => !x.done).length; return w ? w + ' item' : 'Belum ada'; }
   return '';
@@ -6780,6 +6805,24 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Tagih teman untuk langganan bersama": "Bill friends for shared subscriptions",
+  "Patungan Baru": "New Group Pay",
+  "Belum dibayar teman": "Not yet paid by friends",
+  "Menunggu konfirmasi": "Waiting for confirmation",
+  "Sudah kembali": "Paid back",
+  "Tagih via WhatsApp": "Bill via WhatsApp",
+  "Salin pesan": "Copy message",
+  "Tandai lunas": "Mark as paid",
+  "Unggah bukti": "Upload proof",
+  "Lihat bukti": "View proof",
+  "Tagihan Anda": "Your bill",
+  "Transfer ke": "Transfer to",
+  "Unggah bukti transfer": "Upload transfer proof",
+  "Tidak ada tagihan": "No bills",
+  "Bukti terkirim": "Proof sent",
+  "Bayar sekaligus di muka": "Pay several periods at once",
+  "Total yang ditransfer": "Total to transfer",
+  "Semua uang ada di SaKu": "All your money in SaKu",
   "Tampilan layar lebar dirapikan: daftar saldo rekening di Analisis tidak lagi meluber, ruang kosong di sisi kanan dimanfaatkan (form Rekening, Rincian), label tanggal grafik tidak menumpuk, dan diagram kategori tidak menimpa daftar.": "Wide-screen layout tidied: the account balance list in Analysis no longer overflows, empty space on the right is used (Accounts form, Details), chart date labels no longer overlap, and the category chart no longer covers the list.",
   "Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar.": "The monthly PDF report can now cover more than one period: 6 months, 1 year, 2 years or 3 years. It includes totals, cash flow per period, a per-period breakdown, top categories and largest expenses.",
   "Lama laporan": "Report length",
@@ -7397,7 +7440,7 @@ function subscribeLedger() {
     if (S.phase === 'app') { renderView(); planChanged(); }
   }, () => { (S.planGot || (S.planGot = {}))[c] = true; }));
 }
-function clearPlan() { S.plan = { cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [] }; S.planGot = {}; }
+function clearPlan() { S.plan = { cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [], patung: [] }; S.planGot = {}; }
 function enterApp(acc) {
   S.lastAct = Date.now(); S.warned = false; saveAct(true);
   S.me = acc; S.phase = 'app'; S.view = routeFirstView(); S.routeReplace = true; S.period = 'month'; S.bkPrev = null; S.bkNote = null; S.anchor = startOfDay(new Date()); S.ins = null;
@@ -9514,7 +9557,7 @@ Object.assign(ACT, {
    Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
    Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
    Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
-const WN_VER = '1.18';
+const WN_VER = '1.20';
 const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
 function wnSeen() {
   if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
@@ -9532,18 +9575,17 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
   if (i === 1) {
-    const ch = ['1 periode', '6 bulan', '1 tahun', '2 tahun', '3 tahun'], hs = [40, 55, 38, 62, 70, 52, 80, 66, 90, 58, 74, 96];
-    return `<div class="wn-illo" aria-hidden="true"><div class="wn8-c wn-up"${wnD(.1)}><div class="ch">${ch.map((x, j) => `<span class="${j === 2 ? 'on' : ''}">${x}</span>`).join('')}</div><div class="br">${hs.map(h => `<i style="--h:${h}%"></i>`).join('')}</div></div></div>`;
+    return `<div class="wn-illo" aria-hidden="true"><div class="wn10-c wn-up"${wnD(.1)}><div class="h"><span>IndiHome</span><span>Rp 485.000</span></div><div class="r"><b>Budi</b><i class="ok">Lunas</i></div><div class="r"><b>Sari</b><i>Menunggu</i></div><div class="r"><b>Dewi</b><i>Tagih</i></div></div></div>`;
   }
   return '';
 }
 const WN_TXT_M = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Laporan', b: 'bisa banyak periode', p: 'Laporan PDF bisa dibuat untuk 6 bulan sampai 3 tahun, bukan hanya satu periode.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Laporan', b: 'bisa banyak periode', p: 'Pilih Bulanan di Laporan, lalu pilih lama laporan: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Patungan', b: 'tagih teman mudah', p: 'Bayar langganan lebih dulu, lalu kirim tautan ke teman. Mereka mengunggah bukti transfer sendiri.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Bayar sekaligus,', b: 'sebulan sampai setahun', p: 'Buka Rencana lalu Patungan. Teman bisa membayar beberapa periode dengan satu bukti.', cta: 'Mulai jelajahi' }
 ];
 const WN_TXT_W = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Laporan', b: 'bisa banyak periode', p: 'Laporan PDF bisa dibuat untuk 6 bulan sampai 3 tahun, bukan hanya satu periode.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Laporan', b: 'bisa banyak periode', p: 'Pilih Bulanan di Laporan, lalu pilih lama laporan: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Patungan', b: 'tagih teman mudah', p: 'Bayar langganan lebih dulu, lalu kirim tautan ke teman. Mereka mengunggah bukti transfer sendiri.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Bayar sekaligus,', b: 'sebulan sampai setahun', p: 'Buka Rencana lalu Patungan. Teman bisa membayar beberapa periode dengan satu bukti.', cta: 'Mulai jelajahi' }
 ];
 let WN_TXT = WN_TXT_M;
 const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
@@ -11457,6 +11499,314 @@ VIEWS.laporan = {
   update() { $('#view').innerHTML = laporanHTML(); }
 };
 const repShift = (key, P, d) => { const R = repState(), now = startOfDay(new Date()); if (d === 0) R[key] = now; else { const nx = shiftAnchor(P, R[key], d); if (d < 0 || rangeFor(P, nx).start <= now) R[key] = nx; } VIEWS.laporan.update(); };
+/* ================= Patungan: tagih teman untuk langganan bersama ================= */
+const PAT_ICOS = [['net', 'Internet', 'wifi'], ['tv', 'TV & film', 'film'], ['music', 'Musik', 'repeat'], ['game', 'Game', 'gamepad'], ['cloud', 'Penyimpanan', 'cpu'], ['lain', 'Lainnya', 'receipt']];
+const PAT_CYC = [[1, 'Bulanan'], [3, '3 bulan'], [6, '6 bulan'], [12, 'Tahunan']];
+const PAT_RNG = [[1, 'Bulanan'], [3, '3 bulan'], [6, '6 bulan'], [12, 'Tahunan']];
+const patIco = k => (PAT_ICOS.filter(x => x[0] === k)[0] || PAT_ICOS[5])[2];
+const patNowN = () => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); };
+const patMonN = s => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1;
+const patKey = n => Math.floor(n / 12) + '-' + pad(n % 12 + 1);
+const patLbl = k => MONTHS_S[Number(k.slice(5, 7)) - 1] + ' ' + k.slice(0, 4);
+const patLbls = ks => ks.length > 3 ? patLbl(ks[0]) + ' – ' + patLbl(ks[ks.length - 1]) + ' (' + ks.length + ' periode)' : ks.map(patLbl).join(', ');
+function patKeys(r, from, to) {
+  const out = [], c = r.cycle || 1, s = patMonN(r.start), e = r.end ? patMonN(r.end) : Infinity;
+  for (let n = s; n <= to && n <= e && out.length < 240; n += c) if (n >= from) out.push(patKey(n));
+  return out;
+}
+const patFind = id => ((S.plan && S.plan.patung) || []).filter(x => x.id === id)[0] || null;
+const patList = () => ((S.plan && S.plan.patung) || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+function patModel(r) {
+  const ib = S.patInbox || { subs: [], ok: {} }, n = patNowN(), keys = patKeys(r, 0, n), bill = r.bill || {};
+  const people = (r.people || []).map(p => {
+    const ok = ((r.pay || {})[p.id] || []).concat(ib.ok[r.id + '.' + p.id] || []), wait = [];
+    ib.subs.forEach(x => { if (x.rid === r.id && x.pe === p.id && x.st === 'wait') x.ks.forEach(k => wait.push(k)); });
+    const due = keys.filter(k => bill[k] && ok.indexOf(k) < 0 && wait.indexOf(k) < 0);
+    return { p, ok, wait, due, owe: due.length * p.a };
+  });
+  return { keys, people, unbilled: keys.filter(k => !bill[k]), mine: (r.total || 0) - (r.people || []).reduce((s, p) => s + p.a, 0), owed: people.reduce((s, m) => s + m.owe, 0) };
+}
+const patWaitN = () => ((S.patInbox && S.patInbox.subs) || []).filter(x => x.st === 'wait').length;
+function patBack(N) {
+  const n = patNowN(); let sum = 0;
+  patList().forEach(r => patModel(r).people.forEach(m => m.ok.forEach(k => { const x = patMonN(k); if (x > n - N && x <= n) sum += m.p.a; })));
+  return sum;
+}
+async function patInboxLoad(quiet) {
+  if (S.phase !== 'app' || isAdmin() || S.patBusy) return;
+  S.patBusy = true;
+  try {
+    const prev = patWaitN(), had = !!S.patInbox; S.patInbox = await api('pat.inbox', {});
+    const now = patWaitN();
+    if (had && now > prev && !quiet) toast('Ada bukti bayar baru dari teman di Patungan');
+    if (S.view === 'patungan') VIEWS.patungan.update();
+    else if (typeof paintBadge === 'function') paintBadge();
+  } catch (e) { /* abaikan: server tidak terjangkau */ }
+  S.patBusy = false;
+}
+setInterval(() => { if (S.phase === 'app' && document.visibilityState === 'visible' && patList().length) patInboxLoad(); }, 90000);
+const patUrl = t => {
+  let x = '';
+  try { const u = typeof sbBase === 'function' ? sbBase() : '', m = /^https:\/\/([a-z0-9]{12,30})\.supabase\.co$/.exec(u || ''); if (m && !sbCleanUrl(window.SAKU_SUPABASE_URL)) x = '&s=' + m[1]; } catch (e) { /* abaikan */ }
+  return String(window.SAKU_PUBLIC_URL || location.origin).replace(/\/+$/, '') + '/?p=' + t + x;
+};
+function patTok(rid, pe) { return (S.patTok || {})[rid + '.' + pe] || ''; }
+async function patEnsureLinks() {
+  if (S.phase !== 'app') return; if (S.patLinking) { S.patAgain = true; return; } S.patLinking = true; let got = 0;
+  try {
+    for (const r of patList()) {
+      if (!Object.keys(r.bill || {}).length) continue;
+      for (const p of r.people) {
+        const key = r.id + '.' + p.id, bad = (S.patTokErr || {})[key];
+        if (patTok(r.id, p.id) || (bad && Date.now() - bad < 20000)) continue;
+        try { const x = await api('pat.link', { rid: r.id, pe: p.id }); (S.patTok || (S.patTok = {}))[key] = x.t; got++; }
+        catch (e) { (S.patTokErr || (S.patTokErr = {}))[key] = Date.now(); }
+      }
+    }
+  } finally { S.patLinking = false; }
+  const again = S.patAgain; S.patAgain = false;
+  if ((got || again) && S.view === 'patungan') VIEWS.patungan.update();
+}
+function patMsg(r, m, url) {
+  const ac = r.accts.map(a => a.b + ' ' + a.no + (a.n ? ' a.n. ' + a.n : '')).join(' atau ');
+  return `Halo ${m.p.n}, tagihan patungan ${r.name} (${patLbls(m.due)}) bagian kamu ${fmtRp(m.owe)}.\nTransfer ke ${ac}, lalu unggah bukti bayarnya di sini:\n${url}\nTerima kasih!`;
+}
+function patWa(phone, text) { let p = String(phone || '').replace(/\D/g, ''); if (p.indexOf('0') === 0) p = '62' + p.slice(1); return 'https://wa.me/' + p + '?text=' + encodeURIComponent(text); }
+function patImgOpen(src, title) {
+  const old = $('#pt-img'); if (old) old.remove();
+  const el = document.createElement('div'); el.id = 'pt-img'; el.className = 'pt-img'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', title || 'Bukti bayar');
+  el.innerHTML = `<div class="pt-img-b" data-act="pt-img-x"><figure><img alt="${esc(title || 'Bukti bayar')}" src="${esc(src)}"><figcaption>${esc(title || '')}</figcaption></figure><button type="button" class="btn btn-ghost" data-act="pt-img-x">Tutup</button></div>`;
+  document.body.appendChild(el);
+}
+async function patPhoto(id) { const s = await planBase().collection('photos').doc(id).get(); const d = s && s.exists ? s.data() : null; return d && d.data ? d.data : ''; }
+
+/* ---------- Halaman Patungan (pemilik) ---------- */
+function ptCard(r) {
+  const M = patModel(r), tk = patNowN();
+  const sub = [(PAT_CYC.filter(c => c[0] === r.cycle)[0] || PAT_CYC[0])[1], r.cycle === 1 ? 'jatuh tempo tgl ' + r.day : 'mulai ' + patLbl(r.start)].join(' · ');
+  const wn = M.people.reduce((s, m) => s + (m.wait.length ? 1 : 0), 0), late = M.people.filter(m => m.due.length).length;
+  const st = late ? `<span class="stp today">${late} belum bayar</span>` : wn ? `<span class="stp lalu">${wn} menunggu</span>` : Object.keys(r.bill || {}).length ? '<span class="stp ok">Lunas semua</span>' : '<span class="stp lalu">Belum ditagih</span>';
+  const next = M.unbilled[0];
+  const banner = next ? `<div class="pt-bill"><div><b>Periode ${esc(patLbl(next))}</b><small>Unggah bukti bayar Anda ke penyedia dulu. Setelah itu teman bisa ditagih.</small></div><label class="btn btn-primary btn-sm pt-up">${ic('camera', 16)} Unggah bukti<input type="file" accept="image/*" hidden data-pt-bill="${esc(r.id)}" data-k="${esc(next)}"></label></div>` : '';
+  const proofs = Object.keys(r.bill || {}).filter(k => r.bill[k].ph).sort().slice(-3).map(k => `<button type="button" class="pt-pf" data-act="pt-bproof" data-id="${esc(r.id)}" data-k="${esc(k)}">${ic('receipt', 14)} Bukti ${esc(patLbl(k))}</button>`).join('');
+  const rows = M.people.map(m => {
+    const t = patTok(r.id, m.p.id), url = t ? patUrl(t) : '', canBill = m.due.length > 0;
+    const tail = canBill ? `<span class="rm-left">${fmtRp(m.owe)} · ${m.due.length} periode</span>` : m.wait.length ? '<span class="stp lalu">Menunggu konfirmasi</span>' : m.ok.length ? '<span class="stp ok">Lunas</span>' : '<span class="stp lalu">Belum ditagih</span>';
+    const acts = canBill ? `<div class="pt-acts">${t ? `<a class="btn btn-primary btn-sm" href="${esc(patWa(m.p.ph, patMsg(r, m, url)))}" target="_blank" rel="noopener">Tagih via WhatsApp</a><button type="button" class="btn btn-ghost btn-sm" data-act="pt-copy" data-id="${esc(r.id)}" data-pe="${esc(m.p.id)}">Salin pesan</button>` : '<span class="muted">Menyiapkan tautan…</span>'}<button type="button" class="btn btn-ghost btn-sm" data-act="pt-mark" data-id="${esc(r.id)}" data-pe="${esc(m.p.id)}">Tandai lunas</button></div>` : '';
+    return `<li class="pt-p"><span class="rm-av" aria-hidden="true">${esc((m.p.n[0] || '?').toUpperCase())}</span><span class="rm-n"><b>${esc(m.p.n)}</b><small>${fmtRp(m.p.a)} per periode</small></span><span class="pt-t">${tail}</span>${acts}</li>`;
+  }).join('');
+  return `<section class="card cic pt-card" aria-label="${esc(r.name)}">
+    <div class="cic-h"><span class="chip" style="--c:${planSlot(2)}">${ic(patIco(r.ico), 20)}</span><div class="cic-n"><b>${esc(r.name)}</b><small>${esc(sub)}</small></div>${st}</div>
+    <div class="cic-amt"><b>${fmtRp(r.total)}</b><span>per periode · bagian Anda ${fmtRp(Math.max(0, M.mine))}</span></div>
+    ${banner}<ul class="rm-rows pt-rows" aria-label="Teman yang ikut patungan">${rows}</ul>
+    ${proofs ? `<div class="pt-pfs">${proofs}</div>` : ''}
+    <div class="btn-row cic-acts"><button type="button" class="btn btn-ghost btn-sm" data-act="pt-edit" data-id="${esc(r.id)}">${ic('edit', 16)} Ubah</button></div></section>`;
+}
+function ptInbox() {
+  const w = ((S.patInbox && S.patInbox.subs) || []).filter(x => x.st === 'wait').reverse();
+  if (!w.length) return '';
+  return `<section class="card pt-inbox" aria-label="Bukti bayar dari teman"><h2 class="t">Menunggu konfirmasi <span class="stp lalu">${w.length}</span></h2><ul class="pt-in">${w.map(x => `<li><div class="pt-in-h"><b>${esc(x.nm)}</b><span>${esc(x.rn)} · ${esc(patLbls(x.ks))}</span><em>${fmtRp(x.amt)}</em></div>${x.note ? `<p class="pt-note">“${esc(x.note)}”</p>` : ''}<div class="pt-in-a"><button type="button" class="btn btn-ghost btn-sm" data-act="pt-sproof" data-id="${esc(x.id)}">Lihat bukti</button><input class="input" id="pt-n-${esc(x.id)}" maxlength="120" placeholder="Alasan jika ditolak (opsional)" aria-label="Alasan jika ditolak"><button type="button" class="btn btn-primary btn-sm" data-act="pt-ok" data-id="${esc(x.id)}">Terima</button><button type="button" class="btn btn-ghost btn-sm" data-act="pt-no" data-id="${esc(x.id)}">Tolak</button></div></li>`).join('')}</ul></section>`;
+}
+VIEWS.patungan = {
+  update() {
+    const v = $('#view'), head = subnavHTML('patungan') + `<div class="page-head"><div><p class="hello">Tagih teman untuk langganan bersama</p><h1>Patungan</h1></div><button type="button" class="btn btn-primary" data-act="pt-new">${ic('plus', 18)} Patungan Baru</button></div>`;
+    if (!planReady()) { v.innerHTML = head + skelHTML(); return; }
+    if (!S.patInbox && !S.patBusy) patInboxLoad(true);
+    const list = patList(), N = S.patRange || 1;
+    if (!list.length) { v.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada patungan</h3><p>Bayar IndiHome, Netflix, atau layanan digital lain lebih dulu, lalu tagih bagian tiap teman. Unggah bukti bayar Anda, kirim tautan lewat WhatsApp, dan teman mengunggah bukti transfernya sendiri.</p><button type="button" class="btn btn-primary" data-act="pt-new">Buat patungan pertama</button></div></section>`; return; }
+    const owed = list.reduce((s, r) => s + patModel(r).owed, 0), wn = patWaitN();
+    const rng = `<div class="seg pt-rng" role="group" aria-label="Rentang waktu">${PAT_RNG.map(x => `<button type="button" data-act="pt-rng" data-v="${x[0]}" aria-pressed="${N === x[0]}">${x[1]}</button>`).join('')}</div>`;
+    const tiles = `<div class="tiles tiles-fill cic-sum pt-tiles">${tileHTML('Belum dibayar teman', fmtRp(owed), 'sudah ditagih')}${tileHTML('Menunggu konfirmasi', String(wn), wn ? 'bukti dari teman' : 'tidak ada')}${tileHTML('Sudah kembali', fmtRp(patBack(N)), N === 1 ? 'bulan ini' : N === 12 ? '12 bulan terakhir' : N + ' bulan terakhir')}</div>`;
+    v.innerHTML = head + `<div class="pt-rng-w">${rng}</div>` + tiles + ptInbox() + `<div class="pt-grid">${list.map(ptCard).join('')}</div>`;
+    patEnsureLinks();
+  }
+};
+
+/* ---------- Form patungan ---------- */
+function pfDefault() {
+  const d = new Date(), me = (S.me && S.me.name) || '';
+  return { id: null, name: '', ico: 'net', total: 0, cycle: 1, start: d.getFullYear() + '-' + pad(d.getMonth() + 1), end: '', day: Math.min(28, d.getDate()), people: [{ id: rid().slice(0, 10), n: '', a: 0, ph: '' }], accts: [{ b: '', no: '', n: me }], show: true, note: '', bill: {}, pay: {} };
+}
+function pfFrom(r) { return { id: r.id, name: r.name, ico: r.ico, total: r.total, cycle: r.cycle, start: r.start, end: r.end || '', day: r.day, people: r.people.map(p => Object.assign({}, p)), accts: r.accts.map(a => Object.assign({}, a)), show: r.show !== false, note: r.note || '', bill: r.bill || {}, pay: r.pay || {}, createdAt: r.createdAt }; }
+function ptOpen(id) {
+  if (S.canWrite === false) { toast('Akun Anda hanya bisa melihat.'); return; }
+  const cur = id ? patFind(id) : null; if (id && !cur) return;
+  closeSheet(true); S.lastFocus = document.activeElement; disarm();
+  const R = S.pf = cur ? pfFrom(cur) : pfDefault();
+  const root = document.createElement('div'); root.id = 'sheet-root';
+  root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="ptform" role="dialog" aria-modal="true" aria-labelledby="pf-t" novalidate>
+    <div class="sheet-h"><h2 id="pf-t">${R.id ? 'Ubah Patungan' : 'Patungan Baru'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
+    <div class="sheet-b">
+      <div class="field"><label for="pf-name">Nama layanan</label><input class="input" id="pf-name" maxlength="40" autocomplete="off" placeholder="mis. IndiHome, Netflix, Spotify Family"></div>
+      <div class="field"><span class="lbl">Jenis</span><div class="seg pf-ico" id="pf-ico" role="group" aria-label="Jenis layanan"></div></div>
+      <div class="row2"><div class="field"><label for="pf-total">Tagihan per periode</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="pf-total" data-money="pf-total" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
+        <div class="field"><label for="pf-day">Tanggal jatuh tempo</label><input class="input" id="pf-day" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="1 - 28"></div></div>
+      <div class="field"><span class="lbl">Periode tagihan</span><div class="seg pf-cyc" id="pf-cyc" role="group" aria-label="Periode tagihan"></div></div>
+      <div class="row2"><div class="field"><label for="pf-start">Mulai dari bulan</label><input class="input" type="month" id="pf-start"></div><div class="field"><label for="pf-end">Berakhir <span class="muted">(opsional)</span></label><input class="input" type="month" id="pf-end"></div></div>
+      <div class="field"><span class="lbl">Teman yang ikut</span><div id="pf-people"></div>
+        <div class="btn-row"><button type="button" class="btn btn-ghost btn-sm" data-act="pf-padd">${ic('plus', 16)} Tambah teman</button><button type="button" class="btn btn-ghost btn-sm" data-act="pf-split">Bagi rata</button></div>
+        <div id="pf-sum" class="rf-bud" role="status" aria-live="polite"></div></div>
+      <div class="field"><span class="lbl">Rekening tujuan transfer teman <span class="muted">(minimal 1)</span></span><div id="pf-accts"></div><button type="button" class="btn btn-ghost btn-sm" data-act="pf-aadd">${ic('plus', 16)} Tambah rekening</button></div>
+      <label class="pf-chk"><input type="checkbox" id="pf-show"><span>Tampilkan bukti bayar saya kepada teman</span></label>
+      <div class="field"><label for="pf-note">Catatan <span class="muted">(opsional)</span></label><input class="input" id="pf-note" maxlength="120" autocomplete="off"></div>
+      <p class="form-err" id="pf-err" role="alert" hidden></p>
+    </div>
+    <div class="sheet-f">${R.id ? `<button type="button" class="btn btn-danger" data-act="pt-del" data-id="${esc(R.id)}">${ic('trash', 18)} Hapus</button>` : ''}<button type="submit" class="btn btn-primary grow" id="pf-save">Simpan</button></div>
+  </form></div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  $('#pf-name').value = R.name; $('#pf-total').value = R.total ? dots(R.total) : ''; $('#pf-day').value = String(R.day); $('#pf-start').value = R.start; $('#pf-end').value = R.end; $('#pf-note').value = R.note; $('#pf-show').checked = R.show;
+  pfPaint();
+  if (!R.id) setTimeout(() => { const a = $('#pf-name'); if (a && a.focus) a.focus(); }, 60);
+}
+function pfRead() {
+  const R = S.pf; if (!R || !$('#pf-name')) return R;
+  R.name = $('#pf-name').value; R.day = Math.min(28, Math.max(1, Number($('#pf-day').value.replace(/\D/g, '')) || 1)); R.start = $('#pf-start').value; R.end = $('#pf-end').value; R.note = $('#pf-note').value; R.show = $('#pf-show').checked;
+  return R;
+}
+function pfPaint() {
+  const R = S.pf; if (!R || !$('#pf-people')) return;
+  $('#pf-ico').innerHTML = PAT_ICOS.map(x => `<button type="button" data-act="pf-ico" data-v="${x[0]}" aria-pressed="${R.ico === x[0]}">${x[1]}</button>`).join('');
+  $('#pf-cyc').innerHTML = PAT_CYC.map(x => `<button type="button" data-act="pf-cyc" data-v="${x[0]}" aria-pressed="${R.cycle === x[0]}">${x[1]}</button>`).join('');
+  $('#pf-people').innerHTML = R.people.map((p, i) => `<div class="pf-row"><input class="input" data-pf="pn" data-i="${i}" maxlength="30" autocomplete="off" placeholder="Nama teman" aria-label="Nama teman ${i + 1}" value="${esc(p.n)}"><div class="amt-wrap sm"><span class="rp">${curSym()}</span><input data-money="pf-a" data-i="${i}" inputmode="numeric" autocomplete="off" placeholder="Bagian" aria-label="Bagian teman ${i + 1}" value="${p.a ? dots(p.a) : ''}"></div><input class="input" data-pf="ph" data-i="${i}" inputmode="tel" maxlength="16" autocomplete="off" placeholder="No. WhatsApp (opsional)" aria-label="Nomor WhatsApp teman ${i + 1}" value="${esc(p.ph || '')}"><button type="button" class="rm" data-act="pf-prm" data-i="${i}" aria-label="Hapus teman ${i + 1}">${ic('x', 16)}</button></div>`).join('');
+  $('#pf-accts').innerHTML = R.accts.map((a, i) => `<div class="pf-row pf-acct"><input class="input" data-pf="ab" data-i="${i}" maxlength="20" autocomplete="off" placeholder="Bank / e-wallet" aria-label="Bank ${i + 1}" value="${esc(a.b)}"><input class="input" data-pf="ano" data-i="${i}" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="Nomor rekening" aria-label="Nomor rekening ${i + 1}" value="${esc(a.no)}"><input class="input" data-pf="an" data-i="${i}" maxlength="40" autocomplete="off" placeholder="Atas nama" aria-label="Atas nama ${i + 1}" value="${esc(a.n)}">${R.accts.length > 1 ? `<button type="button" class="rm" data-act="pf-arm" data-i="${i}" aria-label="Hapus rekening ${i + 1}">${ic('x', 16)}</button>` : ''}</div>`).join('');
+  pfSum();
+}
+function pfSum() {
+  const R = S.pf, el = $('#pf-sum'); if (!R || !el) return;
+  const s = R.people.reduce((t, p) => t + (p.a || 0), 0), mine = R.total - s;
+  el.className = 'rf-bud' + (mine < 0 ? ' over' : ''); el.textContent = R.total > 0 ? (mine < 0 ? 'Bagian teman melebihi tagihan sebesar ' + fmtRp(-mine) + '.' : 'Bagian Anda ' + fmtRp(mine) + ' dari total ' + fmtRp(R.total) + '.') : 'Isi tagihan per periode untuk melihat bagian Anda.';
+}
+MONEY_HOOKS['pf-total'] = v => { if (S.pf) { S.pf.total = v; pfSum(); } };
+MONEY_HOOKS['pf-a'] = (v, el) => { if (S.pf) { const p = S.pf.people[Number(el.dataset.i)]; if (p) p.a = v; pfSum(); } };
+document.addEventListener('input', e => {
+  const el = e.target, R = S.pf; if (!el || !el.dataset || !el.dataset.pf || !R) return;
+  const i = Number(el.dataset.i), k = el.dataset.pf;
+  if (k === 'pn' && R.people[i]) R.people[i].n = el.value; else if (k === 'ph' && R.people[i]) R.people[i].ph = el.value.replace(/[^\d+]/g, '');
+  else if (k === 'ab' && R.accts[i]) R.accts[i].b = el.value; else if (k === 'ano' && R.accts[i]) R.accts[i].no = el.value; else if (k === 'an' && R.accts[i]) R.accts[i].n = el.value;
+});
+async function ptSave() {
+  const R = S.pf; if (!R || R.saving) return; pfRead();
+  const err = $('#pf-err'), fail = m => { err.textContent = m; err.hidden = false; if (err.scrollIntoView) err.scrollIntoView({ block: 'nearest' }); };
+  err.hidden = true;
+  if (R.people.reduce((t, p) => t + (p.a || 0), 0) > R.total) return fail('Bagian teman melebihi tagihan. Kurangi bagian mereka.');
+  const now = new Date().toISOString(), r = planClean('patung', { name: R.name, ico: R.ico, total: R.total, cycle: R.cycle, start: R.start, end: R.end, day: R.day, people: R.people, accts: R.accts, bill: R.bill, pay: R.pay, show: R.show, note: R.note, createdAt: R.createdAt || now, updatedAt: now }, now);
+  if (r.err) return fail(r.err);
+  const btn = $('#pf-save'); R.saving = true; btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try { const col = planBase().collection('patung'); await (R.id ? col.doc(R.id) : col.doc()).set(r.ok); const edit = !!R.id; closeSheet(); toast(edit ? 'Patungan diperbarui' : 'Patungan disimpan'); }
+  catch (e) { R.saving = false; btn.disabled = false; btn.textContent = 'Simpan'; fail(dbErrMsg(e)); }
+}
+async function ptDelete(id) {
+  const r = patFind(id); if (!r) return;
+  try {
+    for (const p of r.people) { try { await api('pat.unlink', { rid: id, pe: p.id }); } catch (e) { /* abaikan */ } }
+    for (const k of Object.keys(r.bill || {})) { const ph = r.bill[k].ph; if (ph) { try { await planBase().collection('photos').doc(ph).delete(); } catch (e) { /* abaikan */ } } }
+    await planBase().collection('patung').doc(id).delete(); closeSheet(); toast('Patungan dihapus');
+  } catch (e) { toast(dbErrMsg(e)); }
+}
+async function ptBillUpload(rid0, k, file) {
+  const r = patFind(rid0); if (!r || !file) return;
+  toast('Mengunggah bukti…');
+  let img; try { img = await compressImage(file); } catch (e) { toast('Foto tidak bisa dibaca. Coba foto lain.'); return; }
+  const base0 = planBase(), now = new Date().toISOString(); let pr = null;
+  try {
+    pr = base0.collection('photos').doc(); await pr.set({ data: img.dataUrl, createdAt: now });
+    const c = planClean('patung', Object.assign({}, r, { bill: Object.assign({}, r.bill || {}, { [k]: { at: now, ph: pr.id } }), updatedAt: now }), now);
+    if (c.err) throw new Error(c.err);
+    await base0.collection('patung').doc(rid0).set(c.ok); toast('Bukti tersimpan. Teman sekarang bisa ditagih.');
+  } catch (e) { if (pr) { try { await pr.delete(); } catch (x) { /* abaikan */ } } toast(dbErrMsg(e)); }
+}
+document.addEventListener('change', e => { const el = e.target; if (el && el.dataset && el.dataset.ptBill && el.files && el.files[0]) { const f = el.files[0]; ptBillUpload(el.dataset.ptBill, el.dataset.k, f); el.value = ''; } });
+async function ptMark(rid0, pe) {
+  const r = patFind(rid0); if (!r) return; const m = patModel(r).people.filter(x => x.p.id === pe)[0]; if (!m || !m.due.length) return;
+  const now = new Date().toISOString(), pay = Object.assign({}, r.pay || {}); pay[pe] = (pay[pe] || []).concat(m.due);
+  const c = planClean('patung', Object.assign({}, r, { pay, updatedAt: now }), now); if (c.err) { toast(c.err); return; }
+  try { await planBase().collection('patung').doc(rid0).set(c.ok); toast(m.p.n + ' ditandai lunas'); } catch (e) { toast(dbErrMsg(e)); }
+}
+async function ptDecide(id, ok) {
+  const noteEl = $('#pt-n-' + id), note = noteEl ? noteEl.value : '';
+  try { const r = await api('pat.decide', { id, ok, note }); await patInboxLoad(true); toast(ok ? 'Pembayaran diterima' : 'Bukti ditolak. Teman bisa mengirim ulang.'); return r; }
+  catch (e) { toast(e.userMessage || 'Gagal menyimpan keputusan'); }
+}
+Object.assign(ACT, {
+  'pt-new'() { ptOpen(null); }, 'pt-edit'(el) { ptOpen(el.dataset.id); },
+  'pt-rng'(el) { S.patRange = Number(el.dataset.v) || 1; VIEWS.patungan.update(); },
+  'pt-copy'(el) { const r = patFind(el.dataset.id); if (!r) return; const m = patModel(r).people.filter(x => x.p.id === el.dataset.pe)[0], t = patTok(r.id, el.dataset.pe); if (!m || !t) return; const txt = patMsg(r, m, patUrl(t)); try { navigator.clipboard.writeText(txt).then(() => toast('Pesan tagihan disalin'), () => toast('Tidak bisa menyalin. Gunakan tombol WhatsApp.')); } catch (e) { toast('Tidak bisa menyalin. Gunakan tombol WhatsApp.'); } },
+  'pt-mark'(el) { ptMark(el.dataset.id, el.dataset.pe); },
+  'pt-bproof'(el) { const r = patFind(el.dataset.id), b = r && r.bill && r.bill[el.dataset.k]; if (!b || !b.ph) return; patPhoto(b.ph).then(d => { if (d) patImgOpen(d, 'Bukti bayar ' + r.name + ' · ' + patLbl(el.dataset.k)); else toast('Bukti tidak ditemukan'); }).catch(() => toast('Bukti tidak bisa dimuat')); },
+  'pt-sproof'(el) { api('pat.sproof', { id: el.dataset.id }).then(x => { if (x.data) patImgOpen(x.data, 'Bukti transfer dari teman'); else toast('Bukti tidak ditemukan'); }).catch(e => toast(e.userMessage || 'Bukti tidak bisa dimuat')); },
+  'pt-ok'(el) { ptDecide(el.dataset.id, true); }, 'pt-no'(el) { ptDecide(el.dataset.id, false); },
+  'pt-img-x'(el, ev) { if (ev && ev.target && ev.target.closest && ev.target.closest('figure')) return; const x = $('#pt-img'); if (x) x.remove(); },
+  'pt-del'(el) { if (el.dataset.armed) { ptDelete(el.dataset.id); return; } el.dataset.armed = '1'; el.textContent = 'Tekan lagi untuk menghapus'; setTimeout(() => { if (el.isConnected) { delete el.dataset.armed; el.innerHTML = ic('trash', 18) + ' Hapus'; } }, 4000); },
+  'pf-ico'(el) { if (S.pf) { S.pf.ico = el.dataset.v; pfPaint(); } }, 'pf-cyc'(el) { if (S.pf) { S.pf.cycle = Number(el.dataset.v) || 1; pfPaint(); } },
+  'pf-padd'() { if (S.pf && S.pf.people.length < 12) { S.pf.people.push({ id: rid().slice(0, 10), n: '', a: 0, ph: '' }); pfPaint(); } },
+  'pf-prm'(el) { if (S.pf && S.pf.people.length > 1) { S.pf.people.splice(Number(el.dataset.i), 1); pfPaint(); } },
+  'pf-aadd'() { if (S.pf && S.pf.accts.length < 4) { S.pf.accts.push({ b: '', no: '', n: '' }); pfPaint(); } },
+  'pf-arm'(el) { if (S.pf && S.pf.accts.length > 1) { S.pf.accts.splice(Number(el.dataset.i), 1); pfPaint(); } },
+  'pf-split'() { const R = S.pf; if (!R || !(R.total > 0)) { toast('Isi tagihan per periode dulu'); return; } const n = R.people.length + 1, a = Math.floor(R.total / n / 100) * 100 || Math.floor(R.total / n); R.people.forEach(p => { p.a = a; }); pfPaint(); }
+});
+document.addEventListener('submit', e => { if (e.target && e.target.id === 'ptform') { e.preventDefault(); ptSave(); } });
+
+/* ---------- Halaman publik untuk teman (tanpa masuk) ---------- */
+async function patPublicBoot(t) {
+  document.body.classList.add('bw-body'); S.bw = { t, sel: [], img: '', note: '' };
+  const app = $('#app'); app.innerHTML = '<main class="bw"><p class="bw-load">Memuat tagihan…</p></main>';
+  await bwLoad();
+}
+async function bwLoad() {
+  try { S.bw.d = await api('pat.view', { t: S.bw.t }); S.bw.err = ''; S.bw.sel = S.bw.d.due.map(x => x.k); }
+  catch (e) { S.bw.d = null; S.bw.err = e.userMessage || 'Tagihan tidak bisa dimuat.'; }
+  bwPaint();
+}
+const bwSaku = () => `<section class="bw-card bw-offer"><h2>Semua uang ada di SaKu</h2><p>SaKu adalah aplikasi pencatat keuangan pribadi. Catat pemasukan dan pengeluaran, atur anggaran, pantau tagihan dan cicilan, dan tagih patungan teman seperti ini, di web maupun HP.</p><a class="btn btn-primary" href="${esc(location.origin + '/')}">Kenali SaKu, masuk atau daftar</a></section>`;
+function bwAmt() { const d = S.bw.d; return d ? d.share * S.bw.sel.length : 0; }
+function bwPaint() {
+  const P = S.bw, d = P.d, app = $('#app'); if (!app) return;
+  const top = `<header class="bw-top">${LOGO}${WM}</header>`;
+  if (!d) { app.innerHTML = `<main class="bw">${top}<section class="bw-card"><h1>Tautan tidak bisa dibuka</h1><p>${esc(P.err || '')}</p><p class="muted">Minta teman Anda mengirim tautan yang baru.</p></section>${bwSaku()}</main>`; return; }
+  const per = (PAT_CYC.filter(c => c[0] === d.cycle)[0] || PAT_CYC[0])[1].toLowerCase();
+  const head = `<section class="bw-card bw-h"><span class="chip" style="--c:${planSlot(2)}">${ic(patIco(d.ico), 22)}</span><div><p class="bw-k">Tagihan patungan dari ${esc(d.owner)}</p><h1>${esc(d.svc)}</h1><p class="muted">Bagian ${esc(d.person)}: <b>${fmtRp(d.share)}</b> per periode (${esc(per)})</p></div></section>`;
+  const wait = d.wait.length ? `<section class="bw-card"><h2>Menunggu konfirmasi</h2><ul class="bw-l">${d.wait.map(w => `<li><span>${esc(patLbls(w.ks))}</span><b>${fmtRp(w.amt)}</b></li>`).join('')}</ul><p class="muted">${esc(d.owner)} akan memeriksa bukti transfer Anda. Tagihan ini tidak perlu dibayar lagi.</p></section>` : '';
+  if (P.sent) { app.innerHTML = `<main class="bw">${top}<section class="bw-card bw-ok"><span class="bw-tick">${ic('check', 26)}</span><h1>Bukti terkirim</h1><p>${fmtRp(P.sent.amt)} untuk ${P.sent.n} periode sedang dicek oleh ${esc(d.owner)}. Tagihan ini sudah hilang dari daftar Anda.</p></section>${wait}${bwSaku()}</main>`; return; }
+  if (!d.due.length && !d.ahead.length) { app.innerHTML = `<main class="bw">${top}${head}<section class="bw-card bw-ok"><span class="bw-tick">${ic('check', 26)}</span><h1>Tidak ada tagihan</h1><p>${d.wait.length ? 'Semua sudah Anda bayar dan sedang menunggu konfirmasi.' : 'Terima kasih, semuanya sudah lunas.'}</p></section>${wait}${bwSaku()}</main>`; return; }
+  const sel = new Set(P.sel), row = (x, ahead) => `<li><label class="bw-ck"><input type="checkbox" data-bw-k="${esc(x.k)}"${sel.has(x.k) ? ' checked' : ''}><span><b>${esc(patLbl(x.k))}</b><small>${ahead ? 'Bayar di muka' : 'Jatuh tempo'}${x.pr ? '' : ''}</small></span><em>${fmtRp(x.amt)}</em></label>${x.pr ? `<button type="button" class="bw-link" data-act="bw-proof" data-k="${esc(x.k)}">Lihat bukti bayar ${esc(d.owner)}</button>` : ''}</li>`;
+  const list = d.due.length ? `<h2>Tagihan Anda</h2><ul class="bw-l bw-sel">${d.due.map(x => row(x, false)).join('')}</ul>` : '<h2>Tidak ada tunggakan</h2>';
+  const ahead = d.ahead.length ? `<details class="bw-ahead"${P.aopen ? ' open' : ''}><summary data-act="bw-aopen">Bayar sekaligus di muka</summary><div class="bw-quick"><button type="button" class="btn btn-ghost btn-sm" data-act="bw-q" data-v="0">Hanya tunggakan</button><button type="button" class="btn btn-ghost btn-sm" data-act="bw-q" data-v="3">+ 3 bulan ke depan</button><button type="button" class="btn btn-ghost btn-sm" data-act="bw-q" data-v="12">+ 1 tahun ke depan</button></div><ul class="bw-l bw-sel">${d.ahead.filter((x, i) => i < 6 || sel.has(x.k)).map(x => row(x, true)).join('')}</ul>${d.ahead.filter((x, i) => i >= 6 && !sel.has(x.k)).length ? `<p class="bw-more">Masih ada ${d.ahead.filter((x, i) => i >= 6 && !sel.has(x.k)).length} bulan lainnya. Pilih "+ 1 tahun ke depan" untuk membayar semuanya.</p>` : ''}</details>` : '';
+  const accts = `<h2>Transfer ke</h2><ul class="bw-l bw-ac">${d.accts.map((a, i) => `<li><span><b>${esc(a.b)}</b> ${esc(a.no)}<small>${a.n ? 'a.n. ' + esc(a.n) : ''}</small></span><button type="button" class="btn btn-ghost btn-sm" data-act="bw-copy" data-i="${i}">Salin</button></li>`).join('')}</ul>`;
+  const n = P.sel.length, amt = bwAmt();
+  app.innerHTML = `<main class="bw">${top}${head}${P.rejNote !== undefined ? '' : ''}${d.rej ? `<p class="bw-rej" role="alert">Bukti sebelumnya ditolak${d.rej.note ? ': ' + esc(d.rej.note) : ''}. Silakan kirim ulang.</p>` : ''}${wait}
+    <section class="bw-card">${list}${ahead}
+      <div class="bw-total"><span>Total yang ditransfer${n > 1 ? ' (' + n + ' periode)' : ''}</span><b id="bw-amt">${fmtRp(amt)}</b></div>${accts}
+      <h2>Unggah bukti transfer</h2>
+      <label class="bw-up${P.img ? ' has' : ''}">${P.img ? `<img alt="Pratinjau bukti transfer" src="${esc(P.img)}">` : `<span>${ic('camera', 22)} Pilih foto atau tangkapan layar bukti transfer</span>`}<input type="file" accept="image/*" id="bw-file" hidden></label>
+      <input class="input" id="bw-note" maxlength="120" placeholder="Catatan untuk ${esc(d.owner)} (opsional)" value="${esc(P.note || '')}">
+      <p class="form-err" id="bw-err" role="alert" hidden></p>
+      <button type="button" class="btn btn-primary bw-send" id="bw-send" data-act="bw-send"${n && P.img ? '' : ' disabled'}>Kirim bukti ${n ? fmtRp(amt) : ''}</button></section>
+    ${bwSaku()}</main>`;
+}
+document.addEventListener('change', async e => {
+  const el = e.target; if (!el || !S.bw) return;
+  if (el.dataset && el.dataset.bwK) { const k = el.dataset.bwK, s = S.bw.sel, i = s.indexOf(k); if (el.checked && i < 0) s.push(k); else if (!el.checked && i >= 0) s.splice(i, 1); const a = $('#bw-amt'); if (a) a.textContent = fmtRp(bwAmt()); const b = $('#bw-send'); if (b) { b.disabled = !(s.length && S.bw.img); b.textContent = 'Kirim bukti ' + (s.length ? fmtRp(bwAmt()) : ''); } }
+  else if (el.id === 'bw-file' && el.files && el.files[0]) {
+    const er = $('#bw-err'); if (er) er.hidden = true;
+    try { const c = await compressImage(el.files[0]); S.bw.img = c.dataUrl; S.bw.note = ($('#bw-note') || {}).value || ''; bwPaint(); } catch (x) { if (er) { er.textContent = 'Foto tidak bisa dibaca. Coba foto lain.'; er.hidden = false; } }
+  }
+});
+Object.assign(ACT, {
+  'bw-aopen'() { S.bw.aopen = true; },
+  'bw-q'(el) {
+    const d = S.bw.d, m = Number(el.dataset.v) || 0, n = patNowN(), base0 = d.due.map(x => x.k);
+    S.bw.sel = base0.concat(m ? d.ahead.filter(x => patMonN(x.k) <= n + m).map(x => x.k) : []); S.bw.aopen = true; S.bw.note = ($('#bw-note') || {}).value || ''; bwPaint();
+  },
+  'bw-copy'(el) { const a = S.bw.d.accts[Number(el.dataset.i)]; if (!a) return; try { navigator.clipboard.writeText(a.no).then(() => toast('Nomor rekening disalin'), () => toast('Salin manual nomor rekening')); } catch (e) { toast('Salin manual nomor rekening'); } },
+  'bw-proof'(el) { api('pat.proof', { t: S.bw.t, k: el.dataset.k }).then(x => { if (x.data) patImgOpen(x.data, 'Bukti bayar ' + S.bw.d.owner); else toast('Bukti tidak tersedia'); }).catch(e => toast(e.userMessage || 'Bukti tidak tersedia')); },
+  async 'bw-send'(el) {
+    const P = S.bw, er = $('#bw-err'); if (!P.sel.length || !P.img || el.disabled) return;
+    el.disabled = true; el.textContent = 'Mengirim…'; if (er) er.hidden = true;
+    try { const r = await api('pat.pay', { t: P.t, ks: P.sel, img: P.img, note: ($('#bw-note') || {}).value || '' }); P.sent = { amt: r.amt, n: r.n }; P.img = ''; await bwLoad(); }
+    catch (e) { if (er) { er.textContent = e.userMessage || 'Gagal mengirim. Coba lagi.'; er.hidden = false; } el.disabled = false; el.textContent = 'Kirim bukti ' + fmtRp(bwAmt()); if (e.code === 'nolink' || e.status === 400) bwLoad(); }
+  }
+});
+
 ACT['rep-span'] = el => { S.repSpan = Number(el.dataset.v) || 1; VIEWS[S.view === 'laporan' ? 'laporan' : 'rekap'].update(); };
 ACT['rep-period'] = el => { const R = repState(); R.period = el.dataset.v; R.anchor = startOfDay(new Date()); VIEWS.laporan.update(); };
 ACT['rep-shift'] = el => repShift('anchor', repState().period, Number(el.dataset.d));
@@ -13364,8 +13714,8 @@ const FbEngine = (function () {
     return o;
   }
   /*PLANCLEAN:BEGIN*/
-  const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish'];
-  const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120 };
+  const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish', 'patung'];
+  const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120, patung: 40 };
   const PLAN_BYTES = 250000;
   const CICILAN_KIND_IDS = ['kpr', 'mobil', 'hp', 'multi'];
   const TARGET_KIND_IDS = ['darurat', 'tabungan', 'investasi', 'haji', 'nikah', 'rumah', 'kendaraan', 'liburan', 'pendidikan', 'lain'];
@@ -13467,11 +13817,33 @@ const FbEngine = (function () {
       if (d.done === true) o.done = true;
       return { ok: Object.assign(o, base) };
     }
+    if (c === 'patung') {
+      const name = str(d.name, 40); if (!name) return fail('Isi nama layanan.');
+      const total = int(d.total, 0, 1e10); if (total < 1) return fail('Isi nominal tagihan.');
+      const cycle = [1, 3, 6, 12].indexOf(Number(d.cycle)) >= 0 ? Number(d.cycle) : 1;
+      const start = str(d.start, 7); if (!isMon(start)) return fail('Pilih bulan mulai.');
+      const end = str(d.end, 7); if (end && (!isMon(end) || monN(end) < monN(start))) return fail('Bulan berakhir tidak valid.');
+      const ids = {}, people = [];
+      for (const p0 of (Array.isArray(d.people) ? d.people : []).slice(0, 12)) {
+        const p = p0 && typeof p0 === 'object' ? p0 : {}, id = String(p.id || '');
+        if (!/^[a-z0-9]{6,16}$/.test(id) || ids[id]) return fail('Data teman tidak valid.');
+        const n = str(p.n, 30), a = int(p.a, 0, 1e10); if (!n) return fail('Isi nama setiap teman.'); if (a < 1) return fail('Isi bagian ' + n + '.');
+        ids[id] = 1; people.push({ id, n, a, ph: String(p.ph == null ? '' : p.ph).replace(/[^0-9]/g, '').slice(0, 16) });
+      }
+      if (!people.length) return fail('Tambahkan minimal satu teman.');
+      const accts = (Array.isArray(d.accts) ? d.accts : []).slice(0, 4).map(a => { const o = a && typeof a === 'object' ? a : {}; return { b: str(o.b, 20), no: str(o.no, 30), n: str(o.n, 40) }; }).filter(a => a.b && a.no);
+      if (!accts.length) return fail('Isi minimal satu rekening tujuan transfer.');
+      const bill = {}, bsrc = d.bill && typeof d.bill === 'object' && !Array.isArray(d.bill) ? d.bill : {};
+      Object.keys(bsrc).slice(0, 120).forEach(k => { if (isMon(k)) { const v = bsrc[k] && typeof bsrc[k] === 'object' ? bsrc[k] : {}; bill[k] = { at: str(v.at, 40), ph: /^[a-z0-9]{8,32}$/.test(String(v.ph)) ? String(v.ph) : '' }; } });
+      const pay = {}, psrc = d.pay && typeof d.pay === 'object' && !Array.isArray(d.pay) ? d.pay : {};
+      Object.keys(psrc).forEach(id => { if (ids[id] && Array.isArray(psrc[id])) pay[id] = psrc[id].map(String).filter(isMon).slice(0, 240); });
+      return { ok: Object.assign({ name, ico: ['net', 'tv', 'music', 'game', 'cloud', 'lain'].indexOf(d.ico) >= 0 ? d.ico : 'lain', total, cycle, start, end, day: int(d.day, 1, 28), people, accts, bill, pay, show: d.show !== false, note: str(d.note, 120) }, base) };
+    }
     return fail('Jenis data tidak dikenal.');
   }
   /*PLANCLEAN:END*/
   function cleanPlan(c, d) { const r = planClean(c, d, iso()); if (r.err) throw bad(r.err); return r.ok; }
-  const emptyPlan = () => ({ cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [] });
+  const emptyPlan = () => ({ cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [], patung: [] });
   function normPlan(p) { const o = emptyPlan(); if (p && typeof p === 'object') PLAN_COLS.forEach(c => { if (Array.isArray(p[c])) o[c] = p[c].slice(); }); return o; }
   const byteLen = s => new TextEncoder().encode(s).length;
   function parseBook(d) {
@@ -14341,8 +14713,65 @@ const FbEngine = (function () {
       return d ? { exists: true, doc: { data: d.data.data, createdAt: d.data.createdAt } } : { exists: false };
     },
 
+    /* ---- Patungan (sisi pemilik; halaman teman dilayani fungsi Netlify /pat-api) ---- */
+    async 'pat.link'(b, c) {
+      const a = await authed(c.req), u = a.u, rid = String(b.rid || ''), pe = String(b.pe || '');
+      if (!ID_RE.test(rid) || !/^[a-z0-9]{6,16}$/.test(pe)) throw bad('Data tidak valid.');
+      const own = 'books/' + u + '/patlink/o_' + rid + '_' + pe, ex = await getDoc(own, a.tok.id, c.sig);
+      if (ex && ex.data.t) return { t: u + '.' + ex.data.t };
+      const cur = await getDoc('books/' + u, a.tok.id, c.sig), bk = parseBook(cur && cur.data), rec = bk.plan.patung.filter(x => x && x.id === rid)[0];
+      if (!rec || !rec.people.some(p => p.id === pe)) throw new FbErr(404, 'Patungan atau teman tidak ditemukan. Simpan dulu.', 'nodata');
+      const r = u8b64(crypto.getRandomValues(new Uint8Array(18))), h = patHash(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(r)));
+      await commit([wSet('books/' + u + '/patlink/h_' + h, { rid, pe }), wSet(own, { t: r })], a.tok.id, c.sig);
+      return { t: u + '.' + r };
+    },
+    async 'pat.unlink'(b, c) {
+      const a = await authed(c.req), u = a.u, own = 'books/' + u + '/patlink/o_' + String(b.rid || '') + '_' + String(b.pe || '');
+      if (!/^[a-z0-9_]{10,60}$/.test(own.split('/').pop())) throw bad('Data tidak valid.');
+      const ex = await getDoc(own, a.tok.id, c.sig);
+      if (ex && ex.data.t) await commit([wDel('books/' + u + '/patlink/h_' + patHash(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ex.data.t)))), wDel(own)], a.tok.id, c.sig);
+      return { ok: true };
+    },
+    async 'pat.inbox'(b, c) {
+      const a = await authed(c.req), list = await listDocs('books/' + a.u + '/patsub', a.tok.id, c.sig), subs = [], ok = {};
+      list.forEach(d => {
+        const x = d.data, ks = String(x.ks || '').split(',').filter(Boolean), s = { id: d.id, rid: x.rid, pe: x.pe, nm: x.nm, rn: x.rn, ks, amt: Number(x.amt) || 0, at: x.at || '', st: x.st, note: x.note || '' };
+        if (s.st === 'ok') { const k = s.rid + '.' + s.pe; (ok[k] || (ok[k] = [])).push.apply(ok[k], ks); } else subs.push(s);
+      });
+      subs.sort((p, q) => String(p.at).localeCompare(String(q.at)));
+      return { subs: subs.slice(-80), ok };
+    },
+    async 'pat.sproof'(b, c) {
+      const a = await authed(c.req), id = String(b.id || ''); if (!ID_RE.test(id)) throw bad('ID tidak valid.');
+      const d = await getDoc('books/' + a.u + '/patimg/' + id, a.tok.id, c.sig);
+      return { data: d && d.data.data ? d.data.data : '' };
+    },
+    async 'pat.decide'(b, c) {
+      const a = await authed(c.req), id = String(b.id || ''), yes = b.ok === true, note = clean(b.note).slice(0, 120); if (!ID_RE.test(id)) throw bad('ID tidak valid.');
+      const p = 'books/' + a.u + '/patsub/' + id, d = await getDoc(p, a.tok.id, c.sig);
+      if (!d) throw new FbErr(404, 'Kiriman tidak ditemukan.', 'nodata');
+      if (d.data.st !== 'wait') return { ok: true, st: d.data.st };
+      const patch = yes ? { st: 'ok', dat: iso() } : { st: 'no', dat: iso(), note };
+      await commit([wSet(p, patch, { mask: Object.keys(patch), pre: { exists: true } })], a.tok.id, c.sig);
+      return { ok: true, st: patch.st };
+    },
+    async 'pat.view'(b) { return patRemote('pat.view', b); },
+    async 'pat.proof'(b) { return patRemote('pat.proof', b); },
+    async 'pat.pay'(b) { return patRemote('pat.pay', b); },
+
     async scan() { throw new FbErr(501, 'Baca foto otomatis tidak tersedia di edisi Firebase.', 'noscan'); }
   };
+
+  /* Patungan: halaman teman (tanpa masuk) dilayani fungsi Netlify /pat-api, bukan aplikasi ini */
+  const patHash = buf => Array.from(new Uint8Array(buf), x => x.toString(16).padStart(2, '0')).join('');
+  async function patRemote(op, body) {
+    let res;
+    try { res = await REAL('/pat-api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({}, body, { op })) }); }
+    catch (e) { throw Object.assign(new TypeError('Failed to fetch'), { fbNet: true }); }
+    let j = null; try { j = await res.json(); } catch (e) { j = null; }
+    if (!res.ok) throw new FbErr(j ? res.status : 503, (j && j.error) || 'Layanan Patungan belum aktif di situs ini. Pemilik perlu memasang fungsi Netlify dan kunci Firebase.', (j && j.code) || 'patoff');
+    return j;
+  }
 
   async function edit(c, rawId, patchFn, failMsg, staff) {
     const a = await authed(c.req); if (staff) needStaff(a); else needAdmin(a);
@@ -14824,6 +15253,7 @@ async function mailVerifyBoot() {
 }
 async function netBoot() {
   await mailVerifyBoot();
+  { const qs = new URLSearchParams(location.search), pt = qs.get('p'), sr = qs.get('s'); if (pt && /^[A-Za-z0-9_.-]{24,60}$/.test(pt) && !window.Capacitor) { if (sr && /^[a-z0-9]{12,30}$/.test(sr) && typeof sbBase === 'function' && !sbBase()) window.SAKU_SUPABASE_URL = 'https://' + sr + '.supabase.co'; await patPublicBoot(pt); return; } }
   ROUTE.mode = (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) || location.protocol === 'file:' ? 'hash' : 'path';
   if (ROUTE.entry == null) ROUTE.entry = viewFromPath(routeCurrent()) || '';
   showPhase(); S.downloads = browserDownloads; S.canWrite = null; S.isOwner = false;
