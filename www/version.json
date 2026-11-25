@@ -1,8 +1,8 @@
 {
- "version": "1.18.0",
- "build": 31,
+ "version": "1.18.1",
+ "build": 32,
  "date": "2026-11-25",
  "notes": [
-  "Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar."
+  "Tampilan layar lebar dirapikan: daftar saldo rekening di Analisis tidak lagi meluber, ruang kosong di sisi kanan dimanfaatkan (form Rekening, Rincian), label tanggal grafik tidak menumpuk, dan diagram kategori tidak menimpa daftar."
  ]
 }

@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.18.0', APP_BUILD = 31;
+const APP_VERSION = '1.18.1', APP_BUILD = 32;
 const CHANGELOG = [
+  { v: '1.18.1', d: '2026-11-25', items: ['Tampilan layar lebar dirapikan: daftar saldo rekening di Analisis tidak lagi meluber, ruang kosong di sisi kanan dimanfaatkan (form Rekening, Rincian), label tanggal grafik tidak menumpuk, dan diagram kategori tidak menimpa daftar.'] },
   { v: '1.18.0', d: '2026-11-25', items: ['Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar.'] },
   { v: '1.17.0', d: '2026-11-25', items: ['Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya.'] },
   { v: '1.16.0', d: '2026-11-25', items: ['Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu.'] },
@@ -6779,6 +6780,7 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Tampilan layar lebar dirapikan: daftar saldo rekening di Analisis tidak lagi meluber, ruang kosong di sisi kanan dimanfaatkan (form Rekening, Rincian), label tanggal grafik tidak menumpuk, dan diagram kategori tidak menimpa daftar.": "Wide-screen layout tidied: the account balance list in Analysis no longer overflows, empty space on the right is used (Accounts form, Details), chart date labels no longer overlap, and the category chart no longer covers the list.",
   "Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar.": "The monthly PDF report can now cover more than one period: 6 months, 1 year, 2 years or 3 years. It includes totals, cash flow per period, a per-period breakdown, top categories and largest expenses.",
   "Lama laporan": "Report length",
   "1 periode": "1 period",
@@ -7983,7 +7985,7 @@ function trendSVG(bk, W, P) {
     if (b.out > 0) g += `<path class="b-out" d="${barPath(cx - bw - 1, y(b.out), bw, y(0) - y(b.out), 3)}"/>`;
     if (b.in > 0) g += `<path class="b-in" d="${barPath(cx + 1, y(b.in), bw, y(0) - y(b.in), 3)}"/>`;
     const d = b.d.getDate();
-    if (P === 'month') { if (d === 1 || d % 5 === 0) g += `<text class="ax ${b.key === selKey ? 'sel' : ''}" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle">${d}</text>`; }
+    if (P === 'month') { if ((d === 1 || d % 5 === 0) && !(d !== 1 && bk.slice(i + 1, i + 3).some(x => x.d.getDate() === 1))) g += `<text class="ax ${b.key === selKey ? 'sel' : ''}" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle">${d}</text>`; }
     else g += `<text class="ax ${b.key === selKey ? 'sel' : ''}" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle">${DAYS_S[b.d.getDay()]} ${d}</text>`;
   });
   bk.forEach((b, i) => { g += `<rect class="hit" data-i="${i}" x="${(pl + slot * i).toFixed(1)}" y="${pt}" width="${slot.toFixed(1)}" height="${ph + pb - 6}"/>`; });

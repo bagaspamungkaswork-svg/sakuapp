@@ -3453,6 +3453,21 @@ body::before { background: radial-gradient(70vmax 38vmax at 105% -6%, color-mix(
 .wn8-c .br i:nth-child(3n) { background: #22C08A; }
 .seg.rep-span { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; max-width: 100%; box-sizing: border-box; }
 .seg.rep-span button { flex: 1 1 auto; min-width: 0; white-space: nowrap; padding-inline: 10px; }
+.acc-card .acc-ul, .acc-card .rk-ul { grid-template-columns: minmax(0, 1fr); }
+.acc-card .acc-li { min-width: 0; }
+.acc-card .acc-n { overflow: hidden; }
+@media (min-width: 1000px) {
+  #rk-form.form-grid { max-width: none; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: 14px 40px; align-items: start; }
+  #rk-form > .seg { grid-column: 1; grid-row: 1; }
+  #rk-form > #rk-pickbox { grid-column: 1; grid-row: 2 / span 4; }
+  #rk-form > .row2 { grid-column: 2; grid-row: 1 / span 2; grid-template-columns: 1fr; align-content: start; }
+  #rk-form > .form-err { grid-column: 2; grid-row: 3; }
+  #rk-form > .btn-row { grid-column: 2; grid-row: 4; align-self: start; }
+  #rk-form .bank-pick { max-height: 340px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+}
+@media (min-width: 900px) { .stack > #mk-disc, .stack > .mk-disc { grid-column: 1 / -1; } }
+@media (min-width: 1100px) { .ana-body > .home-bar, .ana-body > .dl-row, .ana-body > .dash { grid-column: 1 / -1; margin-top: 0; } .dl-row.dl-span { max-width: 640px; } }
+.card > .donut { width: auto; height: auto; margin: 4px auto 18px; }
 </style>
 </head>
 <body>
