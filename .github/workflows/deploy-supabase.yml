@@ -24,6 +24,11 @@ jobs:
       - name: Periksa rahasia
         run: |
           [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$PROJECT_REF" ] || { echo "::error::Isi secret SUPABASE_ACCESS_TOKEN dan SUPABASE_PROJECT_REF di Settings > Secrets and variables > Actions"; exit 1; }
+      - name: Rapikan kode proyek
+        run: |
+          REF=$(printf '%s' "$PROJECT_REF" | tr -d '[:space:]' | sed -E 's#^https?://##; s#\..*$##; s#/.*$##' | tr 'A-Z' 'a-z')
+          echo "$REF" | grep -Eq '^[a-z]{20}$' || { echo "::error::SUPABASE_PROJECT_REF harus 20 huruf kecil (bagian depan https://xxxx.supabase.co), bukan URL penuh, kata sandi, atau token."; exit 1; }
+          echo "PROJECT_REF=$REF" >> "$GITHUB_ENV"
       - uses: supabase/setup-cli@v1
         with:
           version: latest
