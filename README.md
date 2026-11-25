@@ -80,3 +80,15 @@ Untuk edisi **statis** (data hanya di perangkat, tanpa server), isi `www/` denga
 - **Internet:** edisi Firebase butuh internet untuk masuk dan menyimpan. Font tampilan dimuat dari Google Fonts; tanpa internet aplikasi memakai font bawaan sistem.
 - **Tepi layar:** poni kamera dan bilah navigasi ditangani lewat `env(safe-area-inset-*)`. Jika ikon bilah status sulit terbaca di versi Android tertentu, itu perlu disetel (`@capacitor/status-bar`).
 - **Versi:** proyek memakai Capacitor 7. Jika `npm install` mengambil versi yang lebih baru dan ada perintah yang berubah, tetapkan versi di `package.json`.
+
+
+## Bot Telegram (opsional, edisi Netlify dan Supabase)
+
+Catat transaksi dengan mengirim pesan seperti `makan siang 35rb gopay` ke bot pribadi Anda.
+
+1. Di Telegram buka @BotFather, kirim `/newbot`, simpan token yang diberikan.
+2. Supabase: tambahkan secret GitHub `TELEGRAM_BOT_TOKEN`, lalu jalankan ulang workflow. Webhook didaftarkan otomatis.
+   Netlify: isi environment variable `TELEGRAM_BOT_TOKEN`, deploy ulang, lalu daftarkan webhook: `https://<situs>/api?tg=1` dengan `secret_token` = HMAC-SHA256 (kunci: token bot) dari teks `saku-webhook`, dalam heksadesimal.
+3. Di SaKu buka Pengaturan > Bot Telegram > Hubungkan, tekan Start di Telegram.
+
+Keamanan: kode hubung sekali pakai (10 menit), hanya chat pribadi, grup diabaikan, bot tidak menampilkan saldo rekening, dan hanya bisa membatalkan transaksi yang ia buat. Obrolan bot Telegram tidak terenkripsi ujung ke ujung.

@@ -19,6 +19,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Periksa rahasia
@@ -40,3 +41,13 @@ jobs:
         run: |
           supabase link --project-ref "$PROJECT_REF"
           supabase db push --remote --include-all --yes
+      - name: Aktifkan Bot Telegram (opsional)
+        if: env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          supabase secrets set TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" --project-ref "$PROJECT_REF"
+          SEC=$(printf 'saku-webhook' | openssl dgst -sha256 -hmac "$TELEGRAM_BOT_TOKEN" -hex | sed 's/^.* //')
+          curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+            --data-urlencode "url=https://${PROJECT_REF}.supabase.co/functions/v1/api?tg=1" \
+            --data-urlencode "secret_token=${SEC}" \
+            --data-urlencode 'allowed_updates=["message","callback_query"]' \
+            --data-urlencode "drop_pending_updates=true" >/dev/null && echo "Webhook Telegram terdaftar"

@@ -125,6 +125,129 @@ async function verifyHash(pw, stored) {
 let DUMMY = null;
 
 /* ---------- inti ---------- */
+/* ---------- Bot Telegram: pengurai catatan (disalin dari pencatat suara di aplikasi) ---------- */
+const VP_UNIT = { nol: 0, kosong: 0, satu: 1, se: 1, dua: 2, tiga: 3, empat: 4, lima: 5, enam: 6, tujuh: 7, delapan: 8, sembilan: 9, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+const VP_SLANG = { seceng: 1000, noceng: 2000, goceng: 5000, ceban: 10000, goban: 50000, cepek: 100000, gopek: 500, sepuluhribu: 10000 };
+const VP_SCALE = { ribu: 1e3, rb: 1e3, k: 1e3, thousand: 1e3, juta: 1e6, jt: 1e6, million: 1e6, miliar: 1e9, milyar: 1e9, billion: 1e9 };
+const VP_NUMW = ['satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas', 'belas', 'puluh', 'ratus', 'seratus', 'seribu', 'sejuta', 'setengah', 'nol', 'kosong', 'seceng', 'noceng', 'goceng', 'ceban', 'goban', 'cepek', 'gopek', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'hundred'];
+function vpTokens(text) {
+  return String(text || '').toLowerCase().replace(/rp\.?\s*/g, ' rp ').replace(/(\d)([a-z])/g, '$1 $2').replace(/([a-z])(\d)/g, '$1 $2').replace(/[^a-z0-9.,\s-]/g, ' ').replace(/[.,]+(?=\s|$)/g, ' ').trim().split(/\s+/).filter(Boolean);
+}
+function vpNumTok(t) {
+  if (/^\d{1,3}([.,]\d{3})+$/.test(t)) return { v: Number(t.replace(/[.,]/g, '')), dig: true };
+  if (/^\d+[.,]\d{1,2}$/.test(t)) return { v: parseFloat(t.replace(',', '.')), dig: true, dec: true };
+  if (/^\d+$/.test(t)) return { v: Number(t), dig: true };
+  return null;
+}
+/* Nilai satu rangkaian token angka ("dua puluh lima ribu", "25 rb", "1,5 juta") */
+function vpRunValue(tk) {
+  let total = 0, group = 0, sub = 0, scaled = false;
+  for (const t of tk) {
+    const n = vpNumTok(t);
+    if (n) { sub = n.v; continue; }
+    if (VP_SLANG[t] != null) { total += VP_SLANG[t]; scaled = true; continue; }
+    if (t === 'rp' || t === 'rupiah' || t === 'dan') continue;
+    if (t === 'seratus') { group += 100; continue; }
+    if (t === 'seribu') { total += 1e3; scaled = true; continue; }
+    if (t === 'sejuta') { total += 1e6; scaled = true; continue; }
+    if (t === 'sepuluh') { group += 10; continue; }
+    if (t === 'sebelas') { group += 11; continue; }
+    if (t === 'setengah') { sub += 0.5; continue; }
+    if (t === 'belas') { group += sub + 10; sub = 0; continue; }
+    if (t === 'puluh') { group += (sub || 1) * 10; sub = 0; continue; }
+    if (t === 'ratus' || t === 'hundred') { group += (sub || 1) * 100; sub = 0; continue; }
+    if (VP_SCALE[t]) { total += ((group + sub) || 1) * VP_SCALE[t]; group = 0; sub = 0; scaled = true; continue; }
+    if (VP_UNIT[t] != null) { sub = VP_UNIT[t]; continue; }
+  }
+  return { v: Math.round(total + group + sub), scaled };
+}
+function vpIsNumTok(t) { return !!vpNumTok(t) || VP_UNIT[t] != null && t !== 'se' || VP_SCALE[t] != null || VP_SLANG[t] != null || VP_NUMW.indexOf(t) >= 0; }
+/* Cari jumlah uang: pilih rangkaian angka berskala (ribu/juta) atau yang terbesar */
+function vpFindAmount(tk) {
+  const runs = []; let cur = null;
+  tk.forEach((t, i) => {
+    const num = vpIsNumTok(t) && !(t === 'k' && !cur), cont = cur && (t === 'rp' || t === 'rupiah');
+    if (num || (t === 'rp' && !cur)) { if (!cur) cur = { a: i, b: i, toks: [] }; cur.b = i; cur.toks.push(t); }
+    else if (cont) { cur.b = i; cur.toks.push(t); }
+    else if (cur && t === 'dan' && i + 1 < tk.length && vpIsNumTok(tk[i + 1])) { cur.toks.push(t); cur.b = i; }
+    else { if (cur) runs.push(cur); cur = null; }
+  });
+  if (cur) runs.push(cur);
+  let best = null;
+  runs.forEach(r => { const x = vpRunValue(r.toks); r.v = x.v; r.scaled = x.scaled; if (r.v >= 100 && (!best || (r.scaled && !best.scaled) || (r.scaled === best.scaled && r.v >= best.v))) best = r; });
+  return best;
+}
+const VP_IN = /\b(gaji|gajian|terima|menerima|diterima|dapat|dapet|pemasukan|bonus|thr|komisi|lembur|freelance|jualan|dikasih|cair|dividen|bunga|income|salary|received|earned)\b/;
+const VP_OUT = /\b(beli|membeli|bayar|membayar|belanja|pengeluaran|keluar|isi|topup|jajan|makan|minum|spent|paid|bought|expense)\b/;
+const VP_CAT = {
+  makan: ['makan', 'nasi', 'ayam', 'bakso', 'mie', 'soto', 'warteg', 'warung', 'minum', 'sate', 'gorengan', 'lunch', 'dinner', 'food'], sarapan: ['sarapan', 'breakfast'], makan_siang: ['makan siang'], makan_malam: ['makan malam'],
+  kopi: ['kopi', 'jajan', 'cemilan', 'camilan', 'snack', 'boba', 'coffee', 'teh'], pesan_antar: ['gofood', 'grabfood', 'shopeefood', 'pesan antar'], dapur: ['belanja dapur', 'sayur', 'pasar', 'daging', 'telur', 'beras', 'sembako', 'groceries'],
+  gas_galon: ['gas', 'galon', 'lpg'], laundry: ['laundry', 'londri'], online: ['shopee', 'tokopedia', 'lazada', 'belanja online', 'checkout'], pakaian: ['baju', 'celana', 'sepatu', 'kemeja', 'jaket'],
+  listrik: ['listrik', 'pln', 'token listrik', 'pdam', 'air ledeng'], pulsa: ['pulsa', 'kuota', 'internet', 'wifi', 'indihome', 'paket data'], sewa: ['sewa', 'kontrakan', 'kpr', 'rent'],
+  angkot: ['ojek', 'grab', 'gojek', 'angkot', 'ojol', 'angkutan', 'uber'], krl: ['krl', 'commuter'], mrt_lrt: ['mrt', 'lrt'], transjakarta: ['transjakarta', 'busway', 'brt'], taksi: ['taksi', 'taxi', 'bluebird'],
+  bensin: ['bensin', 'pertamax', 'pertalite', 'solar', 'parkir', 'bbm', 'gas station', 'fuel', 'parking'], tol: ['tol', 'etoll', 'e-toll'], sehat: ['obat', 'apotek', 'medicine'], dokter: ['dokter', 'rumah sakit', 'klinik', 'doctor'], vitamin: ['vitamin', 'suplemen'],
+  hiburan: ['nonton', 'bioskop', 'film', 'movie'], langganan: ['netflix', 'spotify', 'youtube', 'langganan', 'subscription'], kosmetik: ['skincare', 'kosmetik', 'make up', 'makeup'], olahraga: ['gym', 'olahraga', 'futsal', 'badminton'],
+  game: ['game', 'diamond', 'topup game'], hewan: ['kucing', 'anjing', 'pakan', 'hewan'], rawat: ['potong rambut', 'salon', 'barbershop', 'pangkas', 'haircut'], anak: ['anak'], bayi: ['popok', 'susu bayi'],
+  sekolah: ['sekolah', 'spp', 'kursus', 'kuliah', 'les'], hadiah: ['hadiah', 'kado', 'donasi', 'gift'], zakat: ['zakat', 'sedekah', 'infaq', 'infak'], iuran: ['iuran', 'ronda'], acara: ['kondangan', 'nikahan', 'hajatan'], ibadah: ['gereja', 'masjid', 'kolekte'],
+  cicilan: ['cicilan', 'kartu kredit'], paylater: ['paylater', 'spaylater'], hutang_bayar: ['bayar hutang'], biaya_bank: ['biaya admin'], denda: ['denda', 'tilang'], darurat: ['darurat'], arisan: ['arisan'], hotel: ['hotel', 'penginapan'],
+  tiket_pesawat: ['tiket pesawat', 'pesawat', 'flight'], kereta_api: ['kereta api', 'tiket kereta'], liburan: ['liburan'], asuransi: ['asuransi'], tabung: ['nabung', 'menabung', 'setor tabungan'],
+  mobil_perawatan: ['servis mobil', 'service mobil'], motor_perawatan: ['servis motor', 'service motor', 'ganti oli'], cuci_kendaraan: ['cuci motor', 'cuci mobil', 'steam'],
+  cuti_besar: ['cuti besar', 'insentif cuti besar'], cuti_tahunan: ['cuti tahunan', 'insentif cuti tahunan'],
+  gaji: ['gaji', 'gajian', 'payroll', 'salary'], bonus: ['bonus', 'thr'], komisi: ['komisi', 'insentif'], lembur: ['lembur'], freelance: ['freelance', 'proyek'], usaha: ['jualan', 'dagang', 'hasil usaha', 'jual'], bunga: ['bunga'], investasi: ['dividen', 'investasi'], hutang_terima: ['pinjaman', 'pinjam']
+};
+function vpHas(text, kw) { return new RegExp('(^|[^a-z0-9])' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+') + '([^a-z0-9]|$)').test(text); }
+/* Tebak kategori: kata kunci (yang terpanjang menang), lalu kata dari nama kategori (termasuk buatan sendiri) */
+function vpGuessCat(text, type, cats) {
+  const ok = {}; cats.forEach(c => { if (c.type === type) ok[c.id] = c; });
+  let best = null, bs = 0;
+  Object.keys(VP_CAT).forEach(id => { if (!ok[id]) return; VP_CAT[id].forEach(kw => { if (vpHas(text, kw) && kw.length + (kw.indexOf(' ') > 0 ? 4 : 0) > bs) { bs = kw.length + (kw.indexOf(' ') > 0 ? 4 : 0); best = id; } }); });
+  cats.forEach(c => {
+    if (c.type !== type) return;
+    const label = String(c.label || '').toLowerCase();
+    if (label && vpHas(text, label)) { const s = label.length + 8; if (s > bs) { bs = s; best = c.id; } return; }
+    label.split(/[^a-z0-9]+/).filter(w => w.length > 3 && ['dan', 'lain', 'lainnya'].indexOf(w) < 0).forEach(w => { if (vpHas(text, w) && w.length > bs) { bs = w.length; best = c.id; } });
+  });
+  return best;
+}
+const VP_DATE = [[/\bkemarin\s+lusa\b|\blusa\s+kemarin\b|\b2 hari (yang )?lalu\b|\bday before yesterday\b/g, 2], [/\bkemarin\b|\byesterday\b/g, 1], [/\bhari ini\b|\btadi\s+(pagi|siang|sore|malam)\b|\btadi\b|\bbarusan\b|\btoday\b/g, 0]];
+/* Hasil: { amount, type, cat (null bila tidak ketemu), date (yyyy-mm-dd), note, acc (id rekening atau null), accName, heard } */
+function parseVoice(text, ctx) {
+  ctx = ctx || {}; const cats = ctx.cats || [], accts = ctx.accts || [], now = ctx.now || new Date();
+  let src = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const out = { heard: String(text || '').trim(), amount: 0, type: 'out', cat: null, date: null, note: '', acc: null, accName: '' };
+  if (!src) return out;
+  const tk = vpTokens(src), amt = vpFindAmount(tk);
+  if (amt) out.amount = amt.v;
+  /* jenis */
+  const hasIn = VP_IN.test(src), hasOut = VP_OUT.test(src);
+  out.type = hasIn && !(hasOut && !/\b(gaji|gajian|terima|menerima|diterima|dapat|dapet|bonus|thr|komisi|pemasukan|dikasih)\b/.test(src)) ? 'in' : 'out';
+  /* tanggal */
+  let days = 0, rest = src;
+  for (const d of VP_DATE) { if (d[0].test(rest)) { if (d[1] > days) days = d[1]; } d[0].lastIndex = 0; rest = rest.replace(d[0], ' '); }
+  const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+  out.date = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  /* rekening */
+  let accHit = null;
+  accts.forEach(a => { const nm = String(a.name || '').toLowerCase().trim(); if (nm && vpHas(rest, nm) && (!accHit || nm.length > accHit.nm.length)) accHit = { a, nm }; });
+  if (accHit) {
+    out.acc = accHit.a.id; out.accName = accHit.a.name;
+    rest = rest.replace(new RegExp('\\b(pakai|pake|dengan|via|dari|lewat|pakai uang|using|with|from)?\\s*' + accHit.nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'), 'g'), ' ');
+  } else if (/\b(tunai|cash|uang tunai)\b/.test(rest)) { out.acc = ''; out.accName = 'Tunai'; rest = rest.replace(/\b(pakai|pake|dengan|via|dari)?\s*(uang tunai|tunai|cash)\b/g, ' '); }
+  out.cat = vpGuessCat(src, out.type, cats);
+  /* catatan: buang kata jumlah uang dan kata pengantar */
+  let nt = vpTokens(rest), a2 = vpFindAmount(nt);
+  if (a2) nt = nt.slice(0, a2.a).concat(nt.slice(a2.b + 1));
+  nt = nt.filter(t => ['rp', 'rupiah', 'sebesar', 'seharga', 'senilai', 'sekitar', 'sejumlah', 'catat', 'tambah', 'tambahkan', 'masukkan', 'input', 'pengeluaran', 'pemasukan', 'transaksi', 'untuk', 'sebanyak', 'rupiahnya'].indexOf(t) < 0);
+  while (nt.length && ['dan', 'di', 'ke', 'dari', 'pakai', 'pake', 'dengan', 'seharga', 'harga', 'total', 'habis', 'sebesar', 'sekitar', 'rp', 'rupiah'].indexOf(nt[nt.length - 1]) >= 0) nt.pop();
+  while (nt.length && ['dan', 'di', 'ke', 'dari', 'pakai', 'pake', 'dengan', 'harga', 'total'].indexOf(nt[0]) >= 0) nt.shift();
+  let note = nt.join(' ').trim(); note = note ? note.charAt(0).toUpperCase() + note.slice(1) : ''; out.note = note.slice(0, 80);
+  return out;
+}
+const TG_LABEL = {"acara": "Acara & Kondangan", "anak": "Anak & Keluarga", "angkot": "Ojek Online & Angkutan Umum", "arisan": "Arisan", "asuransi": "Asuransi", "bayi": "Popok & Perlengkapan Bayi", "bensin": "Bensin & Parkir", "biaya_bank": "Biaya Admin & Bank", "bonus": "Bonus & THR", "bunga": "Bunga Tabungan", "cicilan": "Cicilan & Kartu Kredit", "cuci_kendaraan": "Cuci Motor/Mobil", "cuti_besar": "Insentif Cuti Besar", "cuti_tahunan": "Insentif Cuti Tahunan", "dapur": "Belanja Dapur", "darurat": "Darurat & Tak Terduga", "denda": "Denda & Tilang", "dokter": "Dokter & Rumah Sakit", "freelance": "Freelance & Proyek", "gaji": "Gaji", "game": "Game & Top-up Game", "gas_galon": "Gas LPG & Galon", "hadiah": "Hadiah & Donasi", "hewan": "Hewan Peliharaan", "hiburan": "Hiburan & Nonton", "hotel": "Hotel & Penginapan", "hutang_bayar": "Bayar Hutang", "hutang_terima": "Pinjaman Diterima", "ibadah": "Ibadah & Keagamaan", "investasi": "Hasil & Dividen Investasi", "iuran": "Iuran-iuran", "kereta_api": "Kereta Api", "komisi": "Komisi & Insentif", "kopi": "Kopi & Jajan", "kosmetik": "Skincare & Kosmetik", "krl": "KRL Commuter Line", "lain": "Lainnya", "lain_in": "Pemasukan Lainnya", "langganan": "Langganan Digital", "laundry": "Laundry", "lembur": "Lembur & Tunjangan", "liburan": "Liburan & Perjalanan", "listrik": "Listrik & Air", "makan": "Makanan & Minuman", "makan_malam": "Makan Malam", "makan_siang": "Makan Siang", "mobil_perawatan": "Perawatan Mobil", "motor_perawatan": "Perawatan Motor", "mrt_lrt": "MRT & LRT", "olahraga": "Olahraga & Gym", "online": "Belanja Online", "pakaian": "Pakaian & Fashion", "paylater": "Paylater & Pinjaman Online", "pesan_antar": "Pesan Antar Makanan", "pulsa": "Pulsa & Internet", "rawat": "Perawatan Diri", "sarapan": "Sarapan", "sehat": "Kesehatan & Obat", "sekolah": "Pendidikan & Kursus", "sewa": "Sewa & KPR", "tabung": "Setor Tabungan", "taksi": "Taksi", "tiket_pesawat": "Tiket Pesawat", "tol": "Tol", "transjakarta": "TransJakarta & BRT", "usaha": "Hasil Usaha & Jualan", "vitamin": "Vitamin & Suplemen", "zakat": "Zakat & Sedekah"};
+const TG_IN = new Set(["gaji", "bonus", "komisi", "lembur", "cuti_besar", "cuti_tahunan", "pensiun", "beasiswa", "freelance", "usaha", "sewa_in", "tab_tarik", "bunga", "inv_tarik", "hutang_terima", "piutang_terima", "investasi", "jual", "keluarga", "hadiah_in", "cashback", "reimburse", "lain_in"]);
+const tgCats = custom => Object.keys(TG_LABEL).map(id => ({ id, type: TG_IN.has(id) ? 'in' : 'out', label: TG_LABEL[id] })).concat((custom || []).filter(c => c && /^[a-z0-9_-]{1,30}$/.test(String(c.id)) && (c.type === 'in' || c.type === 'out')).map(c => ({ id: String(c.id), type: c.type, label: String(c.label || c.name || c.id) })));
+const tgRp = n => 'Rp ' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
 function createApi(deps) {
   const { meta, ledger, env = () => undefined, now = () => Date.now(), fetchFn = (...a) => globalThis.fetch(...a), forgotFloorMs = 700 } = deps;
   const iso = () => new Date(now()).toISOString();
@@ -1189,11 +1312,151 @@ function createApi(deps) {
     return { ok: true };
   }
 
+  /* ---------- Bot Telegram (opsional; aktif bila TELEGRAM_BOT_TOKEN diisi) ----------
+     Keamanan: (1) webhook hanya diterima bila header rahasia cocok (diturunkan dari token bot lewat HMAC, jadi tidak perlu rahasia tambahan);
+     (2) hanya chat pribadi yang sudah ditautkan lewat kode sekali pakai (berlaku 10 menit, disimpan sebagai hash) yang boleh mencatat;
+     (3) bot hanya mencatat dan menjawab ringkasan, tidak pernah mengirim kata sandi, saldo per rekening, atau foto;
+     (4) pesan dari grup, kanal, dan orang tak dikenal diabaikan; percobaan salah dibatasi. */
+  const tgTok = () => String(env('TELEGRAM_BOT_TOKEN') || '').trim();
+  const tgSecretOf = () => crypto.createHmac('sha256', tgTok()).update('saku-webhook').digest('hex');
+  let tgName = null;
+  async function tgCall(method, payload) {
+    const tok = tgTok(); if (!tok) return null;
+    try {
+      const r = await fetchFn('https://api.telegram.org/bot' + tok + '/' + method, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload || {}) });
+      return await r.json();
+    } catch (e) { return null; }
+  }
+  async function tgBotName() { if (tgName) return tgName; const r = await tgCall('getMe'); tgName = (r && r.ok && r.result && r.result.username) || ''; return tgName; }
+  const tgSend = (chat, text, extra) => tgCall('sendMessage', Object.assign({ chat_id: chat, text, disable_web_page_preview: true }, extra || {}));
+  const TG_CODE_TTL = 10 * 60000, TG_XFER = { tabung: 1, tab_tarik: 1, bunga: 1, inv_setor: 1, inv_tarik: 1, investasi: 1, hutang_terima: 1, hutang_bayar: 1, piutang_beri: 1, piutang_terima: 1 };
+  const tgPad = n => String(n).padStart(2, '0');
+  function tgToday() { const d = new Date(now() + 7 * 3600000); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); }
+  const tgYmd = d => d.getFullYear() + '-' + tgPad(d.getMonth() + 1) + '-' + tgPad(d.getDate());
+  const tgActive = acc => !!acc && acc.active !== false && acc.status !== 'pending' && acc.status !== 'rejected';
+  async function tgLinkOf(chat) {
+    const l = await meta.get('tg/chat/' + chat, { type: 'json' }); if (!l || !l.u) return null;
+    const acc = (await readAccounts())[l.u]; return tgActive(acc) ? { uid: l.u, acc } : { uid: l.u, acc: null };
+  }
+  async function tgAdd(uid, t) {
+    const id = crypto.randomBytes(8).toString('hex').slice(0, 12), rec = Object.assign({ id }, cleanTx(t));
+    const book = await casUpdate(ledger, bookKey(uid), cur => {
+      const bk = cur ? { rev: cur.rev || 0, tx: cur.tx.slice(), settings: cur.settings || {}, plan: normPlan(cur.plan) } : { rev: 0, tx: [], settings: {}, plan: emptyPlan() };
+      if (bk.tx.length >= MAX_TX) throw new ApiError(409, 'Batas transaksi tercapai.', 'limit');
+      bk.tx.push(rec); bk.rev += 1; return { value: bk, result: bk };
+    });
+    const last = ((await meta.get('tg/last/' + uid, { type: 'json' })) || { ids: [] }).ids.filter(x => x !== id); last.push(id);
+    await meta.setJSON('tg/last/' + uid, { ids: last.slice(-30) });
+    await touchAcct(uid, { txCount: book.tx.length, lastTxAt: iso() }).catch(() => {});
+    return rec;
+  }
+  /* Bot hanya boleh membatalkan catatan yang ia buat sendiri */
+  async function tgUndo(uid, wantId) {
+    const st = (await meta.get('tg/last/' + uid, { type: 'json' })) || { ids: [] }, id = wantId || st.ids[st.ids.length - 1];
+    if (!id || st.ids.indexOf(id) < 0) return null;
+    let gone = null;
+    await casUpdate(ledger, bookKey(uid), cur => {
+      if (!cur) return { value: undefined, result: null };
+      const at = cur.tx.findIndex(t => t && t.id === id); if (at < 0) return { value: undefined, result: null };
+      gone = cur.tx[at]; const bk = Object.assign({}, cur, { tx: cur.tx.filter((t, i) => i !== at), rev: (cur.rev || 0) + 1 });
+      return { value: bk, result: bk };
+    });
+    await meta.setJSON('tg/last/' + uid, { ids: st.ids.filter(x => x !== id) });
+    return gone;
+  }
+  const tgLine = (t, accName) => (t.type === 'in' ? '+' : '-') + tgRp(t.amount) + ' · ' + (TG_LABEL[t.cat] || 'Kategori sendiri') + (accName ? ' · ' + accName : '') + (t.note ? '\n“' + t.note + '”' : '') + '\n' + t.date;
+  const TG_HELP = 'Cara mencatat: tulis saja seperti bicara.\n\n• makan siang 35rb gopay\n• gaji 8 juta\n• kemarin bensin 50.000\n\nPerintah:\n/hariini – catatan hari ini\n/saldo – ringkasan bulan ini\n/undo – batalkan catatan terakhir dari bot\n/putus – putuskan bot dari akun SaKu\n\nCatatan masuk otomatis ke SaKu di web dan HP.';
+  async function tgProcess(u) {
+    const cb = u.callback_query;
+    if (cb && cb.message && cb.message.chat && cb.message.chat.type === 'private' && cb.from && cb.from.id === cb.message.chat.id) {
+      const chat = cb.message.chat.id, L = await tgLinkOf(chat), m = /^u:([a-z0-9]{8,32})$/.exec(String(cb.data || ''));
+      if (L && L.acc && m) {
+        const gone = await tgUndo(L.uid, m[1]);
+        await tgCall('answerCallbackQuery', { callback_query_id: cb.id, text: gone ? 'Dibatalkan' : 'Sudah tidak ada' });
+        if (gone) await tgCall('editMessageText', { chat_id: chat, message_id: cb.message.message_id, text: '↩︎ Dibatalkan\n' + tgLine(gone, '') });
+      } else await tgCall('answerCallbackQuery', { callback_query_id: cb.id });
+      return;
+    }
+    const m = u.message;
+    if (!m || typeof m.text !== 'string' || !m.chat || m.chat.type !== 'private' || !m.from || m.from.is_bot || m.from.id !== m.chat.id) return;
+    const chat = m.chat.id, text = m.text.trim().slice(0, 300); if (!text) return;
+    const rlKey = 'tg' + chat, rl = await meta.get('rl/' + rlKey, { type: 'json' });
+    if (rl && rl.until > now()) return;                      // terkunci: diam saja
+    const st = /^\/start(?:@\w+)?(?:\s+([A-Za-z0-9_-]{4,40}))?$/.exec(text);
+    if (st && st[1]) {
+      const hash = sha(st[1].toUpperCase()), rec = await meta.get('tg/c/' + hash, { type: 'json' });
+      if (!rec || rec.exp < now()) { await rlFail(rlKey, rl, 5, 10 * 60000, 30 * 60000); return tgSend(chat, 'Kode tidak valid atau sudah kedaluwarsa. Buat kode baru di SaKu: Pengaturan > Bot Telegram.'); }
+      await meta.delete('tg/c/' + hash);
+      const acc = (await readAccounts())[rec.u]; if (!tgActive(acc)) return tgSend(chat, 'Akun SaKu tidak aktif.');
+      const prev = await meta.get('tg/u/' + rec.u, { type: 'json' }); if (prev && prev.chat !== chat) await meta.delete('tg/chat/' + prev.chat);
+      await meta.setJSON('tg/u/' + rec.u, { chat, at: iso() }); await meta.setJSON('tg/chat/' + chat, { u: rec.u });
+      return tgSend(chat, '✅ Terhubung ke akun SaKu "' + (acc.name || acc.id) + '".\n\n' + TG_HELP);
+    }
+    const L = await tgLinkOf(chat);
+    if (!L) { await rlFail(rlKey, rl, 5, 10 * 60000, 30 * 60000); return tgSend(chat, 'Chat ini belum terhubung ke SaKu. Buka SaKu > Pengaturan > Bot Telegram, lalu tekan Hubungkan.'); }
+    if (!L.acc) return tgSend(chat, 'Akun SaKu Anda sedang tidak aktif.');
+    const uid = L.uid, cmd = (/^\/([a-z]+)(?:@\w+)?\s*$/i.exec(text) || [])[1];
+    if (cmd) {
+      const c = cmd.toLowerCase();
+      if (c === 'start' || c === 'bantuan' || c === 'help') return tgSend(chat, TG_HELP);
+      if (c === 'putus') { await meta.delete('tg/chat/' + chat); await meta.delete('tg/u/' + uid); return tgSend(chat, 'Bot diputus dari akun SaKu. Untuk menghubungkan lagi, buat kode baru di aplikasi.'); }
+      if (c === 'undo') { const g = await tgUndo(uid); return tgSend(chat, g ? '↩︎ Dibatalkan\n' + tgLine(g, '') : 'Tidak ada catatan dari bot yang bisa dibatalkan.'); }
+      const bk = await loadBook(uid), today = tgYmd(tgToday());
+      if (c === 'hariini') {
+        const xs = bk.tx.filter(t => t.date === today); if (!xs.length) return tgSend(chat, 'Belum ada catatan hari ini.');
+        const tot = xs.filter(t => t.type === 'out' && !TG_XFER[t.cat]).reduce((a, t) => a + t.amount, 0);
+        return tgSend(chat, 'Hari ini (' + xs.length + ' catatan)\n' + xs.slice(-10).map(t => (t.type === 'in' ? '+' : '-') + tgRp(t.amount) + ' ' + (TG_LABEL[t.cat] || 'Lainnya')).join('\n') + '\n\nPengeluaran ' + tgRp(tot));
+      }
+      if (c === 'saldo') {
+        const mo = today.slice(0, 7), xs = bk.tx.filter(t => String(t.date).slice(0, 7) === mo && !TG_XFER[t.cat] && !((t.cat === 'pindah_saldo' || t.cat === 'topup_ewallet') && t.to));
+        const i = xs.filter(t => t.type === 'in').reduce((a, t) => a + t.amount, 0), o = xs.filter(t => t.type === 'out').reduce((a, t) => a + t.amount, 0);
+        return tgSend(chat, 'Bulan ini (' + mo + ')\nMasuk  ' + tgRp(i) + '\nKeluar ' + tgRp(o) + '\nSelisih ' + (i - o < 0 ? '-' : '') + tgRp(Math.abs(i - o)));
+      }
+      return tgSend(chat, TG_HELP);
+    }
+    const bk = await loadBook(uid), set = bk.settings || {}, accts = (set.accts || []).map(a => ({ id: a.id, name: a.name }));
+    const r = parseVoice(text, { cats: tgCats(set.customCats), accts, now: tgToday() });
+    if (!(r.amount >= 100)) return tgSend(chat, 'Saya belum menemukan jumlah uangnya. Contoh: makan siang 35rb gopay\n\nKetik /bantuan untuk panduan.');
+    const cat = r.cat || (r.type === 'in' ? 'lain_in' : 'lain'), t = { type: r.type, amount: r.amount, cat, date: r.date, note: r.note, items: [], photo: null };
+    if (r.acc) t.acc = r.acc;
+    const rec = await tgAdd(uid, t);
+    return tgSend(chat, '✅ Tercatat\n' + tgLine(rec, r.accName), { reply_markup: { inline_keyboard: [[{ text: '↩︎ Batalkan', callback_data: 'u:' + rec.id }]] } });
+  }
+  async function tgHook(req) {
+    if (!tgTok()) return json({ error: 'Tidak tersedia.' }, 404);
+    const got = req.headers.get('x-telegram-bot-api-secret-token') || '';
+    if (!got || !safeEq(got, tgSecretOf())) return json({ error: 'Tidak diizinkan.' }, 401);
+    const text = await req.text(); if (text.length > 100000) return json({ ok: true });
+    let u = null; try { u = JSON.parse(text); } catch (e) { return json({ ok: true }); }
+    try { await tgProcess(u || {}); } catch (e) { console.error('telegram error', e && e.stack || e); }
+    return json({ ok: true });                                // selalu 200 supaya Telegram tidak mengulang kiriman
+  }
+  Object.assign(ops, {
+    async 'tg.status'(b, c) {
+      const a = await authed(c.req), configured = !!tgTok(); let linked = false, since = '';
+      if (configured) { const l = await meta.get('tg/u/' + a.acc.id, { type: 'json' }); if (l) { linked = true; since = l.at || ''; } }
+      return { configured, linked, since, bot: configured ? await tgBotName() : '' };
+    },
+    async 'tg.link'(b, c) {
+      const a = await authed(c.req); if (!tgTok()) throw new ApiError(503, 'Bot Telegram belum diaktifkan oleh administrator.', 'tgoff');
+      const code = crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x').slice(0, 8).toUpperCase(), exp = now() + TG_CODE_TTL;
+      await meta.setJSON('tg/c/' + sha(code), { u: a.acc.id, exp });
+      const bot = await tgBotName();
+      return { code, exp, bot, url: bot ? 'https://t.me/' + bot + '?start=' + code : '' };
+    },
+    async 'tg.unlink'(b, c) {
+      const a = await authed(c.req), l = await meta.get('tg/u/' + a.acc.id, { type: 'json' });
+      if (l) { await meta.delete('tg/chat/' + l.chat); await meta.delete('tg/u/' + a.acc.id); await tgSend(l.chat, 'Bot diputus dari akun SaKu lewat aplikasi.'); }
+      return { ok: true };
+    }
+  });
+
   /* ---------- pintu masuk HTTP ---------- */
   const PUBLIC = new Set(['status', 'setup', 'login', 'register', 'google', 'forgot', 'reset']);
   const json = (obj, status) => new Response(JSON.stringify(obj), { status: status || 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
   return async function handle(req, context) {
     try {
+      if (req.method === 'POST' && new URL(req.url).searchParams.get('tg') === '1') return await tgHook(req);
       let body = {};
       if (req.method === 'GET') body = { op: 'status' };
       else if (req.method === 'POST') {
