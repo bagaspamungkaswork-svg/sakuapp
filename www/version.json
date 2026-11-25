@@ -1,8 +1,8 @@
 {
- "version": "1.15.1",
- "build": 27,
+ "version": "1.15.2",
+ "build": 28,
  "date": "2026-11-25",
  "notes": [
-  "Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori."
+  "Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah."
  ]
 }

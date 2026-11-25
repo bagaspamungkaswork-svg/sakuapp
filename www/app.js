@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.15.1', APP_BUILD = 27;
+const APP_VERSION = '1.15.2', APP_BUILD = 28;
 const CHANGELOG = [
+  { v: '1.15.2', d: '2026-11-25', items: ['Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah.'] },
   { v: '1.15.1', d: '2026-11-25', items: ['Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori.'] },
   { v: '1.15.0', d: '2026-11-25', items: ['Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan'] },
   { v: '1.14.2', d: '2026-11-25', items: ['Penulisan \"templat\" diperbaiki menjadi \"template\" di seluruh aplikasi'] },
@@ -6605,6 +6606,7 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah.": "The Record by voice box is now centered: the button and the example sentence are centered.",
   "Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori.": "Transfers between accounts and e-wallet top-ups are no longer counted as spending, so they no longer use up the monthly budget or category budgets.",
   "Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan": "Bright blue intro, Account Master Data as a table with search and 5 accounts per page in the Admin submenu, tidier projection chart labels, new Annual Leave and Long Leave Incentive categories, the footer Sign out button removed, and the footer now shows only the update year",
   "Insentif Cuti Besar": "Long Leave Incentive",
