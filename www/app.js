@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.14.2', APP_BUILD = 25;
+const APP_VERSION = '1.15.0', APP_BUILD = 26;
 const CHANGELOG = [
+  { v: '1.15.0', d: '2026-11-25', items: ['Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan'] },
   { v: '1.14.2', d: '2026-11-25', items: ['Penulisan \"templat\" diperbaiki menjadi \"template\" di seluruh aplikasi'] },
   { v: '1.14.1', d: '2026-11-25', items: ['Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan'] },
   { v: '1.14.0', d: '2026-11-24', items: ['Form catat transaksi dirombak: mode Cepat dan Rinci, template sekali ketuk, kartu rekening bertumpuk yang bisa digeser, ringkasan dampak, kalender di versi web, dan catatan berulang dengan konfirmasi di Beranda'] },
@@ -397,6 +398,8 @@ const CATS_IN = [
   mk('bonus', 'in', 'Bonus & THR', 'tetap', 'award', 4),
   mk('komisi', 'in', 'Komisi & Insentif', 'tetap', 'award', 5),
   mk('lembur', 'in', 'Lembur & Tunjangan', 'tetap', 'clock', 6),
+  mk('cuti_besar', 'in', 'Insentif Cuti Besar', 'tetap', 'calendar', 2),
+  mk('cuti_tahunan', 'in', 'Insentif Cuti Tahunan', 'tetap', 'calendar', 7),
   mk('pensiun', 'in', 'Pensiun & Santunan', 'tetap', 'landmark', 8),
   mk('beasiswa', 'in', 'Beasiswa & Uang Saku', 'tetap', 'cap', 1),
   mk('freelance', 'in', 'Freelance & Proyek', 'lepas', 'laptop', 1),
@@ -1624,7 +1627,7 @@ function buildReportPdf(M) {
   const n = doc.pages.length;
   doc.pages.forEach((pg, i) => {
     pg.line(L, 812, R, 812, { color: PC.line, lw: 0.6 });
-    pg.text('SaKu v' + APP_VERSION + ' \xB7 ' + M.user + ' \xB7 ' + M.label + ' \xB7 Diperbarui ' + parseYmd(CHANGELOG[0].d).getFullYear(), L, 826, { size: 7.5, color: PC.ink3 });
+    pg.text('SaKu v' + APP_VERSION + ' \xB7 ' + M.user + ' \xB7 ' + M.label + ' \xB7 ' + parseYmd(CHANGELOG[0].d).getFullYear(), L, 826, { size: 7.5, color: PC.ink3 });
     pg.text('Halaman ' + (i + 1) + ' dari ' + n, R, 826, { size: 7.5, color: PC.ink3, align: 'r' });
   });
   return doc.build();
@@ -3130,7 +3133,8 @@ const LEAF = {
   tentang: { g: 'tentang', path: '/tentang', title: 'Tentang Aplikasi' },
   akun: { g: 'akun', path: '/akun', title: 'Pengaturan' },
   kategoriku: { g: 'akun', path: '/akun/kategori', title: 'Kategori Saya' },
-  admin: { g: 'admin', path: '/admin', title: 'Administrator' },
+  admin: { g: 'admin', path: '/admin', title: 'Administrator', sub: 'Ringkasan' },
+  master: { g: 'admin', path: '/admin/akun', title: 'Master Data Akun', sub: 'Master Data Akun' },
   kategori: { g: 'rekap', path: '/rekap', title: 'Isi Kategori' }
 };
 const ROUTE = { mode: 'none', entry: null };
@@ -3194,8 +3198,8 @@ function routeReset() {
 /* halaman yang boleh dibuka akun ini */
 function routeAllowed(view) {
   if (!view || !LEAF[view] || view === 'kategori') return false;
-  if (isAdmin()) return view === 'admin' || view === 'akun' || view === 'tentang';
-  return view !== 'admin' || isHelper();
+  if (isAdmin()) return view === 'admin' || view === 'master' || view === 'akun' || view === 'tentang';
+  return (view !== 'admin' && view !== 'master') || isHelper();
 }
 function routeFirstView() {
   const want = ROUTE.entry; ROUTE.entry = null;
@@ -3276,6 +3280,7 @@ const VP_CAT = {
   cicilan: ['cicilan', 'kartu kredit'], paylater: ['paylater', 'spaylater'], hutang_bayar: ['bayar hutang'], biaya_bank: ['biaya admin'], denda: ['denda', 'tilang'], darurat: ['darurat'], arisan: ['arisan'], hotel: ['hotel', 'penginapan'],
   tiket_pesawat: ['tiket pesawat', 'pesawat', 'flight'], kereta_api: ['kereta api', 'tiket kereta'], liburan: ['liburan'], asuransi: ['asuransi'], tabung: ['nabung', 'menabung', 'setor tabungan'],
   mobil_perawatan: ['servis mobil', 'service mobil'], motor_perawatan: ['servis motor', 'service motor', 'ganti oli'], cuci_kendaraan: ['cuci motor', 'cuci mobil', 'steam'],
+  cuti_besar: ['cuti besar', 'insentif cuti besar'], cuti_tahunan: ['cuti tahunan', 'insentif cuti tahunan'],
   gaji: ['gaji', 'gajian', 'payroll', 'salary'], bonus: ['bonus', 'thr'], komisi: ['komisi', 'insentif'], lembur: ['lembur'], freelance: ['freelance', 'proyek'], usaha: ['jualan', 'dagang', 'hasil usaha', 'jual'], bunga: ['bunga'], investasi: ['dividen', 'investasi'], hutang_terima: ['pinjaman', 'pinjam']
 };
 function vpHas(text, kw) { return new RegExp('(^|[^a-z0-9])' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+') + '([^a-z0-9]|$)').test(text); }
@@ -6598,6 +6603,26 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan": "Bright blue intro, Account Master Data as a table with search and 5 accounts per page in the Admin submenu, tidier projection chart labels, new Annual Leave and Long Leave Incentive categories, the footer Sign out button removed, and the footer now shows only the update year",
+  "Insentif Cuti Besar": "Long Leave Incentive",
+  "Insentif Cuti Tahunan": "Annual Leave Incentive",
+  "Cari nama, username, email, atau telepon": "Search name, username, email or phone",
+  "Filter akun": "Filter accounts",
+  "Cari akun": "Search accounts",
+  "Kontak": "Contact",
+  "Aksi": "Actions",
+  "Peran dan status": "Role and status",
+  "Tidak ada akun yang cocok.": "No matching accounts.",
+  "Menampilkan {1} sampai {2} dari {3} akun": "Showing {1} to {2} of {3} accounts",
+  "Halaman {1} dari {2}": "Page {1} of {2}",
+  "Geser tabel ke samping untuk kolom lain.": "Swipe the table sideways for more columns.",
+  "Intro": "Intro",
+  "biru cerah": "bright blue",
+  "Layar sambutan kini berwarna biru cerah dengan latar yang lebih hidup.": "The welcome screen is now bright blue with a livelier background.",
+  "Tampilan": "Look",
+  "Master Data": "Master Data",
+  "Akun jadi tabel": "Accounts as a table",
+  "Aksi lain": "More actions",
   "Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan": "The Cash / No account card now has a Make real account button: a Cash account is created and every transaction without an account is moved to it, so its balance can be edited, moved and set as default",
   "Jadikan rekening asli": "Make real account",
   "Transaksi tanpa rekening dihitung otomatis. Jadikan rekening asli agar saldonya bisa diubah, dipindah, dan jadi bawaan.": "Transactions without an account are totalled automatically. Make it a real account so its balance can be edited, moved and set as default.",
@@ -7047,7 +7072,7 @@ function arm(key) {
   if (S.armed && S.armed.key === key) return true;
   S.armed = { key };
   clearTimeout(S.armT);
-  S.armT = setTimeout(() => { S.armed = null; if (S.phase === 'app' && S.view === 'admin') VIEWS.admin.update(); if (S.phase === 'app' && S.view === 'akun') VIEWS.akun.update(); paintDel(); }, 4000);
+  S.armT = setTimeout(() => { S.armed = null; if (S.phase === 'app' && (S.view === 'admin' || S.view === 'master')) VIEWS.admin.update(); if (S.phase === 'app' && S.view === 'akun') VIEWS.akun.update(); paintDel(); }, 4000);
   return false;
 }
 function disarm() { S.armed = null; clearTimeout(S.armT); }
@@ -7113,7 +7138,7 @@ function onAccountsChanged() {
   if (!acc || acc.active === false) { logout('Akun Anda dinonaktifkan atau dihapus oleh administrator.'); return; }
   if (was && acc.role && acc.role !== was) { reenterForRole(acc, was); return; }
   S.me = acc; touchSession(acc); paintBadge(); noticePending(false);
-  if (S.view === 'admin') { if (acc.role !== 'admin' && acc.role !== 'helper') { S.view = 'rekap'; renderView(); } else VIEWS.admin.update(); }
+  if (S.view === 'admin' || S.view === 'master') { if (acc.role !== 'admin' && acc.role !== 'helper') { S.view = 'rekap'; renderView(); } else VIEWS.admin.update(); }
   else if (S.view === 'akun') VIEWS.akun.update();
 }
 /* Peran akun ini diubah admin saat sedang masuk: menu dan halaman disusun ulang tanpa perlu masuk lagi */
@@ -7574,7 +7599,7 @@ function shellHTML() {
       <div id="mailbar" class="netbar mailbar" role="status" hidden></div>
       <div id="view"></div>
       <p class="app-ver" translate="no">SaKu v${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p>
-      <footer class="dfoot"><div class="df-l">${langSwitchHTML('lsw-foot')}<button type="button" class="df-out" data-act="logout">${ic('logout', 16)} <span>Keluar</span></button></div><p class="df-c" translate="no">SaKu v${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p><p class="df-r"><span>Diperbarui</span> <span translate="no">${esc(String(parseYmd(CHANGELOG[0].d).getFullYear()))}</span></p></footer>
+      <footer class="dfoot"><div class="df-l">${langSwitchHTML('lsw-foot')}</div><p class="df-c" translate="no">SaKu v${esc(APP_VERSION)} · build ${esc(APP_BUILD)}</p><p class="df-r"><span translate="no">${esc(String(parseYmd(CHANGELOG[0].d).getFullYear()))}</span></p></footer>
     </div>
   </div>
   ${(() => {
@@ -7677,8 +7702,8 @@ function countUp(el, to) {
 }
 function renderView() {
   const v = $('#view'); if (!v) return;
-  if (isAdmin()) { if (S.view !== 'admin' && S.view !== 'akun' && S.view !== 'tentang') S.view = 'admin'; }
-  else if (S.view === 'admin' && !isHelper()) S.view = 'rekap';
+  if (isAdmin()) { if (S.view !== 'admin' && S.view !== 'master' && S.view !== 'akun' && S.view !== 'tentang') S.view = 'admin'; }
+  else if ((S.view === 'admin' || S.view === 'master') && !isHelper()) S.view = 'rekap';
   if (S.view === 'kategori' && !S.catView) S.view = 'rekap';
   if (!VIEWS[S.view]) S.view = isAdmin() ? 'admin' : 'rekap';
   const V = VIEWS[S.view];
@@ -8020,10 +8045,9 @@ function accRow(a) {
 VIEWS.admin = {
   mount(v) {
     const adm = isAdmin();
-    v.innerHTML = `<div class="page-head"><div><p class="hello">${adm ? 'Pantau akun, tanpa membuka catatan keuangan' : 'Bantu mengelola akun pengguna, tanpa membuka catatan keuangan'}</p><h1>${adm ? 'Administrator' : 'Admin Pembantu'}</h1></div></div><div class="stack">
+    v.innerHTML = subnavHTML('admin') + `<div class="page-head"><div><p class="hello">${adm ? 'Pantau akun, tanpa membuka catatan keuangan' : 'Bantu mengelola akun pengguna, tanpa membuka catatan keuangan'}</p><h1>${adm ? 'Administrator' : 'Admin Pembantu'}</h1></div></div><div class="stack">
       <section class="card" id="mon-card" aria-labelledby="mon-title"><h2 class="t" id="mon-title">Ringkasan Akun</h2><div id="mon-sum"></div><p class="desc mon-note">Admin hanya melihat jumlah catatan dan waktu aktivitas. Isi transaksi, nominal, dan foto milik pengguna tidak dapat dibuka dari sini.</p></section>
       <section class="card reg-card" id="reg-card" aria-labelledby="reg-title" hidden><h2 class="t" id="reg-title">Perlu Persetujuan</h2><p class="desc">Periksa data pendaftar. Setelah disetujui, akun aktif dan pendaftar masuk dengan kata sandi yang ia buat sendiri.</p><div id="reg-list"></div></section>
-      ${subMenu('master', 'Master Data Akun', 'Memuat daftar akun…', (adm ? '<p class="desc master-note">Pilih pengguna yang dijadikan administrator atau admin pembantu. Akun administrator mengelola aplikasi dan tidak dipakai mencatat transaksi; catatan lama miliknya tetap tersimpan dan kembali bila perannya dicabut. Admin pembantu tetap memakai semua menu biasa (pemasukan, pengeluaran, dan lainnya) dan mendapat tambahan menu Admin untuk menyetujui pendaftar, membuat akun, serta mengaktifkan atau menonaktifkan pengguna.</p>' : '<p class="desc master-note">Anda bisa menyetujui pendaftar, membuat akun pengguna, serta mengaktifkan atau menonaktifkan pengguna. Reset kata sandi, perubahan peran, dan penghapusan akun hanya bisa dilakukan administrator.</p>') + '<div id="acc-list"></div>')}
       <section class="card"><h2 class="t">Buat Akun Baru</h2><p class="desc">Nama yang Anda isi menjadi nama untuk masuk. Akun yang dibuat admin memakai kata sandi awal <code>${DEFAULT_PW}</code>, dan pengguna bisa menggantinya di Pengaturan. Kata sandi awal juga dipakai saat admin mereset akun.</p>
         <form id="acc-form" class="acc-form" novalidate><div class="field"><label for="acc-name">Nama</label><input class="input" id="acc-name" maxlength="40" autocomplete="off" placeholder="mis. Budi Santoso"></div>${adm ? '<div class="field"><label for="acc-role">Peran</label><select class="input" id="acc-role"><option value="user">Pengguna</option><option value="helper">Admin Pembantu</option><option value="admin">Administrator</option></select></div>' : ''}<button class="btn btn-primary" type="submit">${ic('users', 18)} Buat akun</button></form>
         <p class="uname" id="acc-prev">Nama untuk masuk: <b>—</b></p><p class="form-err" id="acc-err" role="alert" hidden></p></section>
@@ -8035,21 +8059,84 @@ VIEWS.admin = {
       </div>`;
   },
   update() {
+    if (S.view === 'master') return VIEWS.master.update();
     $('#mon-sum').innerHTML = monSummaryHTML(); if (isAdmin()) { bkAdminPaint(); vaultPaint(); vaultLoad(); }
     const pend = pendingList(); $('#reg-card').hidden = !pend.length;
     $('#reg-title').textContent = 'Perlu Persetujuan (' + pend.length + ')';
     const sm = $('#sess-min'); if (sm && document.activeElement !== sm) sm.value = String(cleanMin(S.sessMin));
     $('#reg-list').innerHTML = pend.map(regRow).join('');
-    const rk = a => (a.role === 'admin' ? 0 : a.role === 'helper' ? 1 : 2);
-    const arr = Object.values(S.accounts).filter(a => a.status !== 'pending').sort((a, b) => (rk(a) === rk(b) ? String(a.name).localeCompare(String(b.name)) : rk(a) - rk(b)));
-    const nAdm = arr.filter(a => a.role === 'admin').length, nHlp = arr.filter(a => a.role === 'helper').length, nOff = arr.filter(a => a.active === false || a.status === 'rejected').length;
-    const mh = $('#sub-hint-master'); if (mh) mh.textContent = arr.length + ' akun · ' + nAdm + ' administrator' + (nHlp ? ' · ' + nHlp + ' admin pembantu' : '') + (nOff ? ' · ' + nOff + ' nonaktif' : '');
-    const shutK = S.accSec || (S.accSec = {});
-    const sec = (k, title, list, always) => (list.length || always) ? `<section class="acc-sec${shutK[k] ? ' shut' : ''}" data-k="${k}"><button type="button" class="acc-sec-h" data-act="acc-sec" data-k="${k}" aria-expanded="${!shutK[k]}"><span class="acc-sec-t">${title}</span><b class="cnt">${list.length}</b><span class="acc-sec-c">${ic('chevl', 14)}</span></button><div class="acc-sec-b">${list.length ? list.map(accRow).join('') : '<div class="empty-s">Belum ada akun.</div>'}</div></section>` : '';
-    const rejL = arr.filter(a => a.status === 'rejected'), offL = arr.filter(a => a.status !== 'rejected' && a.active === false), onL = arr.filter(a => a.status !== 'rejected' && a.active !== false);
-    $('#acc-list').innerHTML = (arr.length ? sec('aktif', 'Aktif', onL, true) + sec('nonaktif', 'Nonaktif', offL) + sec('ditolak', 'Ditolak', rejL) : '<div class="empty-s">Belum ada akun.</div>');
     paintSub();
   }
+};
+
+/* ================= Master Data Akun: tabel, pencarian, filter, 5 akun per halaman ================= */
+const MD_PER = 5, MD_FILTERS = [['all', 'Semua'], ['admin', 'Administrator'], ['helper', 'Admin Pembantu'], ['user', 'Pengguna'], ['off', 'Nonaktif']];
+const mdIsOff = a => a.status === 'rejected' || a.active === false;
+const mdKind = a => (a.role === 'admin' ? 'admin' : a.role === 'helper' ? 'helper' : 'user');
+function mdList() {
+  const rk = a => (a.role === 'admin' ? 0 : a.role === 'helper' ? 1 : 2);
+  return Object.values(S.accounts).filter(a => a.status !== 'pending').sort((a, b) => (rk(a) === rk(b) ? String(a.name).localeCompare(String(b.name)) : rk(a) - rk(b)));
+}
+const mdHas = (a, f) => f === 'all' || (f === 'off' ? mdIsOff(a) : mdKind(a) === f);
+function mdActs(a) {
+  const adm = isAdmin(), self = a.id === S.me.id, rej = a.status === 'rejected', can = adm || a.role === 'user', id = esc(a.id), on = k => S.armed && S.armed.key === k;
+  const btn = (act, txt, cls, extra) => `<button type="button" class="btn ${cls || 'btn-ghost'} btn-sm" data-act="${act}" data-id="${id}"${extra || ''}>${txt}</button>`;
+  const roleBtn = (to, ask, txt) => `<button type="button" class="btn btn-ghost btn-sm" data-act="acc-role" data-id="${id}" data-to="${to}">${on('role:' + a.id + ':' + to) ? ask : txt}</button>`;
+  const del = adm ? `<button type="button" class="btn btn-danger btn-sm ${on('del:' + a.id) ? 'armed' : ''}" data-act="acc-del" data-id="${id}">${on('del:' + a.id) ? 'Yakin hapus akun dan datanya?' : 'Hapus'}</button>` : '';
+  if (rej) return { main: can ? btn('reg-ok', 'Setujui', 'btn-primary') : '', more: del };
+  if (self) return { main: `<button type="button" class="btn btn-ghost btn-sm" data-act="nav" data-v="akun">${ic('lock', 16)} Ganti sandi saya</button>`, more: '' };
+  if (!can) return { main: '', more: '' };
+  return {
+    main: btn('acc-toggle', a.active === false ? 'Aktifkan' : 'Nonaktifkan'),
+    more: (adm ? btn('acc-reset', on('reset:' + a.id) ? 'Yakin reset sandi?' : 'Reset kata sandi') : '')
+      + (adm ? roleBtn(a.role === 'admin' ? 'user' : 'admin', a.role === 'admin' ? 'Yakin cabut administrator?' : 'Yakin jadikan administrator?', a.role === 'admin' ? 'Cabut Administrator' : 'Jadikan Administrator') : '')
+      + (adm && a.role !== 'admin' ? roleBtn(a.role === 'helper' ? 'user' : 'helper', a.role === 'helper' ? 'Yakin cabut admin pembantu?' : 'Yakin jadikan admin pembantu?', a.role === 'helper' ? 'Cabut Admin Pembantu' : 'Jadikan Admin Pembantu') : '')
+      + del
+  };
+}
+function mdRow(a, no, avail) {
+  const self = a.id === S.me.id, rej = a.status === 'rejected', isA = a.role === 'admin';
+  const badge = a.role === 'admin' ? '<span class="badge admin">Administrator</span>' : a.role === 'helper' ? '<span class="badge helper">Admin Pembantu</span>' : '<span class="badge">Pengguna</span>';
+  const st = (rej ? '<span class="badge off">Ditolak</span>' : a.active === false ? '<span class="badge off">Nonaktif</span>' : '') + (a.isDefault ? '<span class="badge def">Sandi awal</span>' : '');
+  const two = iso => { const w = monWhen(iso); if (!w) return ''; const p = w.split(', '); return p.length === 2 ? p : [w, '']; };
+  const dcell = (iso, none, bad) => { const p = two(iso); return `<td class="md-d${bad || (!p && none) ? ' bad' : ''}">${p ? `<b>${esc(p[0])}</b><small>${esc(p[1])}</small>` : `<b>${esc(none)}</b>`}</td>`; };
+  const bt = a.lastBackupAt ? Date.parse(a.lastBackupAt) : NaN, old = isNaN(bt) || Date.now() - bt > 7 * 86400000;
+  const acts = mdActs(a), open = S.mdOpen === a.id && acts.more;
+  const sub = esc(a.id) + (a.birth ? ' · ' + esc(((fmtBirth(a.birth).match(/\((.*)\)/) || [])[1]) || '') : '');
+  const tr = `<tr class="${self ? 'md-me' : ''}"><td class="md-no">${no}</td><td><div class="md-u"><span class="avatar">${esc(initials(a.name))}</span><div><b>${esc(a.name)}${self ? ' (Anda)' : ''}</b><small>${sub}</small></div></div></td>`
+    + `<td class="md-c"><b title="${esc(a.email || '')}">${esc(a.email || '-')}</b><small>${esc(a.phone || '')}</small></td>`
+    + `<td><div class="md-b">${badge}${st}</div></td>`
+    + `<td class="md-n">${avail && !isA ? `<b>${dots(Number(a.txCount) || 0)}</b><small>transaksi</small>` : '-'}</td>`
+    + (avail && !isA ? dcell(a.lastTxAt, '-', false) : '<td class="md-d"><b>-</b></td>')
+    + (avail ? dcell(a.lastLoginAt, 'Belum pernah', false) : '<td class="md-d"><b>-</b></td>')
+    + (avail && !isA ? dcell(a.lastBackupAt, 'Belum pernah', old) : '<td class="md-d"><b>-</b></td>')
+    + `<td class="md-act">${acts.main}${acts.more ? `<button type="button" class="btn btn-ghost btn-sm" data-act="md-more" data-id="${esc(a.id)}" aria-expanded="${!!open}" aria-label="Aksi lain untuk ${esc(a.name)}">${ic('more', 16)} Lainnya</button>` : ''}</td></tr>`;
+  return tr + (open ? `<tr class="md-x"><td colspan="9"><div class="btn-row">${acts.more}</div></td></tr>` : '');
+}
+function mdPaint() {
+  const body = $('#md-body'); if (!body) return;
+  const all = mdList(), f = S.mdf || 'all', q = String(S.mdq || '').trim().toLowerCase(), avail = monModel(S.accounts, new Date()).avail;
+  const base = all.filter(a => !q || [a.name, a.id, a.email, a.phone].join(' ').toLowerCase().indexOf(q) >= 0);
+  const list = base.filter(a => mdHas(a, f)), total = list.length, pages = Math.max(1, Math.ceil(total / MD_PER));
+  S.mdp = Math.min(Math.max(1, S.mdp || 1), pages);
+  const from = (S.mdp - 1) * MD_PER, part = list.slice(from, from + MD_PER);
+  const seg = $('#md-seg'); if (seg) seg.innerHTML = MD_FILTERS.filter(x => x[0] !== 'admin' || all.some(a => a.role === 'admin')).map(x => `<button type="button" data-act="md-f" data-f="${x[0]}" aria-pressed="${f === x[0]}">${x[1]}<i>${base.filter(a => mdHas(a, x[0])).length}</i></button>`).join('');
+  const hello = $('#md-hello'); if (hello) { const nAdm = all.filter(a => a.role === 'admin').length, nHlp = all.filter(a => a.role === 'helper').length, nOff = all.filter(mdIsOff).length; hello.textContent = all.length + ' akun · ' + nAdm + ' administrator' + (nHlp ? ' · ' + nHlp + ' admin pembantu' : '') + (nOff ? ' · ' + nOff + ' nonaktif' : ''); }
+  const th = ['No', 'Pengguna', 'Kontak', 'Peran dan status', 'Catatan', 'Terakhir mencatat', 'Terakhir masuk', 'Cadangan terakhir', 'Aksi'].map(h => `<th scope="col">${h}</th>`).join('');
+  const win = []; for (let p = Math.max(1, Math.min(S.mdp - 2, pages - 4)); p <= Math.min(pages, Math.max(1, Math.min(S.mdp - 2, pages - 4)) + 4); p++) win.push(p);
+  const pn = `<div class="md-pn"><button type="button" data-act="md-pg" data-p="prev" ${S.mdp <= 1 ? 'disabled' : ''}>Sebelumnya</button>${win.map(p => `<button type="button" data-act="md-pg" data-p="${p}"${p === S.mdp ? ' aria-current="page"' : ''} aria-label="Halaman ${p}">${p}</button>`).join('')}<button type="button" data-act="md-pg" data-p="next" ${S.mdp >= pages ? 'disabled' : ''}>Berikutnya</button></div>`;
+  body.innerHTML = (total ? `<div class="md-wrap"><table class="md-t"><thead><tr>${th}</tr></thead><tbody>${part.map((a, i) => mdRow(a, from + i + 1, avail)).join('')}</tbody></table></div><p class="md-hint">Geser tabel ke samping untuk kolom lain.</p>` : `<div class="empty-s">${all.length ? 'Tidak ada akun yang cocok.' : 'Belum ada akun.'}</div>`)
+    + (total ? `<div class="md-pg"><span>Menampilkan ${from + 1} sampai ${from + part.length} dari ${total} akun</span>${pages > 1 ? pn : ''}</div>` : '');
+}
+VIEWS.master = {
+  mount(v) {
+    const adm = isAdmin();
+    v.innerHTML = `<div id="md-sub"></div><div class="page-head"><div><p class="hello" id="md-hello"></p><h1>Master Data Akun</h1></div></div>
+      <div class="md-top"><label class="md-sr">${ic('search', 18)}<input id="md-q" type="search" autocomplete="off" aria-label="Cari akun" placeholder="Cari nama, username, email, atau telepon" value="${esc(S.mdq || '')}"></label><div class="md-seg" id="md-seg" role="group" aria-label="Filter akun"></div></div>
+      <div id="md-body"></div>
+      ${adm ? '<p class="desc master-note">Pilih pengguna yang dijadikan administrator atau admin pembantu lewat tombol Lainnya. Akun administrator mengelola aplikasi dan tidak dipakai mencatat transaksi; catatan lama miliknya tetap tersimpan dan kembali bila perannya dicabut. Admin pembantu tetap memakai semua menu biasa dan mendapat tambahan menu Admin untuk menyetujui pendaftar, membuat akun, serta mengaktifkan atau menonaktifkan pengguna.</p>' : '<p class="desc master-note">Anda bisa menyetujui pendaftar, membuat akun pengguna, serta mengaktifkan atau menonaktifkan pengguna. Reset kata sandi, perubahan peran, dan penghapusan akun hanya bisa dilakukan administrator.</p>'}`;
+  },
+  update() { const sb = $('#md-sub'); if (sb) sb.innerHTML = subnavHTML('master'); mdPaint(); }
 };
 
 /* ================= Submenu (tertutup secara awal supaya tidak memakan ruang) ================= */
@@ -9012,9 +9099,10 @@ function anaProjHTML(P) {
   if (P.isCur && P.el < N) g += `<circle cx="${xt.toFixed(1)}" cy="${yt0.toFixed(1)}" r="5" class="dt"/>`;
   const lab = (x, y, t, cls, a) => `<text x="${x}" y="${y}" class="${cls}"${a ? ` text-anchor="${a}"` : ''}>${esc(t)}</text>`;
   if (hasCap) g += lab(4, Math.max(11, Y(bm.cap) - 7), 'Batas ' + rpC(bm.cap), 'tv bad');
-  g += lab(Math.min(xt, x1 - 8).toFixed(1), (yt0 - 7 < 12 ? yt0 + 17 : yt0 - 7).toFixed(1), rpC(P.cumToday), 'tv', 'end');
+  const nearL = xt < 64, lowL = nearL && yt0 + 17 < yb - 2;
+  g += lab((nearL ? xt + 9 : Math.min(xt, x1 - 8)).toFixed(1), (lowL ? yt0 + 17 : yt0 - 7 < 12 ? yt0 + 17 : yt0 - 7).toFixed(1), rpC(P.cumToday), 'tv', nearL ? 'start' : 'end');
   if (endV != null) g += lab(322, Math.max(11, Y(endV) - 8).toFixed(1), '≈ ' + rpC(endV), 'tv', 'end');
-  g += lab(0, (Y(mid) - 3).toFixed(1), fmtCompact(mid), 'ax') + lab(4, 142, fmtDM(P.rg.start), 'ax') + (P.isCur && P.el < N ? lab(xt.toFixed(1), 142, 'Hari ini', 'ax', 'middle') : '') + lab(326, 142, fmtDM(P.rg.end), 'ax', 'end');
+  g += lab(0, (Y(mid) - 3).toFixed(1), fmtCompact(mid), 'ax') + (P.isCur && P.el < N && xt < 64 ? lab(4, 142, 'Hari ini · ' + fmtDM(P.rg.start), 'ax') : lab(4, 142, fmtDM(P.rg.start), 'ax') + (P.isCur && P.el < N ? lab(xt.toFixed(1), 142, 'Hari ini', 'ax', 'middle') : '')) + lab(326, 142, fmtDM(P.rg.end), 'ax', 'end');
   const alt = 'Pengeluaran kumulatif: ' + fmtRp(P.cumToday) + ' sampai tanggal ' + P.el + (P.proj != null ? ', diperkirakan ' + fmtRp(P.proj) + ' pada akhir periode' : '') + (hasCap ? ', batas ' + fmtRp(bm.cap) : '');
   const legend = `<div class="ana-leg"><span><i class="lg-ln"></i>Nyata</span>${P.proj != null ? '<span><i class="lg-ds"></i>Perkiraan</span>' : ''}${hasCap ? '<span><i class="lg-cap"></i>Batas ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana') + '</span>' : ''}</div>`;
   const txt = P.proj != null ? 'Dengan laju sekarang, pengeluaran akhir periode sekitar ' + fmtRp(P.proj) + (hasCap ? (P.proj > bm.cap ? ', atau ' + fmtRp(P.proj - bm.cap) + ' di atas ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana') + '.' : ', masih ' + fmtRp(bm.cap - P.proj) + ' di bawah ' + (bm.basis === 'anggaran' ? 'anggaran' : 'dana') + '.') : '.') : 'Total pengeluaran periode ini ' + fmtRp(P.tout) + '.';
@@ -9201,7 +9289,7 @@ Object.assign(ACT, {
    Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
    Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
    Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
-const WN_VER = '1.14.1';
+const WN_VER = '1.15';
 const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
 function wnSeen() {
   if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
@@ -9218,16 +9306,19 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
-  if (i === 1) return `<div class="wn-illo" aria-hidden="true"><div class="wn4-c wn4-v wn-up"${wnD(.1)}><span>TUNAI / TANPA REKENING</span><b>Rp 343.145</b><small>dihitung otomatis</small></div><div class="wn4-ar wn-up"${wnD(.5)}>&darr;</div><div class="wn4-c wn4-r wn-up"${wnD(.8)}><span>TUNAI &middot; REKENING ASLI</span><b>Rp 343.145</b><div class="wn4-bt"><i>Ubah</i><i>Pindah saldo</i><i>Bawaan</i></div></div></div>`;
-  return '';
+  if (i === 1) return `<div class="wn-illo" aria-hidden="true"><div class="wn5-sp wn-up"${wnD(.1)}><div class="wn5-lg">${LOGO}</div><small>SELAMAT DATANG DI</small><b>SaKu</b><i></i></div></div>`;
+  const rw = (n, a, b, c) => `<div class="r"><span>${n}</span><b>${a}</b><span>${b}</span><span>${c}</span></div>`;
+  return `<div class="wn-illo" aria-hidden="true"><div class="wn5-tb wn-up"${wnD(.2)}><div class="q">Cari nama, email, telepon</div><div class="r h"><span>NO</span><span>PENGGUNA</span><span>PERAN</span><span>CATATAN</span></div>${rw(1, 'Bagas P.', 'Pembantu', 128)}${rw(2, 'Salma P.', 'Pengguna', 1)}${rw(3, 'Selvi O.', 'Pengguna', 10)}<div class="p"><small>1 sampai 5 dari 7</small><span>1 / 2</span></div></div></div>`;
 }
 const WN_TXT_M = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Rekening Tunai', b: 'kini bisa diatur', p: 'Kartu Tunai / Tanpa rekening sekarang bisa dijadikan rekening asli lewat satu ketukan.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Jadikan', b: 'rekening asli', p: 'Ketuk Jadikan rekening asli di halaman Rekening. Semua transaksi tanpa rekening pindah ke rekening Tunai, saldo tetap sama, dan bisa diubah, dipindah, atau jadi bawaan.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Tampilan', b: 'lebih segar', p: 'Intro biru cerah, label grafik yang lebih rapi, dua kategori pemasukan baru, dan footer yang lebih ringkas.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Intro', b: 'biru cerah', p: 'Layar sambutan kini berwarna biru cerah dengan latar yang lebih hidup.', cta: 'Lanjut' },
+  { chip: 'Perubahan 2', a: 'Master Data', b: 'Akun jadi tabel', p: 'Di menu Admin ada submenu Master Data Akun: tabel dengan pencarian dan filter, 5 akun per halaman. Geser tabel ke samping untuk kolom lain.', cta: 'Mulai jelajahi' }
 ];
 const WN_TXT_W = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Rekening Tunai', b: 'kini bisa diatur', p: 'Kartu Tunai / Tanpa rekening sekarang bisa dijadikan rekening asli dengan satu klik.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Jadikan', b: 'rekening asli', p: 'Klik Jadikan rekening asli di halaman Rekening. Semua transaksi tanpa rekening pindah ke rekening Tunai, saldo tetap sama, dan bisa diubah, dipindah, atau jadi bawaan.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Tampilan', b: 'lebih segar', p: 'Intro biru cerah, label grafik yang lebih rapi, dua kategori pemasukan baru, dan footer yang lebih ringkas.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Intro', b: 'biru cerah', p: 'Layar sambutan kini berwarna biru cerah dengan latar yang lebih hidup.', cta: 'Lanjut' },
+  { chip: 'Perubahan 2', a: 'Master Data', b: 'Akun jadi tabel', p: 'Di menu Admin ada submenu Master Data Akun: tabel dengan pencarian dan filter, 5 akun per halaman. Klik Berikutnya untuk halaman lain.', cta: 'Mulai jelajahi' }
 ];
 let WN_TXT = WN_TXT_M;
 const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
@@ -9243,6 +9334,7 @@ function wnPaint() {
 function wnStart() {
   if (S.wnOn || $('#wnew')) return;
   S.wnOn = true; S.wnI = 0; S.wnPrev = document.activeElement || null; S.wnWeb = wnWebNow(); WN_TXT = S.wnWeb ? WN_TXT_W : WN_TXT_M;
+  if (!(isAdmin() || isHelper())) WN_TXT = WN_TXT.slice(0, 2).map((x, i) => i === 1 ? Object.assign({}, x, { cta: 'Mulai jelajahi' }) : x);
   const el = document.createElement('div'); el.id = 'wnew'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'wn-t');
   document.body.appendChild(el); document.body.classList.add('wn-open');
   wnPaint();
@@ -12332,6 +12424,13 @@ Object.assign(ACT, {
   }
 });
 
+Object.assign(ACT, {
+  'md-f'(el) { S.mdf = el.dataset.f || 'all'; S.mdp = 1; S.mdOpen = null; mdPaint(); },
+  'md-pg'(el) { const p = el.dataset.p; S.mdp = p === 'prev' ? (S.mdp || 1) - 1 : p === 'next' ? (S.mdp || 1) + 1 : Number(p) || 1; S.mdOpen = null; mdPaint(); },
+  'md-more'(el) { S.mdOpen = S.mdOpen === el.dataset.id ? null : el.dataset.id; mdPaint(); }
+});
+document.addEventListener('input', e => { const t = e.target; if (t && t.id === 'md-q') { S.mdq = t.value; S.mdp = 1; S.mdOpen = null; mdPaint(); } });
+
 /* ================= Tur menu: sekali, saat akun baru pertama kali masuk ================= */
 const TOUR_STEPS = [
   { v: 'rekap', t: 'Rekap', d: 'Ringkasan saldo, pemasukan, dan pengeluaran Anda ada di sini.' },
@@ -14343,7 +14442,7 @@ async function delDemo() {
 /* ---------- Sinkron berkala ---------- */
 function applyAccounts(r) {
   setBackupCfg(r.backup);
-  if (r.sessionMinutes && cleanMin(r.sessionMinutes) !== S.sessMin) { setSessMin(r.sessionMinutes); if (S.view === 'akun' || S.view === 'admin') VIEWS[S.view].update(); }
+  if (r.sessionMinutes && cleanMin(r.sessionMinutes) !== S.sessMin) { setSessMin(r.sessionMinutes); if (S.view === 'akun' || S.view === 'admin' || S.view === 'master') VIEWS[S.view].update(); }
   const list = Array.isArray(r.accounts) ? r.accounts : [r.account], m = {};
   list.forEach(a => { m[a.id] = a; }); m[r.account.id] = r.account;
   const sig = JSON.stringify(m); if (sig === S.accSig) return;

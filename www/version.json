@@ -1,8 +1,8 @@
 {
- "version": "1.14.2",
- "build": 25,
+ "version": "1.15.0",
+ "build": 26,
  "date": "2026-11-25",
  "notes": [
-  "Penulisan \"templat\" diperbaiki menjadi \"template\" di seluruh aplikasi"
+  "Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan"
  ]
 }
