@@ -1,8 +1,8 @@
 {
- "version": "1.16.0",
- "build": 29,
+ "version": "1.17.0",
+ "build": 30,
  "date": "2026-11-25",
  "notes": [
-  "Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu."
+  "Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya."
  ]
 }

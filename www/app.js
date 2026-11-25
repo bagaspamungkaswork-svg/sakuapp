@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.16.0', APP_BUILD = 29;
+const APP_VERSION = '1.17.0', APP_BUILD = 30;
 const CHANGELOG = [
+  { v: '1.17.0', d: '2026-11-25', items: ['Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya.'] },
   { v: '1.16.0', d: '2026-11-25', items: ['Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu.'] },
   { v: '1.15.2', d: '2026-11-25', items: ['Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah.'] },
   { v: '1.15.1', d: '2026-11-25', items: ['Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori.'] },
@@ -980,12 +981,19 @@ function budgetModel(list, A, settings, now) {
 
 /* Budget per kategori: pecahan dari batas pengeluaran (settings.budget). Dipilih manual oleh pengguna dan boleh kosong.
    Terpakai dihitung dari pengeluaran biasa di periode A (setoran simpanan dan hutang tidak dihitung), sama seperti anggaran induknya. */
+const cbGroup = k => (GROUPS_OUT.some(g => g.id === k) ? k : (CATS[k] && CATS[k].group) || k);
+/* Budget disimpan per kategori induk (grup). Data lama yang berkunci kategori digabung ke induknya. */
+function cbNorm(cb) { const m = {}; Object.keys(cb || {}).forEach(k => { const v = Math.round(Number(cb[k])) || 0; if (v > 0) { const g = cbGroup(k); m[g] = (m[g] || 0) + v; } }); return m; }
+function cbInfo(id) {
+  const g = GROUPS_OUT.filter(x => x.id === id)[0]; if (!g) return catOf(id);
+  const c = CATS_OUT.filter(x => x.group === id)[0] || {}; return { id, label: g.label, icon: c.icon || 'more', slot: c.slot || 1 };
+}
 function catBudgetModel(list, A, settings, now) {
   settings = settings || {};
-  const bm = budgetModel(list, A, settings, now), cb = settings.catBudgets || {}, rg = cycleOf(A), ms = ymd(rg.start), me = ymd(rg.end), spent = {};
+  const bm = budgetModel(list, A, settings, now), cb = cbNorm(settings.catBudgets), rg = cycleOf(A), ms = ymd(rg.start), me = ymd(rg.end), spent = {};
   for (const t of list) {
     if (t.type === 'in' || t.date < ms || t.date > me || potOf(t) || debtOf(t) || accXf(t)) continue;
-    spent[t.cat] = (spent[t.cat] || 0) + (Number(t.amount) || 0);
+    const g = cbGroup(t.cat); spent[g] = (spent[g] || 0) + (Number(t.amount) || 0);
   }
   const base = bm.base, rows = []; let alloc = 0, inBud = 0;
   Object.keys(cb).forEach(id => {
@@ -994,7 +1002,8 @@ function catBudgetModel(list, A, settings, now) {
     rows.push({ id, amt, spent: sp, left: amt - sp, used: sp / amt * 100, over: sp > amt, share: base > 0 ? amt / base * 100 : 0 });
   });
   rows.sort((a, b) => b.amt - a.amt || (a.id < b.id ? -1 : 1));
-  return { rows, alloc, base, free: base - alloc, other: Math.max(0, bm.outM - inBud), outM: bm.outM, label: bm.label, has: rows.length > 0, overCount: rows.filter(r => r.over).length };
+  const big = rows[0] || null, topSpend = rows.filter(r => r.spent > 0).sort((a, b) => b.spent - a.spent)[0] || null;
+  return { rows, big, topSpend, alloc, base, free: base - alloc, other: Math.max(0, bm.outM - inBud), outM: bm.outM, label: bm.label, has: rows.length > 0, overCount: rows.filter(r => r.over).length };
 }
 
 /* ---------- Data tambahan untuk laporan PDF dan Excel ----------
@@ -1027,7 +1036,7 @@ function reportExtra(list, A, ctx, s, e) {
   /* budget per kategori */
   const cbm = catBudgetModel(list, A, settings, now);
   if (cbm.has) {
-    out.catBud = { base: cbm.base, alloc: cbm.alloc, free: cbm.free, other: cbm.other, label: cbm.label, rows: cbm.rows.map(r => Object.assign({ label: catOf(r.id).label, st: r.over ? 'Lewat' : r.used >= 85 ? 'Hampir habis' : 'Aman' }, r)), spent: cbm.rows.reduce((x, r) => x + r.spent, 0) };
+    out.catBud = { base: cbm.base, alloc: cbm.alloc, free: cbm.free, other: cbm.other, label: cbm.label, rows: cbm.rows.map(r => Object.assign({ label: cbInfo(r.id).label, st: r.over ? 'Lewat' : r.used >= 85 ? 'Hampir habis' : 'Aman' }, r)), spent: cbm.rows.reduce((x, r) => x + r.spent, 0) };
   }
   /* rencana dan komitmen */
   const tk = ymd(now), refs = refIndex(list), pl = { due: [], hutang: [], target: [], wish: [], trip: [], ramean: [], hutangLeft: 0 };
@@ -3444,7 +3453,7 @@ function botCat(X, id, D) {
   const pr = rangeFor('month', shiftAnchor('month', X.now, -1)), ps = ymd(pr.start), pe = ymd(pr.end), prev = (D.tx || []).filter(x => x.cat === id && x.date >= ps && x.date <= pe).reduce((a, x) => a + (Number(x.amount) || 0), 0);
   if (!c) t.push('Belum ada transaksi ' + lab + ' di ' + M.label + '.' + (prev > 0 ? ' Bulan lalu ' + botRp(prev) + '.' : ''));
   else { t.push(lab + ' di ' + M.label + ': ' + botRp(c.v) + ' dari ' + c.n + ' transaksi (' + fmtPct(c.pct) + ' dari total), rata-rata ' + botRp(c.v / c.n) + ' per transaksi.'); if (prev > 0) t.push('Bulan lalu ' + botRp(prev) + ', jadi ' + (c.v >= prev ? 'naik ' : 'turun ') + botRp(Math.abs(c.v - prev)) + (M.health.cur ? ' sejauh ini.' : '.')); }
-  const CB = M.x && M.x.catBud, r = CB && CB.rows.filter(x => x.id === id)[0]; if (r) t.push('Budget kategori ini ' + botRp(r.amt) + ', terpakai ' + Math.round(r.used) + '%.');
+  const CB = M.x && M.x.catBud, r = CB && CB.rows.filter(x => x.id === catOf(id).group)[0]; if (r) t.push('Budget induk kategori ini ' + botRp(r.amt) + ', terpakai ' + Math.round(r.used) + '%.');
   return { text: t, chips: ['Bagaimana cara berhemat?', 'Ke mana uang saya paling banyak keluar?'], topic: 'kategori' };
 }
 /* Simulasi: "hemat/nabung X per bulan" dan "bisakah saya beli ... X" */
@@ -6620,6 +6629,18 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya.": "Category budgets are now set per parent category (for example Food & Drink, Vehicles). Spending from all subcategories is added to its parent, and the Budget and Analysis pages show the parent with the largest budget share and spending. Existing budgets are merged into their parents automatically.",
+  "Kategori induk": "Parent category",
+  "Porsi budget terbesar": "Largest budget share",
+  "{1} dari total pengeluaran": "{1} of total spending",
+  "Belum ada budget kategori. Pilih kategori induk yang ingin dijaga (misalnya Makan & Minum atau Transportasi Harian) dan bagi sebagian dari batas {1}. Kategori tanpa budget tetap dihitung di batas pengeluaran.": "No category budgets yet. Pick a parent category to keep in check (for example Food & Drink or Daily Transport) and assign part of the {1} limit. Categories without a budget still count toward the spending limit.",
+  "Pilih kategori induk.": "Choose a parent category.",
+  "Budget induk kategori ini {1}, terpakai {2}%.": "The parent budget for this category is {1}, {2}% used.",
+  "Budget kategori induk": "Parent category budget",
+  "Pelajari budget induk": "About parent budgets",
+  "kini per induk": "now per parent",
+  "Budget kini dibuat per kategori induk dan dijumlahkan dari semua subkategorinya.": "Budgets are now set per parent category, adding up all its subcategories.",
+  "Di Anggaran dan Analisis, lihat induk mana yang porsinya paling besar.": "On the Budget and Analysis pages, see which parent has the largest share.",
   "Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu.": "A more compact Plan submenu: each item shows a status figure (budget used, number of goals, savings balance and so on). On phones it is a 3-column grid with no swiping; on the web it spans the page and adapts to the number of submenus.",
   "{1}% terpakai": "{1}% used",
   "{1} target": "{1} goals",
@@ -8720,8 +8741,8 @@ function impactOf(F) {
       rows.push({ k: 'Anggaran bulan', v: p0 + '% → ' + p1 + '%', c: p1 > 100 ? 'bad' : p1 >= 85 ? 'warn' : '', bar: Math.min(100, p1), over: p1 > 100 });
       rows.push({ k: left >= 0 ? 'Sisa anggaran' + (days > 0 ? ' per hari' : '') : 'Lewat anggaran', v: left >= 0 ? fmtRp(days > 0 ? Math.max(0, left) / days : left) : fmtRp(-left), c: left < 0 ? 'bad' : '' });
     }
-    const cb = Number((st.catBudgets || {})[F.cat]) || 0;
-    if (cb > 0 && !potOf({ cat: F.cat, type: F.type })) { const c0 = sumType(inM.filter(t => t.cat === F.cat), 'out'), q0 = Math.round(c0 / cb * 100), q1 = Math.round((c0 + amt) / cb * 100); rows.push({ k: 'Anggaran ' + CATS[F.cat].label, v: q0 + '% → ' + q1 + '%', c: q1 > 100 ? 'bad' : q1 >= 85 ? 'warn' : '' }); }
+    const cbg = cbGroup(F.cat), cb = Number(cbNorm(st.catBudgets)[cbg]) || 0;
+    if (cb > 0 && !potOf({ cat: F.cat, type: F.type })) { const c0 = sumType(inM.filter(t => cbGroup(t.cat) === cbg), 'out'), q0 = Math.round(c0 / cb * 100), q1 = Math.round((c0 + amt) / cb * 100); rows.push({ k: 'Anggaran ' + cbInfo(cbg).label, v: q0 + '% → ' + q1 + '%', c: q1 > 100 ? 'bad' : q1 >= 85 ? 'warn' : '' }); }
   } else {
     rows.push({ k: 'Pemasukan bulan ini', v: fmtRp(sumType(list.filter(t => t.date >= s && t.date <= e), 'in') + amt), c: '' });
   }
@@ -9189,9 +9210,9 @@ function anaKatHTML() {
       const rowsB = cb.rows.slice(0, 10).map(b => {
         const z = b.over ? 'danger' : b.used >= BUD_WARN ? 'warn' : '', used = Math.min(100, b.used);
         const warn = b.over ? `<span class="wn bad">${ic('alert', 12)}Melebihi ${esc(fmtRp(-b.left))}</span>` : z === 'warn' ? `<span class="wn">${ic('alert', 12)}${b.used > BUD_DANGER ? 'Hampir habis' : 'Mendekati batas'}, sisa ${esc(fmtRp(b.left))}</span>` : '';
-        return `<div class="cb-row"><div class="cb-t"><span>${esc(catOf(b.id).label)}</span><span class="am">${esc(fmtRp(b.spent))} / ${esc(fmtRp(b.amt))}</span></div><div class="cb-line"><div class="cb-bar ${z}"><i style="width:${used.toFixed(1)}%"></i></div><b>${fmtPct(b.used)}</b></div>${warn}</div>`;
+        return `<div class="cb-row"><div class="cb-t"><span>${esc(cbInfo(b.id).label)}</span><span class="am">${esc(fmtRp(b.spent))} / ${esc(fmtRp(b.amt))}</span></div><div class="cb-line"><div class="cb-bar ${z}"><i style="width:${used.toFixed(1)}%"></i></div><b>${fmtPct(b.used)}</b></div>${warn}</div>`;
       }).join('');
-      bud = anaCard('Anggaran per kategori', esc(rpC(cb.outM) + ' / ' + rpC(cb.base)), rowsB);
+      bud = anaCard('Anggaran per kategori', esc(rpC(cb.outM) + ' / ' + rpC(cb.base)), cbTopNote(cb) + rowsB);
     } else bud = anaCard('Anggaran per kategori', '', `<p class="ana-note">Belum ada anggaran per kategori. <button type="button" class="bud-link" data-act="nav" data-v="anggaran">Atur anggaran</button></p>`);
   }
   /* tabel rekap per kategori (membuka isi kategori) */
@@ -9317,7 +9338,7 @@ Object.assign(ACT, {
    Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
    Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
    Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
-const WN_VER = '1.16';
+const WN_VER = '1.17';
 const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
 function wnSeen() {
   if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
@@ -9335,19 +9356,18 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
   if (i === 1) {
-    const it = [['Anggaran', '34%'], ['Target', '2'], ['Simpanan', 'Rp 4,2 jt'], ['Jajan Ramean', '1'], ['Perjalanan', '-'], ['Wishlist', '3']];
-    if (S.wnWeb) return `<div class="wn-illo" aria-hidden="true"><div class="wn6-t wn-up"${wnD(.1)}>${it.map((x, j) => `<div class="${j === 0 ? 'on' : ''}"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}</div></div>`;
-    return `<div class="wn-illo" aria-hidden="true"><div class="wn6-g wn-up"${wnD(.1)}>${it.map((x, j) => `<div class="${j === 0 ? 'on' : ''}"><i></i><b>${x[0]}</b><span>${x[1]}</span></div>`).join('')}</div></div>`;
+    const it = [['Makan & Minum', '82%', 1], ['Kendaraan Pribadi', '46%', 0], ['Rumah & Tagihan', '30%', 0]];
+    return `<div class="wn-illo" aria-hidden="true"><div class="wn7-b wn-up"${wnD(.1)}>${it.map(x => `<div class="${x[2] ? 'top' : ''}"><b><span>${x[0]}</span><span>${x[1]}</span></b><i style="--w:${x[1]}"></i></div>`).join('')}</div></div>`;
   }
   return '';
 }
 const WN_TXT_M = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Rencana', b: 'lebih ringkas', p: 'Submenu Rencana kini menampilkan angka status dan tersusun rapi tanpa perlu digeser.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Rencana', b: 'lebih ringkas', p: 'Menu Rencana kini menampilkan angka status di tiap submenu, tersusun 3 kolom tanpa perlu digeser.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Budget per kategori', b: 'kini per induk', p: 'Budget kini dibuat per kategori induk dan dijumlahkan dari semua subkategorinya.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Budget per kategori', b: 'kini per induk', p: 'Di Anggaran dan Analisis, lihat induk mana yang porsinya paling besar.', cta: 'Mulai jelajahi' }
 ];
 const WN_TXT_W = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Rencana', b: 'lebih ringkas', p: 'Submenu Rencana kini menampilkan angka status dan membentang selebar halaman.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Rencana', b: 'lebih ringkas', p: 'Menu Rencana kini menampilkan angka status di tiap submenu, membentang selebar halaman dan menyesuaikan jumlah submenu.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Budget per kategori', b: 'kini per induk', p: 'Budget kini dibuat per kategori induk dan dijumlahkan dari semua subkategorinya.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Budget per kategori', b: 'kini per induk', p: 'Di Anggaran dan Analisis, lihat induk mana yang porsinya paling besar.', cta: 'Mulai jelajahi' }
 ];
 let WN_TXT = WN_TXT_M;
 const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
@@ -10350,7 +10370,12 @@ VIEWS.anggaran = {
 /* ---------- Budget per kategori (pecahan dari batas pengeluaran, opsional) ---------- */
 const CB_PCTS = [10, 20, 25, 30, 50];
 function cbBase() { return Math.max(0, Math.round(Number(S.settings && S.settings.budget)) || 0); }
-function cbMap() { const m = {}, cb = (S.settings && S.settings.catBudgets) || {}; Object.keys(cb).forEach(k => { const v = Math.round(Number(cb[k])) || 0; if (v > 0) m[k] = v; }); return m; }
+function cbTopNote(M) {
+  const b = M.big, s = M.topSpend; if (!b) return '';
+  const row = (k, name, v) => `<div class="cb-hi"><span class="k">${k}</span><b>${esc(name)}</b><span class="v">${v}</span></div>`;
+  return row('Porsi budget terbesar', cbInfo(b.id).label, fmtPct(b.share) + ' dari batas') + (s && M.outM > 0 ? row('Pengeluaran terbesar', cbInfo(s.id).label, fmtPct(s.spent / M.outM * 100) + ' dari total pengeluaran') : '');
+}
+function cbMap() { return cbNorm(S.settings && S.settings.catBudgets); }
 function cbSum(skip) { const m = cbMap(); return Object.keys(m).reduce((s, k) => s + (k === skip ? 0 : m[k]), 0); }
 function catBudCard() {
   const base = cbBase();
@@ -10358,7 +10383,7 @@ function catBudCard() {
   if (!base) return `<section class="card cb-card" aria-labelledby="h-cb">${head}<p class="cb-note">Budget kategori adalah pecahan dari batas pengeluaran. Isi batas pengeluaran di bagian bawah halaman ini dulu, lalu bagi sebagian ke kategori yang ingin Anda jaga.</p></section>`;
   const M = catBudgetModel(S.tx, startOfDay(new Date()), S.settings, new Date()), pct = Math.min(100, M.alloc / base * 100);
   const rows = M.rows.map(r => {
-    const c = catOf(r.id), z = r.over ? 'over' : budZone(r.used, false), st = r.over ? 'Lewat ' + fmtRp(r.spent - r.amt) : 'Sisa ' + fmtRp(r.left);
+    const c = cbInfo(r.id), z = r.over ? 'over' : budZone(r.used, false), st = r.over ? 'Lewat ' + fmtRp(r.spent - r.amt) : 'Sisa ' + fmtRp(r.left);
     return `<li><button type="button" class="cb-row ${z}" data-act="cb-open" data-id="${esc(r.id)}" aria-label="Ubah budget ${esc(c.label)}"><span class="chip" style="--c:var(--s${c.slot || 1})">${ic(c.icon || 'more', 18)}</span>
       <span class="cb-main"><span class="cb-top"><b>${esc(c.label)}</b><span class="cb-amt">${fmtRp(r.spent)} <small>dari ${fmtRp(r.amt)}</small></span></span>
       <span class="pbar ${r.over ? 'over' : ''}" role="progressbar" aria-label="Budget ${esc(c.label)} terpakai" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r.used))}"><i style="width:${Math.min(100, r.used).toFixed(1)}%"></i></span>
@@ -10366,8 +10391,8 @@ function catBudCard() {
   }).join('');
   const sum = `<div class="cb-sum"><div><small>Dibagi ke kategori</small><b>${fmtRp(M.alloc)}</b></div><div><small>Belum dibagi</small><b>${fmtRp(M.free)}</b></div></div>
     <div class="pbar" role="img" aria-label="${fmtPct(pct)} dari batas pengeluaran sudah dibagi ke kategori"><i style="width:${pct.toFixed(1)}%"></i></div>`;
-  const body = M.has ? `${sum}<ul class="cb-list">${rows}</ul>${M.other > 0 ? `<p class="cb-note">Pengeluaran di luar kategori berbudget bulan ini: ${fmtRp(M.other)}.</p>` : ''}`
-    : `<p class="cb-note">Belum ada budget kategori. Pilih kategori yang ingin dijaga (misalnya Makanan atau Transportasi) dan bagi sebagian dari batas ${fmtRp(base)}. Kategori tanpa budget tetap dihitung di batas pengeluaran.</p>`;
+  const body = M.has ? `${sum}${cbTopNote(M)}<ul class="cb-list">${rows}</ul>${M.other > 0 ? `<p class="cb-note">Pengeluaran di luar kategori berbudget bulan ini: ${fmtRp(M.other)}.</p>` : ''}`
+    : `<p class="cb-note">Belum ada budget kategori. Pilih kategori induk yang ingin dijaga (misalnya Makan & Minum atau Transportasi Harian) dan bagi sebagian dari batas ${fmtRp(base)}. Kategori tanpa budget tetap dihitung di batas pengeluaran.</p>`;
   const full = M.free <= 0;
   return `<section class="card cb-card" aria-labelledby="h-cb">${head}${body}<div class="cb-acts"><button type="button" class="btn btn-primary btn-sm" data-act="cb-open" ${full ? 'disabled' : ''}>${ic('plus', 16)} Tambah budget kategori</button>${full && M.has ? '<small>Seluruh batas sudah dibagi.</small>' : ''}</div></section>`;
 }
@@ -10376,14 +10401,14 @@ function cbOpen(id) {
   const base = cbBase(); if (!base) { toast('Isi batas pengeluaran dulu.'); return; }
   closeSheet(true); S.lastFocus = document.activeElement; disarm();
   const m = cbMap(), taken = Object.keys(m).filter(k => k !== id);
-  const cats = CATS_OUT.filter(c => taken.indexOf(c.id) < 0);
+  const cats = GROUPS_OUT.filter(g => g.id !== 'simpan' && taken.indexOf(g.id) < 0);
   if (!id && !cats.length) { toast('Semua kategori sudah punya budget.'); return; }
   S.cb = { id: id || null, cat: id || (cats[0] && cats[0].id), amount: id ? m[id] : 0, saving: false };
-  const opts = GROUPS_OUT.map(g => { const cs = cats.filter(c => c.group === g.id); return cs.length ? `<optgroup label="${esc(g.label)}">${cs.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('')}</optgroup>` : ''; }).join('');
+  const opts = cats.map(g => `<option value="${esc(g.id)}">${esc(g.label)}</option>`).join('');
   const root = document.createElement('div'); root.id = 'sheet-root';
   root.innerHTML = `<div class="backdrop" data-act="sheet-bd"><form class="sheet" id="cbform" role="dialog" aria-modal="true" aria-labelledby="cb-t" novalidate>
     <div class="sheet-h"><h2 id="cb-t">${id ? 'Ubah Budget Kategori' : 'Budget Kategori Baru'}</h2><button type="button" class="icon-btn" data-act="sheet-close" aria-label="Tutup">${ic('x', 20)}</button></div>
-    <div class="sheet-b"><div class="field"><label for="cb-cat">Kategori</label><select class="input" id="cb-cat" ${id ? 'disabled' : ''}>${id ? `<option>${esc(catOf(id).label)}</option>` : opts}</select></div>
+    <div class="sheet-b"><div class="field"><label for="cb-cat">Kategori induk</label><select class="input" id="cb-cat" ${id ? 'disabled' : ''}>${id ? `<option>${esc(cbInfo(id).label)}</option>` : opts}</select></div>
       <div class="field"><label for="cb-amt">Budget (bagian dari batas ${fmtRp(base)})</label><div class="amt-wrap"><span class="rp">${curSym()}</span><input id="cb-amt" data-money="cb-amt" inputmode="numeric" autocomplete="off" placeholder="0"></div></div>
       <div class="bud-chips" role="group" aria-label="Pilih persen dari batas">${CB_PCTS.map(p => `<button type="button" class="btn btn-ghost btn-sm" data-act="cb-pct" data-v="${p}">${p}%</button>`).join('')}</div>
       <p class="cat-hint" id="cb-hint" role="status"></p>
@@ -10404,7 +10429,7 @@ async function cbWrite(map, msg) {
 }
 async function cbSave() {
   const A = S.cb; if (!A || A.saving) return; const err = $('#cb-err'), sel = $('#cb-cat'), id = A.id || (sel && sel.value), fail = m => { err.textContent = m; err.hidden = false; };
-  if (!id || !CATS[id] || CATS[id].type !== 'out') return fail('Pilih kategori pengeluaran.');
+  if (!id || id === 'simpan' || !GROUPS_OUT.some(g => g.id === id)) return fail('Pilih kategori induk.');
   if (!(A.amount >= 1)) return fail('Isi jumlah budget lebih dari 0.');
   const base = cbBase(), rest = base - cbSum(id);
   if (A.amount > rest) return fail('Melebihi sisa batas pengeluaran. Yang masih bisa dibagi: ' + fmtRp(Math.max(0, rest)) + '.');
@@ -10989,7 +11014,7 @@ function frSummary(x) {
   if (x.kind === 'ramean') { const n = ((d.data || {}).people || []).length; return `<div class="fr-sum"><span>${n} orang${d.data && d.data.total ? ' · total ' + fmtRp(d.data.total) : ''}</span><small>${d.date ? dueDateText(d.date) : 'Tanpa tanggal'}</small></div>`; }
   if (x.kind === 'trip') { const t = d.data || {}; return `<div class="fr-sum"><span>${esc(t.from || '?')} → ${esc(t.to || '?')}</span><small>${d.date ? dueDateText(d.date) : 'Tanpa tanggal'}${d.budget ? ' · anggaran ' + fmtRp(d.budget) : ''}</small></div>`; }
   if (x.kind === 'budget') {
-    const cb = d.catBudgets || {}, rows = Object.keys(cb).sort((a, b) => cb[b] - cb[a]).map(k => `<li><span>${esc(catOf(k).label)}</span><b>${fmtRp(cb[k])}</b></li>`).join('');
+    const cb = cbNorm(d.catBudgets), rows = Object.keys(cb).sort((a, b) => cb[b] - cb[a]).map(k => `<li><span>${esc(cbInfo(k).label)}</span><b>${fmtRp(cb[k])}</b></li>`).join('');
     return `<div class="fr-sum"><span>Batas ${fmtRp(d.budget || 0)}</span>${rows ? `<ul class="fr-bl">${rows}</ul>` : '<small>Tanpa budget kategori</small>'}</div>`;
   }
   return '';
