@@ -1,0 +1,36 @@
+name: Deploy Supabase
+
+# Otomatis deploy Edge Function "api" (dan migrasi database) ke Supabase
+# setiap ada perubahan di folder supabase/ pada branch utama. Bisa juga dijalankan manual.
+on:
+  push:
+    branches: [main, master]
+    paths: ['supabase/**', '.github/workflows/deploy-supabase.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-supabase
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Periksa rahasia
+        run: |
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$PROJECT_REF" ] || { echo "::error::Isi secret SUPABASE_ACCESS_TOKEN dan SUPABASE_PROJECT_REF di Settings > Secrets and variables > Actions"; exit 1; }
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Hubungkan proyek
+        run: supabase link --project-ref "$PROJECT_REF"
+      - name: Migrasi database
+        if: env.SUPABASE_DB_PASSWORD != ''
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD" --include-all
+      - name: Deploy Edge Function api
+        run: supabase functions deploy api --project-ref "$PROJECT_REF" --no-verify-jwt

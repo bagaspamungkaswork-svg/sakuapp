@@ -1,0 +1,6 @@
+# Pengaturan proyek Supabase untuk SaKu. Dipakai oleh Supabase CLI (supabase link / functions deploy / db push).
+project_id = "saku"
+
+[functions.api]
+verify_jwt = false          # API SaKu memakai token sendiri (Bearer), bukan JWT Supabase
+entrypoint = "./functions/api/index.ts"
