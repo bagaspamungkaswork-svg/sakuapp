@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.20.0', APP_BUILD = 34;
+const APP_VERSION = '1.20.1', APP_BUILD = 35;
 const CHANGELOG = [
+  { v: '1.20.1', d: '2026-11-25', items: ['Patungan tampil lebih ringkas: ringkasan satu panel, bar progres bayar per periode, jatuh tempo berikutnya, dan status tiap teman lebih jelas.'] },
   { v: '1.20.0', d: '2026-11-25', items: ['Patungan: tagih teman untuk IndiHome, Netflix, dan layanan digital lain. Unggah bukti bayar Anda dulu, kirim tautan lewat WhatsApp, teman mengunggah bukti transfer sendiri, termasuk bayar sekaligus beberapa periode (bulanan sampai tahunan).'] },
   { v: '1.18.1', d: '2026-11-25', items: ['Tampilan layar lebar dirapikan: daftar saldo rekening di Analisis tidak lagi meluber, ruang kosong di sisi kanan dimanfaatkan (form Rekening, Rincian), label tanggal grafik tidak menumpuk, dan diagram kategori tidak menimpa daftar.'] },
   { v: '1.18.0', d: '2026-11-25', items: ['Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar.'] },
@@ -7300,7 +7301,7 @@ const I18N_EN = {
 const S = {
   phase: 'boot', mounted: null, view: 'rekap', mountedView: null,
   db: null, user: null, sample: null, downloads: null, canImages: false, canWrite: null, isOwner: false,
-  accounts: {}, accLoaded: false, restored: false, me: null, fails: 0, loginMsg: '', authTab: 'masuk', regDone: null, regBusy: false, pendN: -1,
+  accounts: {}, accLoaded: false, restored: false, me: null, fails: 0, loginMsg: '', authTab: /[?&]daftar=1/.test(location.search || '') ? 'daftar' : 'masuk', regDone: null, regBusy: false, pendN: -1,
   unsubAcc: null, unsubTx: null, unsubSet: null,
   tx: [], txLoaded: false, byDay: {}, totals: { in: 0, out: 0 }, settings: {}, demoCount: 0, plan: { cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [] }, unsubPlan: [], routeReplace: false,
   period: 'month', anchor: startOfDay(new Date()), showAll: { out: false, in: false },
@@ -11581,26 +11582,40 @@ function patImgOpen(src, title) {
 async function patPhoto(id) { const s = await planBase().collection('photos').doc(id).get(); const d = s && s.exists ? s.data() : null; return d && d.data ? d.data : ''; }
 
 /* ---------- Halaman Patungan (pemilik) ---------- */
+function patNext(r) {
+  const n = patNowN(), c = r.cycle || 1, s = patMonN(r.start), e = r.end ? patMonN(r.end) : Infinity, t = new Date(); t.setHours(0, 0, 0, 0);
+  let x = s + Math.max(0, Math.floor((n - s) / c) - 1) * c;
+  for (let i = 0; i < 6 && x <= e; i++, x += c) { const d = new Date(Math.floor(x / 12), x % 12, r.day || 1); if (d >= t) return { d, left: Math.round((d - t) / 864e5) }; }
+  return null;
+}
+const patLeft = n => n === 0 ? 'hari ini' : n === 1 ? 'besok' : n + ' hari lagi';
 function ptCard(r) {
-  const M = patModel(r), tk = patNowN();
-  const sub = [(PAT_CYC.filter(c => c[0] === r.cycle)[0] || PAT_CYC[0])[1], r.cycle === 1 ? 'jatuh tempo tgl ' + r.day : 'mulai ' + patLbl(r.start)].join(' · ');
+  const M = patModel(r), bill = r.bill || {}, k = M.keys[M.keys.length - 1] || '', nx = patNext(r);
+  const cyc = (PAT_CYC.filter(c => c[0] === r.cycle)[0] || PAT_CYC[0])[1];
+  const sub = nx ? cyc + ' · tempo ' + nx.d.getDate() + ' ' + MONTHS_S[nx.d.getMonth()] + ' (' + patLeft(nx.left) + ')' : cyc;
   const wn = M.people.reduce((s, m) => s + (m.wait.length ? 1 : 0), 0), late = M.people.filter(m => m.due.length).length;
-  const st = late ? `<span class="stp today">${late} belum bayar</span>` : wn ? `<span class="stp lalu">${wn} menunggu</span>` : Object.keys(r.bill || {}).length ? '<span class="stp ok">Lunas semua</span>' : '<span class="stp lalu">Belum ditagih</span>';
+  const st = late ? `<span class="stp late">${late} belum bayar</span>` : wn ? `<span class="stp today">${wn} menunggu</span>` : Object.keys(bill).length ? '<span class="stp ok">Lunas semua</span>' : '<span class="stp lalu">Belum ditagih</span>';
   const next = M.unbilled[0];
   const banner = next ? `<div class="pt-bill"><div><b>Periode ${esc(patLbl(next))}</b><small>Unggah bukti bayar Anda ke penyedia dulu. Setelah itu teman bisa ditagih.</small></div><label class="btn btn-primary btn-sm pt-up">${ic('camera', 16)} Unggah bukti<input type="file" accept="image/*" hidden data-pt-bill="${esc(r.id)}" data-k="${esc(next)}"></label></div>` : '';
-  const proofs = Object.keys(r.bill || {}).filter(k => r.bill[k].ph).sort().slice(-3).map(k => `<button type="button" class="pt-pf" data-act="pt-bproof" data-id="${esc(r.id)}" data-k="${esc(k)}">${ic('receipt', 14)} Bukti ${esc(patLbl(k))}</button>`).join('');
+  const proofs = Object.keys(bill).filter(x => bill[x].ph).sort().slice(-3).map(x => `<button type="button" class="pt-pf" data-act="pt-bproof" data-id="${esc(r.id)}" data-k="${esc(x)}">${ic('receipt', 14)} Bukti ${esc(patLbl(x))}</button>`).join('');
+  const segSt = m => !k ? 'new' : m.ok.indexOf(k) >= 0 ? 'ok' : m.wait.indexOf(k) >= 0 ? 'wait' : bill[k] ? 'due' : 'new';
+  const mine = Math.max(0, M.mine), segs = [[mine, 'me']].concat(M.people.map(m => [m.p.a, segSt(m)]));
+  const tot = segs.reduce((s, x) => s + x[0], 0) || 1, got = mine + M.people.reduce((s, m) => s + (segSt(m) === 'ok' ? m.p.a : 0), 0);
+  const LG = { me: 'Anda', ok: 'Lunas', wait: 'Menunggu', due: 'Belum bayar', new: 'Belum ditagih' }, used = [];
+  segs.forEach(x => { if (used.indexOf(x[1]) < 0) used.push(x[1]); });
+  const prog = k ? `<div class="pt2-prog"><div class="pt2-pt"><span>${esc(patLbl(k))}</span><b>${fmtRp(got)}</b><span>dari ${fmtRp(r.total)}</span></div><div class="pt2-bar" role="img" aria-label="Terkumpul ${esc(fmtRp(got))} dari ${esc(fmtRp(r.total))}">${segs.map(x => `<i class="${x[1]}" style="flex:${Math.max(x[0], tot * .02)}"></i>`).join('')}</div><div class="pt2-lg">${used.map(u => `<span class="${u}">${LG[u]}</span>`).join('')}</div></div>` : '';
   const rows = M.people.map(m => {
     const t = patTok(r.id, m.p.id), url = t ? patUrl(t) : '', canBill = m.due.length > 0;
-    const tail = canBill ? `<span class="rm-left">${fmtRp(m.owe)} · ${m.due.length} periode</span>` : m.wait.length ? '<span class="stp lalu">Menunggu konfirmasi</span>' : m.ok.length ? '<span class="stp ok">Lunas</span>' : '<span class="stp lalu">Belum ditagih</span>';
+    const s = canBill ? 'due' : m.wait.length ? 'wait' : m.ok.length ? 'ok' : 'new';
+    const tail = canBill ? `<b class="pt2-owe">${fmtRp(m.owe)}</b><small>${m.due.length} periode</small>` : s === 'wait' ? '<span class="stp today">Menunggu</span>' : s === 'ok' ? '<span class="stp ok">Lunas</span>' : '<span class="stp lalu">Belum ditagih</span>';
     const acts = canBill ? `<div class="pt-acts">${t ? `<a class="btn btn-primary btn-sm" href="${esc(patWa(m.p.ph, patMsg(r, m, url)))}" target="_blank" rel="noopener">Tagih via WhatsApp</a><button type="button" class="btn btn-ghost btn-sm" data-act="pt-copy" data-id="${esc(r.id)}" data-pe="${esc(m.p.id)}">Salin pesan</button>` : '<span class="muted">Menyiapkan tautan…</span>'}<button type="button" class="btn btn-ghost btn-sm" data-act="pt-mark" data-id="${esc(r.id)}" data-pe="${esc(m.p.id)}">Tandai lunas</button></div>` : '';
-    return `<li class="pt-p"><span class="rm-av" aria-hidden="true">${esc((m.p.n[0] || '?').toUpperCase())}</span><span class="rm-n"><b>${esc(m.p.n)}</b><small>${fmtRp(m.p.a)} per periode</small></span><span class="pt-t">${tail}</span>${acts}</li>`;
+    return `<li class="pt-p pt2-p s-${s}"><span class="rm-av pt2-av" aria-hidden="true">${esc((m.p.n[0] || '?').toUpperCase())}</span><span class="rm-n"><b>${esc(m.p.n)}</b><small>${fmtRp(m.p.a)} per periode</small></span><span class="pt-t">${tail}</span>${acts}</li>`;
   }).join('');
-  return `<section class="card cic pt-card" aria-label="${esc(r.name)}">
-    <div class="cic-h"><span class="chip" style="--c:${planSlot(2)}">${ic(patIco(r.ico), 20)}</span><div class="cic-n"><b>${esc(r.name)}</b><small>${esc(sub)}</small></div>${st}</div>
-    <div class="cic-amt"><b>${fmtRp(r.total)}</b><span>per periode · bagian Anda ${fmtRp(Math.max(0, M.mine))}</span></div>
-    ${banner}<ul class="rm-rows pt-rows" aria-label="Teman yang ikut patungan">${rows}</ul>
-    ${proofs ? `<div class="pt-pfs">${proofs}</div>` : ''}
-    <div class="btn-row cic-acts"><button type="button" class="btn btn-ghost btn-sm" data-act="pt-edit" data-id="${esc(r.id)}">${ic('edit', 16)} Ubah</button></div></section>`;
+  return `<section class="card pt-card pt2-card" aria-label="${esc(r.name)}">
+    <div class="pt2-h"><span class="chip" style="--c:${planSlot(2)}">${ic(patIco(r.ico), 20)}</span><div class="pt2-n"><b>${esc(r.name)}</b><small>${esc(sub)}</small></div>${st}</div>
+    <div class="pt2-amt"><b>${fmtRp(r.total)}</b><span>per periode · bagian Anda ${fmtRp(mine)}</span></div>
+    ${prog}${banner}<ul class="rm-rows pt-rows" aria-label="Teman yang ikut patungan">${rows}</ul>
+    <div class="pt2-ft"><div class="pt-pfs">${proofs}</div><button type="button" class="btn btn-ghost btn-sm" data-act="pt-edit" data-id="${esc(r.id)}">${ic('edit', 16)} Ubah</button></div></section>`;
 }
 function ptInbox() {
   const w = ((S.patInbox && S.patInbox.subs) || []).filter(x => x.st === 'wait').reverse();
@@ -11616,8 +11631,9 @@ VIEWS.patungan = {
     if (!list.length) { v.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada patungan</h3><p>Bayar IndiHome, Netflix, atau layanan digital lain lebih dulu, lalu tagih bagian tiap teman. Unggah bukti bayar Anda, kirim tautan lewat WhatsApp, dan teman mengunggah bukti transfernya sendiri.</p><button type="button" class="btn btn-primary" data-act="pt-new">Buat patungan pertama</button></div></section>`; return; }
     const owed = list.reduce((s, r) => s + patModel(r).owed, 0), wn = patWaitN();
     const rng = `<div class="seg pt-rng" role="group" aria-label="Rentang waktu">${PAT_RNG.map(x => `<button type="button" data-act="pt-rng" data-v="${x[0]}" aria-pressed="${N === x[0]}">${x[1]}</button>`).join('')}</div>`;
-    const tiles = `<div class="tiles tiles-fill cic-sum pt-tiles">${tileHTML('Belum dibayar teman', fmtRp(owed), 'sudah ditagih')}${tileHTML('Menunggu konfirmasi', String(wn), wn ? 'bukti dari teman' : 'tidak ada')}${tileHTML('Sudah kembali', fmtRp(patBack(N)), N === 1 ? 'bulan ini' : N === 12 ? '12 bulan terakhir' : N + ' bulan terakhir')}</div>`;
-    v.innerHTML = head + `<div class="pt-rng-w">${rng}</div>` + tiles + ptInbox() + `<div class="pt-grid">${list.map(ptCard).join('')}</div>`;
+    const stat = (k, v, s, c) => `<div class="pt2-st ${c}"><span>${k}</span><b>${v}</b><small>${s}</small></div>`;
+    const tiles = `<section class="card pt2-sum" aria-label="Ringkasan patungan"><div class="pt2-sh"><h2>Ringkasan</h2>${rng}</div><div class="pt2-sg">${stat('Belum dibayar teman', fmtRp(owed), 'sudah ditagih', owed ? 'out' : '')}${stat('Menunggu konfirmasi', String(wn), wn ? 'bukti dari teman' : 'tidak ada', wn ? 'wait' : '')}${stat('Sudah kembali', fmtRp(patBack(N)), N === 1 ? 'bulan ini' : N === 12 ? '12 bulan terakhir' : N + ' bulan terakhir', 'in')}</div></section>`;
+    v.innerHTML = head + tiles + ptInbox() + `<div class="pt-grid">${list.map(ptCard).join('')}</div>`;
     patEnsureLinks();
   }
 };
@@ -11757,11 +11773,25 @@ async function bwLoad() {
   catch (e) { S.bw.d = null; S.bw.err = e.userMessage || 'Tagihan tidak bisa dimuat.'; }
   bwPaint();
 }
-const bwSaku = () => `<section class="bw-card bw-offer"><h2>Semua uang ada di SaKu</h2><p>SaKu adalah aplikasi pencatat keuangan pribadi. Catat pemasukan dan pengeluaran, atur anggaran, pantau tagihan dan cicilan, dan tagih patungan teman seperti ini, di web maupun HP.</p><a class="btn btn-primary" href="${esc(location.origin + '/')}">Kenali SaKu, masuk atau daftar</a></section>`;
+const bwSaku = () => {
+  const P = S.bw || (S.bw = {}), el = (Date.now() - (P.t0 || (P.t0 = Date.now()))) / 1000, done = el > 11.5, home = location.origin + '/';
+  const sc = (n, s, inner) => `<div class="bwi-sc s${n}" style="--s:${s}s" aria-hidden="true">${inner}</div>`;
+  const bars = [35, 55, 42, 78, 64].map((h, i) => `<i class="${i > 2 ? 'hi' : ''}" style="--h:${h}%;--i:${i}"></i>`).join('');
+  const chips = [['Budi', 'Lunas', 'ok'], ['Sari', 'Menunggu', 'wt'], ['Dina', 'Lunas', 'ok']].map((c, i) => `<span class="bwi-chip ${c[2]}" style="--i:${i}"><b>${c[0]}</b>${c[1]}</span>`).join('');
+  return `<section class="bw-card bw-offer bwi${done ? ' done' : ''}" id="bw-intro" style="--o:${(-Math.min(el, 12)).toFixed(2)}s" aria-label="Kenali SaKu">
+    <div class="bwi-stage">
+      ${sc(1, 0, '<h2 class="bwi-h">Penasaran dengan <b>SaKu</b>?</h2><span class="bwi-pulse"></span>')}
+      ${sc(2, 2.6, `<div class="bwi-bars">${bars}</div><p class="bwi-cap">Catat pemasukan dan pengeluaran</p>`)}
+      ${sc(3, 5.2, '<div class="bwi-ring"><svg viewBox="0 0 84 84" width="84" height="84"><circle cx="42" cy="42" r="34"></circle><circle class="v" cx="42" cy="42" r="34"></circle></svg><b>72%</b></div><p class="bwi-cap">Atur anggaran, pantau tagihan dan cicilan</p>')}
+      ${sc(4, 7.8, `<div class="bwi-chips">${chips}</div><p class="bwi-cap">Tagih patungan teman semudah kirim tautan</p>`)}
+      <div class="bwi-sc end" style="--s:10.4s"><h2>Coba daftar, rasakan sendiri fungsinya</h2><p>Catat uang, atur anggaran, dan tagih patungan teman. Di web maupun HP.</p><div class="bwi-cta"><a class="btn btn-primary" href="${esc(home + '?daftar=1')}">Daftar</a><a class="btn btn-ghost" href="${esc(home)}">Masuk</a></div></div>
+    </div>
+    <div class="bwi-ft"><button type="button" class="bwi-link bwi-skip" data-act="bw-skip">Lewati</button><button type="button" class="bwi-link bwi-rep" data-act="bw-replay">Putar ulang</button></div></section>`;
+};
 function bwAmt() { const d = S.bw.d; return d ? d.share * S.bw.sel.length : 0; }
 function bwPaint() {
   const P = S.bw, d = P.d, app = $('#app'); if (!app) return;
-  const top = `<header class="bw-top">${LOGO}${WM}</header>`;
+  const top = `<header class="bw-top brand">${LOGO}${WM}</header>`;
   if (!d) { app.innerHTML = `<main class="bw">${top}<section class="bw-card"><h1>Tautan tidak bisa dibuka</h1><p>${esc(P.err || '')}</p><p class="muted">Minta teman Anda mengirim tautan yang baru.</p></section>${bwSaku()}</main>`; return; }
   const per = (PAT_CYC.filter(c => c[0] === d.cycle)[0] || PAT_CYC[0])[1].toLowerCase();
   const head = `<section class="bw-card bw-h"><span class="chip" style="--c:${planSlot(2)}">${ic(patIco(d.ico), 22)}</span><div><p class="bw-k">Tagihan patungan dari ${esc(d.owner)}</p><h1>${esc(d.svc)}</h1><p class="muted">Bagian ${esc(d.person)}: <b>${fmtRp(d.share)}</b> per periode (${esc(per)})</p></div></section>`;
@@ -11793,6 +11823,8 @@ document.addEventListener('change', async e => {
 });
 Object.assign(ACT, {
   'bw-aopen'() { S.bw.aopen = true; },
+  'bw-skip'() { S.bw.t0 = Date.now() - 20000; const e = $('#bw-intro'); if (e) e.outerHTML = bwSaku(); },
+  'bw-replay'() { S.bw.t0 = Date.now(); const e = $('#bw-intro'); if (e) e.outerHTML = bwSaku(); },
   'bw-q'(el) {
     const d = S.bw.d, m = Number(el.dataset.v) || 0, n = patNowN(), base0 = d.due.map(x => x.k);
     S.bw.sel = base0.concat(m ? d.ahead.filter(x => patMonN(x.k) <= n + m).map(x => x.k) : []); S.bw.aopen = true; S.bw.note = ($('#bw-note') || {}).value || ''; bwPaint();

@@ -1,8 +1,8 @@
 {
- "version": "1.20.0",
- "build": 34,
+ "version": "1.20.1",
+ "build": 35,
  "date": "2026-11-25",
  "notes": [
-  "Patungan: tagih teman untuk IndiHome, Netflix, dan layanan digital lain. Unggah bukti bayar Anda dulu, kirim tautan lewat WhatsApp, teman mengunggah bukti transfer sendiri, termasuk bayar sekaligus beberapa periode (bulanan sampai tahunan)."
+  "Patungan tampil lebih ringkas: ringkasan satu panel, bar progres bayar per periode, jatuh tempo berikutnya, dan status tiap teman lebih jelas."
  ]
 }
