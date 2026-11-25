@@ -38,5 +38,5 @@ jobs:
         if: env.SUPABASE_DB_PASSWORD != ''
         continue-on-error: true
         run: |
-          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
-          supabase db push --password "$SUPABASE_DB_PASSWORD" --include-all --yes
+          supabase link --project-ref "$PROJECT_REF"
+          supabase db push --remote --include-all --yes
