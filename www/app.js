@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.17.0', APP_BUILD = 30;
+const APP_VERSION = '1.18.0', APP_BUILD = 31;
 const CHANGELOG = [
+  { v: '1.18.0', d: '2026-11-25', items: ['Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar.'] },
   { v: '1.17.0', d: '2026-11-25', items: ['Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya.'] },
   { v: '1.16.0', d: '2026-11-25', items: ['Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu.'] },
   { v: '1.15.2', d: '2026-11-25', items: ['Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah.'] },
@@ -2162,6 +2163,154 @@ function showTip2(h) {
   tip.style.left = Math.max(half, Math.min(br.width - half, hr.left - br.left + hr.width / 2)) + 'px'; tip.style.top = '96px';
 }
 
+/* ---------- Laporan beberapa periode (6 bulan sampai 3 tahun) ---------- */
+const REP_SPANS = [[1, '1 periode'], [6, '6 bulan'], [12, '1 tahun'], [24, '2 tahun'], [36, '3 tahun']];
+const spanName = n => (n === 6 ? '6 BULAN' : n === 12 ? '1 TAHUN' : n === 24 ? '2 TAHUN' : n === 36 ? '3 TAHUN' : n + ' PERIODE');
+function rangeModel(list, A, n, meta) {
+  meta = meta || {}; if (meta.settings) setCycleDay(meta.settings.budgetDay);
+  const now = meta.now || new Date(), per = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const a = shiftAnchor('month', A, -i), rg = rangeFor('month', a);
+    per.push({ a, rg, s: ymd(rg.start), e: ymd(rg.end), in: 0, out: 0, nIn: 0, nOut: 0, label: CYCLE.day === 1 ? MONTHS_S[rg.start.getMonth()] + ' ' + String(rg.start.getFullYear()).slice(2) : cycleName(rg, false) });
+  }
+  const s = per[0].s, e = per[n - 1].e, items = list.filter(t => t.date >= s && t.date <= e && !isXfer(t));
+  const pk = { setor: 0, tarik: 0, hasil: 0 };
+  list.forEach(t => { if (t.date < s || t.date > e) return; const p = potOf(t); if (p) pk[p.k] += Number(t.amount) || 0; });
+  items.forEach(t => {
+    for (let i = 0; i < n; i++) if (t.date >= per[i].s && t.date <= per[i].e) { const a = Number(t.amount) || 0; if (t.type === 'in') { per[i].in += a; per[i].nIn++; } else { per[i].out += a; per[i].nOut++; } break; }
+  });
+  per.forEach(r => { r.net = r.in - r.out; r.rate = r.in > 0 ? r.net / r.in * 100 : null; });
+  const tin = per.reduce((a, r) => a + r.in, 0), tout = per.reduce((a, r) => a + r.out, 0);
+  const first = per.findIndex(r => r.nIn + r.nOut > 0), act = first < 0 ? [] : per.slice(first), withOut = act.filter(r => r.out > 0);
+  const earliest = list.reduce((m, t) => (t.date && (!m || t.date < m) ? t.date : m), '');
+  const withPct = (rows, tot) => rows.map(r => Object.assign({ label: catOf(r.id).label, pct: tot > 0 ? r.v / tot * 100 : 0 }, r));
+  const blocks = []; if (n >= 24) for (let b = 0; b < Math.floor(n / 12); b++) { const seg = per.slice(b * 12, b * 12 + 12); blocks.push({ label: seg[0].label + ' – ' + seg[seg.length - 1].label, in: seg.reduce((a, r) => a + r.in, 0), out: seg.reduce((a, r) => a + r.out, 0) }); }
+  blocks.forEach(b => { b.net = b.in - b.out; });
+  return {
+    user: meta.user || '', now, n, per, s, e, items, tin, tout, net: tin - tout, rate: tin > 0 ? (tin - tout) / tin * 100 : null,
+    label: rangeLabel('month', per[0].rg, per[0].a) + ' – ' + rangeLabel('month', per[n - 1].rg, per[n - 1].a), periodName: spanName(n),
+    nIn: items.filter(t => t.type === 'in').length, nOut: items.filter(t => t.type === 'out').length, actN: act.length,
+    avgOut: act.length ? tout / act.length : 0, avgIn: act.length ? tin / act.length : 0,
+    hi: withOut.slice().sort((a, b) => b.out - a.out)[0] || null, lo: withOut.slice().sort((a, b) => a.out - b.out)[0] || null, best: act.slice().sort((a, b) => b.net - a.net)[0] || null,
+    outCats: withPct(catTotals(items, 'out'), tout), inCats: withPct(catTotals(items, 'in'), tin), blocks, pocket: pk,
+    earliest, partial: !!earliest && earliest > s, biggest: items.filter(t => t.type === 'out').sort((a, b) => b.amount - a.amount).slice(0, 10), saldo: fundOf(list).saldo
+  };
+}
+function drawPeriodBars(p, x, y, w, h, per) {
+  const pl = 40, pw = w - pl, maxV = Math.max(1, ...per.map(b => Math.max(b.in, b.out))), top = niceMax(maxV), n = per.length, slot = pw / n, bw = Math.max(1.6, Math.min(9, (slot - 3) / 2));
+  const yv = v => y + h - v / top * h, every = n <= 12 ? 1 : n <= 24 ? 2 : 3;
+  [0, top / 2, top].forEach(v => {
+    p.line(x + pl, yv(v), x + w, yv(v), { color: v === 0 ? PC.line2 : PC.line, lw: v === 0 ? 0.8 : 0.5 });
+    p.text(v === 0 ? '0' : fmtCompact(v), x + pl - 6, yv(v) + 2.8, { size: 7, color: PC.ink3, align: 'r' });
+  });
+  per.forEach((b, i) => {
+    const cx = x + pl + slot * i + slot / 2;
+    if (b.out > 0) p.rect(cx - bw - 0.6, yv(b.out), bw, y + h - yv(b.out), { fill: PC.outBar, r: Math.min(2, bw / 2) });
+    if (b.in > 0) p.rect(cx + 0.6, yv(b.in), bw, y + h - yv(b.in), { fill: PC.inBar, r: Math.min(2, bw / 2) });
+    if ((n - 1 - i) % every === 0) p.text(b.label, cx, y + h + 12, { size: 6.4, color: PC.ink3, align: 'c' });
+  });
+}
+function buildRangePdf(M) {
+  const doc = new PdfDoc(), W = doc.W, L = 40, R = W - 40, CW = R - L, BOT = 792;
+  doc.info = { title: 'Laporan Keuangan ' + M.label, author: M.user };
+  let p = doc.addPage(), y = 0;
+  const hhmm = pad(M.now.getHours()) + '.' + pad(M.now.getMinutes());
+  p.rect(0, 0, W, 108, { fill: PC.white });
+  p.image(L, 28, 120, 120 * SAKU_LOGO.h / SAKU_LOGO.w);
+  p.text('Laporan Keuangan', L, 94, { size: 13, bold: true, color: PC.deep });
+  p.text(M.user, L + 124, 94, { size: 9.5, color: PC.ink3 });
+  p.text('REKAP ' + M.periodName, R, 44, { size: 7.5, bold: true, color: PC.accent, align: 'r', spacing: 1.2 });
+  p.text(M.label, R, 64, { size: fitSize(M.label, 330, 15, true, 9.5), bold: true, color: PC.deep, align: 'r' });
+  p.text('Dibuat ' + fmtDateLong(M.now) + ', ' + hhmm, R, 82, { size: 8.5, color: PC.ink3, align: 'r' });
+  p.rect(0, 108, W * 0.62, 4, { fill: '#0B5BEF' }); p.rect(W * 0.62, 108, W * 0.38, 4, { fill: '#22C08A' });
+  y = 138;
+  function miniHead() { p.image(L, 22, 52, 52 * SAKU_LOGO.h / SAKU_LOGO.w); p.text('Laporan ' + M.label, R, 36, { size: 9, color: PC.ink3, align: 'r' }); p.line(L, 46, R, 46, { color: PC.line }); y = 70; }
+  function ensure(h) { if (y + h > BOT) { p = doc.addPage(); miniHead(); } }
+  const sIn = n => n > 0 ? ['+' + fmtRp(n), PC.inC] : '-', sOut = n => n > 0 ? ['-' + fmtRp(n), PC.outC] : '-', sNet = n => n < 0 ? ['(' + fmtRp(Math.abs(n)) + ')', PC.outC] : n === 0 ? '-' : fmtRp(n);
+  function section(title, right) { p.rect(L, y - 9, 3, 12, { fill: PC.accent, r: 1.5 }); p.text(title, L + 10, y, { size: 11.5, bold: true, color: PC.ink }); if (right) p.text(right, R, y, { size: 8.5, color: PC.ink3, align: 'r' }); y += 18; }
+  const cw = (CW - 30) / 4, ch = 64, rr0 = n => fmtRp(Math.round(n));
+  [['PEMASUKAN', fmtRp(M.tin), M.nIn + ' catatan masuk', PC.inBar], ['PENGELUARAN', fmtRp(M.tout), M.nOut + ' catatan keluar', PC.outBar],
+    ['SELISIH', (M.net > 0 ? '+' : '') + fmtRp(M.net), M.net >= 0 ? 'Surplus' + (M.tin > 0 ? ' ' + fmtPct(M.net / M.tin * 100) + ' dari pemasukan' : '') : 'Defisit', M.net >= 0 ? PC.inBar : PC.outBar],
+    ['TINGKAT TABUNGAN', M.rate == null ? '-' : fmtPct(M.rate), M.rate == null ? 'Belum ada pemasukan' : M.rate >= 0 ? 'dari pemasukan' : 'pengeluaran melebihi pemasukan', M.rate == null ? PC.line2 : M.rate >= 0 ? PC.inBar : PC.outBar]].forEach((c, i) => {
+    const x = L + i * (cw + 10);
+    p.rect(x, y, cw, ch, { fill: PC.white, stroke: PC.line, lw: 0.8, r: 10 }); p.rect(x + 12, y + 14, 14, 3, { fill: c[3], r: 1.5 });
+    p.text(c[0], x + 12, y + 29, { size: 6.8, bold: true, color: PC.ink3, spacing: 0.7 });
+    p.text(c[1], x + 12, y + 45, { size: fitSize(c[1], cw - 22, 13.5, true, 8.5), bold: true, color: PC.ink });
+    p.text(fitText(c[2], cw - 22, 6.8, false), x + 12, y + 57, { size: 6.8, color: PC.ink3 });
+  });
+  y += ch + 26;
+  const tiles = [['PERIODE TERBOROS', M.hi ? M.hi.label : '-', M.hi ? fmtRp(M.hi.out) : ''], ['PERIODE TERHEMAT', M.lo ? M.lo.label : '-', M.lo ? fmtRp(M.lo.out) : ''],
+    ['SURPLUS TERBESAR', M.best && M.best.net > 0 ? M.best.label : '-', M.best && M.best.net > 0 ? fmtRp(M.best.net) : ''], ['RATA-RATA KELUAR', M.actN ? rr0(M.avgOut) : '-', 'per periode · masuk ' + (M.actN ? rr0(M.avgIn) : '-')]];
+  tiles.forEach((c, i) => {
+    const x = L + i * (cw + 10);
+    p.rect(x, y - 4, cw, 52, { fill: PC.sunken, r: 8 });
+    p.text(c[0], x + 10, y + 10, { size: 6.4, bold: true, color: PC.ink3, spacing: 0.6 });
+    p.text(fitText(c[1], cw - 18, 11, true), x + 10, y + 26, { size: fitSize(c[1], cw - 18, 11, true, 8), bold: true, color: PC.ink });
+    p.text(fitText(c[2], cw - 18, 6.6, false), x + 10, y + 39, { size: 6.6, color: PC.ink3 });
+  });
+  y += 66;
+  if (M.partial) { p.text(fitText('Transaksi di akun ini baru tercatat mulai ' + fmtDateLong(parseYmd(M.earliest)) + ', jadi periode sebelumnya kosong.', CW, 7.8, false), L, y + 6, { size: 7.8, color: PC.warn }); y += 30; }
+  if (M.pocket.setor > 0 || M.pocket.tarik > 0 || M.pocket.hasil > 0) {
+    const pk = M.pocket, pr = []; if (pk.setor > 0) pr.push('setor ' + fmtRp(pk.setor)); if (pk.tarik > 0) pr.push('tarik ' + fmtRp(pk.tarik)); if (pk.hasil > 0) pr.push('bunga/hasil ' + fmtRp(pk.hasil));
+    p.text(fitText('Tabungan & investasi: ' + pr.join(' \xB7 ') + '. Bukan pengeluaran atau pemasukan, hanya menggeser saldo.', CW, 7.6, false), L, y + 6, { size: 7.6, color: PC.ink3 }); y += 22;
+  }
+  if (!M.items.length) { p.rect(L, y, CW, 70, { fill: PC.sunken, r: 12 }); p.text('Belum ada transaksi pada rentang ini.', W / 2, y + 40, { size: 11, bold: true, color: PC.ink2, align: 'c' }); y += 90; }
+  else {
+    ensure(190); section('Arus kas per periode', null);
+    const lgx = R - 130; p.rect(lgx, y - 26, 8, 8, { fill: PC.inBar, r: 2 }); p.text('Pemasukan', lgx + 12, y - 18, { size: 8, color: PC.ink2 });
+    p.rect(lgx + 66, y - 26, 8, 8, { fill: PC.outBar, r: 2 }); p.text('Pengeluaran', lgx + 78, y - 18, { size: 8, color: PC.ink2 });
+    drawPeriodBars(p, L, y + 4, CW, 100, M.per); y += 100 + 42;
+    if (M.blocks.length) {
+      ensure(40 + 20 * (M.blocks.length + 1)); section('Ringkasan per tahun', null);
+      table(p, L, y, CW, [['Rentang', 0.34, 'l'], ['Pemasukan', 0.22, 'r'], ['Pengeluaran', 0.22, 'r'], ['Selisih', 0.22, 'r']], M.blocks.map(b => [b.label, sIn(b.in), sOut(b.out), sNet(b.net)]), null, 20);
+      y += 20 * (M.blocks.length + 1) + 24;
+    }
+    ensure(60); section('Rincian per periode', M.per.length + ' periode');
+    const cols = [['Periode', 0.2, 'l'], ['Pemasukan', 0.2, 'r'], ['Pengeluaran', 0.2, 'r'], ['Selisih', 0.2, 'r'], ['Tabungan', 0.2, 'r']];
+    const rows = M.per.map(r => [r.label, sIn(r.in), sOut(r.out), sNet(r.net), r.rate == null ? '-' : fmtPct(r.rate)]), foot = [['Total', sIn(M.tin), sOut(M.tout), sNet(M.net), M.rate == null ? '-' : fmtPct(M.rate)]];
+    let i = 0;
+    while (i < rows.length) {
+      const room = Math.floor((BOT - y) / 19) - 2;
+      if (room < 4) { p = doc.addPage(); miniHead(); continue; }
+      const chunk = rows.slice(i, i + room), last = i + chunk.length >= rows.length;
+      table(p, L, y, CW, cols, chunk, last ? foot : null, 19); y += 19 * (chunk.length + 1 + (last ? 1 : 0)) + 14; i += chunk.length;
+      if (!last) { p = doc.addPage(); miniHead(); }
+    }
+    const catList = (title, rowsC, tot, color, max) => {
+      const top = rowsC.slice(0, max); if (!top.length) return;
+      ensure(40 + top.length * 21); section(title, 'Total ' + fmtRp(tot));
+      const mx = Math.max(1, ...top.map(r => r.v));
+      top.forEach((r, k) => {
+        const ry = y + k * 21 + 8;
+        p.text(fitText(r.label, 150, 9, false), L, ry, { size: 9, color: PC.ink });
+        p.rect(L + 160, ry - 7, 150, 7, { fill: PC.sunken, r: 3.5 }); p.rect(L + 160, ry - 7, Math.max(3, 150 * r.v / mx), 7, { fill: color, r: 3.5 });
+        p.text(fmtRp(r.v), R - 52, ry, { size: 8.5, color: PC.ink2, align: 'r' }); p.text(fmtPct(r.pct), R, ry, { size: 9, bold: true, color: PC.ink, align: 'r' });
+        if (k < top.length - 1) p.line(L, ry + 7, R, ry + 7, { color: PC.line, lw: 0.5 });
+      });
+      y += top.length * 21 + 22;
+    };
+    catList('Pengeluaran per kategori', M.outCats, M.tout, PC.outBar, 10);
+    catList('Pemasukan per kategori', M.inCats, M.tin, PC.inBar, 5);
+    if (M.biggest.length) {
+      ensure(60 + 19 * 3); section('Pengeluaran terbesar', null);
+      const bc = [['Tanggal', 0.18, 'l'], ['Kategori', 0.32, 'l'], ['Catatan', 0.28, 'l'], ['Jumlah', 0.22, 'r']];
+      const br = M.biggest.map(t => [fmtDM(parseYmd(t.date)) + ' ' + parseYmd(t.date).getFullYear(), catOf(t.cat).label, t.note || '-', ['-' + fmtRp(t.amount), PC.outC]]);
+      let j = 0;
+      while (j < br.length) {
+        const room = Math.floor((BOT - y) / 19) - 1; if (room < 3) { p = doc.addPage(); miniHead(); continue; }
+        const chunk = br.slice(j, j + room); table(p, L, y, CW, bc, chunk, null, 19); y += 19 * (chunk.length + 1) + 12; j += chunk.length;
+        if (j < br.length) { p = doc.addPage(); miniHead(); }
+      }
+    }
+  }
+  const nPg = doc.pages.length;
+  doc.pages.forEach((pg, k) => {
+    pg.line(L, 812, R, 812, { color: PC.line, lw: 0.6 });
+    pg.text('SaKu v' + APP_VERSION + ' \xB7 ' + M.user + ' \xB7 ' + M.label + ' \xB7 ' + parseYmd(CHANGELOG[0].d).getFullYear(), L, 826, { size: 7.5, color: PC.ink3 });
+    pg.text('Halaman ' + (k + 1) + ' dari ' + nPg, R, 826, { size: 7.5, color: PC.ink3, align: 'r' });
+  });
+  return doc.build();
+}
 /* ---------- Unduhan PDF & Excel ---------- */
 const slugF = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 async function saveFile(name, data) {
@@ -2173,8 +2322,9 @@ async function exportPdf() {
   if (S.busy.pdf) return; S.busy.pdf = true;
   try {
     const rp = S.view === 'laporan' && S.rep ? S.rep : { period: S.period, anchor: S.anchor };
-    const M = periodModel(S.tx, rp.period, rp.anchor, { user: me().name, budget: S.settings && S.settings.budget, settings: S.settings, accts: accList(), plan: S.plan, now: new Date() });
-    await saveFile('laporan-keuangan-' + slugF(M.label) + '.pdf', buildReportPdf(M));
+    const sp = rp.period === 'month' && S.repSpan > 1 ? S.repSpan : 1, meta = { user: me().name, budget: S.settings && S.settings.budget, settings: S.settings, accts: accList(), plan: S.plan, now: new Date() };
+    if (sp > 1) { const R2 = rangeModel(S.tx, rp.anchor, sp, meta); await saveFile('laporan-keuangan-' + sp + '-bulan-' + slugF(R2.label) + '.pdf', buildRangePdf(R2)); }
+    else { const M = periodModel(S.tx, rp.period, rp.anchor, meta); await saveFile('laporan-keuangan-' + slugF(M.label) + '.pdf', buildReportPdf(M)); }
   } catch (e) { toast('Laporan gagal dibuat.'); }
   S.busy.pdf = false;
 }
@@ -6629,6 +6779,30 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar.": "The monthly PDF report can now cover more than one period: 6 months, 1 year, 2 years or 3 years. It includes totals, cash flow per period, a per-period breakdown, top categories and largest expenses.",
+  "Lama laporan": "Report length",
+  "1 periode": "1 period",
+  "6 bulan": "6 months",
+  "1 tahun": "1 year",
+  "2 tahun": "2 years",
+  "3 tahun": "3 years",
+  "Arus kas per periode": "Cash flow per period",
+  "Rincian per periode": "Breakdown per period",
+  "Ringkasan per tahun": "Summary per year",
+  "Rentang": "Range",
+  "PERIODE TERBOROS": "HIGHEST SPENDING",
+  "PERIODE TERHEMAT": "LOWEST SPENDING",
+  "SURPLUS TERBESAR": "LARGEST SURPLUS",
+  "RATA-RATA KELUAR": "AVG. SPENDING",
+  "RATA-RATA MASUK": "AVG. INCOME",
+  "per periode": "per period",
+  "Pemasukan per kategori": "Income by category",
+  "Transaksi di akun ini baru tercatat mulai {1}, jadi periode sebelumnya kosong.": "Transactions in this account start on {1}, so earlier periods are empty.",
+  "{1} transaksi dalam rentang ini": "{1} transactions in this range",
+  "Ringkasan beberapa periode: total, arus kas tiap periode, kategori terbesar, dan pengeluaran terbesar. Pilih lama laporan di bawah.": "A multi-period summary: totals, cash flow per period, top categories and largest expenses. Choose the report length below.",
+  "bisa banyak periode": "can span many periods",
+  "Laporan PDF bisa dibuat untuk 6 bulan sampai 3 tahun, bukan hanya satu periode.": "The PDF report can now cover 6 months up to 3 years, not just one period.",
+  "Pilih Bulanan di Laporan, lalu pilih lama laporan: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun.": "Choose Monthly in Reports, then pick the length: 6 months, 1 year, 2 years or 3 years.",
   "Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya.": "Category budgets are now set per parent category (for example Food & Drink, Vehicles). Spending from all subcategories is added to its parent, and the Budget and Analysis pages show the parent with the largest budget share and spending. Existing budgets are merged into their parents automatically.",
   "Kategori induk": "Parent category",
   "Porsi budget terbesar": "Largest budget share",
@@ -9305,7 +9479,7 @@ function anaRinciHTML() {
   const dash = S.wide
     ? `<div class="dash two"><div class="col">${trend}${cmp}${rinci}${txc}</div><div class="col">${acm}${pot}${avg}${spend}${income}</div></div>`
     : `<div class="dash">${acm}${pot}${trend}${cmp}${avg}${spend}${income}${rinci}${txc}</div>`;
-  const dl = S.downloads ? `<div class="dl-row"><span class="lbl">Unduh</span><button class="btn btn-ghost btn-sm" data-act="dl-pdf">${ic('file', 16)} Laporan PDF</button><button class="btn btn-ghost btn-sm" data-act="dl-xlsx">${ic('table', 16)} Excel + grafik</button></div>` : '';
+  const dl = S.downloads ? `<div class="dl-row"><span class="lbl">Unduh</span><button class="btn btn-ghost btn-sm" data-act="dl-pdf">${ic('file', 16)} Laporan PDF</button><button class="btn btn-ghost btn-sm" data-act="dl-xlsx">${ic('table', 16)} Excel + grafik</button></div>${P === 'month' ? `<div class="dl-row dl-span"><span class="lbl">Lama laporan</span><div class="seg rep-span" role="group" aria-label="Lama laporan">${REP_SPANS.map(x => `<button type="button" data-act="rep-span" data-v="${x[0]}" aria-pressed="${(S.repSpan || 1) === x[0]}">${x[1]}</button>`).join('')}</div></div>` : ''}` : '';
   return homeBarHTML(C) + dl + dash;
 }
 
@@ -9338,7 +9512,7 @@ Object.assign(ACT, {
    Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
    Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
    Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
-const WN_VER = '1.17';
+const WN_VER = '1.18';
 const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
 function wnSeen() {
   if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
@@ -9356,18 +9530,18 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
   if (i === 1) {
-    const it = [['Makan & Minum', '82%', 1], ['Kendaraan Pribadi', '46%', 0], ['Rumah & Tagihan', '30%', 0]];
-    return `<div class="wn-illo" aria-hidden="true"><div class="wn7-b wn-up"${wnD(.1)}>${it.map(x => `<div class="${x[2] ? 'top' : ''}"><b><span>${x[0]}</span><span>${x[1]}</span></b><i style="--w:${x[1]}"></i></div>`).join('')}</div></div>`;
+    const ch = ['1 periode', '6 bulan', '1 tahun', '2 tahun', '3 tahun'], hs = [40, 55, 38, 62, 70, 52, 80, 66, 90, 58, 74, 96];
+    return `<div class="wn-illo" aria-hidden="true"><div class="wn8-c wn-up"${wnD(.1)}><div class="ch">${ch.map((x, j) => `<span class="${j === 2 ? 'on' : ''}">${x}</span>`).join('')}</div><div class="br">${hs.map(h => `<i style="--h:${h}%"></i>`).join('')}</div></div></div>`;
   }
   return '';
 }
 const WN_TXT_M = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Budget per kategori', b: 'kini per induk', p: 'Budget kini dibuat per kategori induk dan dijumlahkan dari semua subkategorinya.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Budget per kategori', b: 'kini per induk', p: 'Di Anggaran dan Analisis, lihat induk mana yang porsinya paling besar.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Laporan', b: 'bisa banyak periode', p: 'Laporan PDF bisa dibuat untuk 6 bulan sampai 3 tahun, bukan hanya satu periode.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Laporan', b: 'bisa banyak periode', p: 'Pilih Bulanan di Laporan, lalu pilih lama laporan: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun.', cta: 'Mulai jelajahi' }
 ];
 const WN_TXT_W = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Budget per kategori', b: 'kini per induk', p: 'Budget kini dibuat per kategori induk dan dijumlahkan dari semua subkategorinya.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Budget per kategori', b: 'kini per induk', p: 'Di Anggaran dan Analisis, lihat induk mana yang porsinya paling besar.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Laporan', b: 'bisa banyak periode', p: 'Laporan PDF bisa dibuat untuk 6 bulan sampai 3 tahun, bukan hanya satu periode.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Laporan', b: 'bisa banyak periode', p: 'Pilih Bulanan di Laporan, lalu pilih lama laporan: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun.', cta: 'Mulai jelajahi' }
 ];
 let WN_TXT = WN_TXT_M;
 const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
@@ -11257,7 +11431,7 @@ function repNavHTML(act, label, canNext, isCur) {
 }
 function laporanHTML() {
   const R = repState(), now = startOfDay(new Date()), can = !!S.downloads, any = S.tx.length > 0;
-  const rg = rangeFor(R.period, R.anchor), s = ymd(rg.start), e = ymd(rg.end), n = S.tx.filter(t => t.date >= s && t.date <= e).length;
+  const rg = rangeFor(R.period, R.anchor), sp = R.period === 'month' && S.repSpan > 1 ? S.repSpan : 1, rg0 = sp > 1 ? rangeFor('month', shiftAnchor('month', R.anchor, -(sp - 1))) : rg, s = ymd(rg0.start), e = ymd(rg.end), n = S.tx.filter(t => t.date >= s && t.date <= e).length;
   const canNext = rangeFor(R.period, shiftAnchor(R.period, R.anchor, 1)).start <= now, isCur = rg.start <= now && now <= rg.end;
   const xr = rangeFor('month', R.xa), xNext = rangeFor('month', shiftAnchor('month', R.xa, 1)).start <= now, xCur = xr.start <= now && now <= xr.end;
   const off = can && any ? '' : ' disabled';
@@ -11265,8 +11439,9 @@ function laporanHTML() {
   return `<div class="page-head"><div><p class="hello">Unduh laporan keuangan Anda</p><h1>Laporan</h1></div></div>${note}<div class="stack">
     <section class="card rep-card" id="rep-pdf"><h2 class="t">${ic('file', 18)} Laporan PDF</h2><p class="rep-desc">Ringkasan satu periode: kesehatan keuangan, budget per kategori, rekening, rencana, dan daftar transaksi. Cocok untuk dibaca atau dicetak.</p>
       <div class="seg" role="group" aria-label="Periode laporan">${[['day', 'Harian'], ['week', 'Mingguan'], ['month', 'Bulanan']].map(p => `<button type="button" data-act="rep-period" data-v="${p[0]}" aria-pressed="${R.period === p[0]}">${p[1]}</button>`).join('')}</div>
-      ${repNavHTML('rep-shift', rangeLabel(R.period, rg, R.anchor), canNext, isCur)}
-      <p class="rep-note" id="rep-count">${n} transaksi di periode ini</p>
+      ${R.period === 'month' ? `<p class="rep-lbl">Lama laporan</p><div class="seg rep-span" role="group" aria-label="Lama laporan">${REP_SPANS.map(x => `<button type="button" data-act="rep-span" data-v="${x[0]}" aria-pressed="${sp === x[0]}">${x[1]}</button>`).join('')}</div>` : ''}
+      ${repNavHTML('rep-shift', sp > 1 ? rangeLabel('month', rg0, shiftAnchor('month', R.anchor, -(sp - 1))) + ' – ' + rangeLabel('month', rg, R.anchor) : rangeLabel(R.period, rg, R.anchor), canNext, isCur)}
+      <p class="rep-note" id="rep-count">${n} transaksi ${sp > 1 ? 'dalam rentang ini' : 'di periode ini'}</p>
       <div class="btn-row"><button type="button" class="btn btn-primary" data-act="dl-pdf"${off}>${ic('download', 18)} Unduh PDF</button></div></section>
     <section class="card rep-card" id="rep-xlsx"><h2 class="t">${ic('table', 18)} Excel + Grafik</h2><p class="rep-desc">Seluruh catatan dengan 8 grafik dan rumus, plus lembar Transaksi, Rekening, Budget Kategori, dan Rencana. Pilih bulan yang menjadi sorotan laporan.</p>
       ${repNavHTML('rep-xshift', rangeLabel('month', xr, R.xa), xNext, xCur)}
@@ -11280,6 +11455,7 @@ VIEWS.laporan = {
   update() { $('#view').innerHTML = laporanHTML(); }
 };
 const repShift = (key, P, d) => { const R = repState(), now = startOfDay(new Date()); if (d === 0) R[key] = now; else { const nx = shiftAnchor(P, R[key], d); if (d < 0 || rangeFor(P, nx).start <= now) R[key] = nx; } VIEWS.laporan.update(); };
+ACT['rep-span'] = el => { S.repSpan = Number(el.dataset.v) || 1; VIEWS[S.view === 'laporan' ? 'laporan' : 'rekap'].update(); };
 ACT['rep-period'] = el => { const R = repState(); R.period = el.dataset.v; R.anchor = startOfDay(new Date()); VIEWS.laporan.update(); };
 ACT['rep-shift'] = el => repShift('anchor', repState().period, Number(el.dataset.d));
 ACT['rep-xshift'] = el => repShift('xa', 'month', Number(el.dataset.d));

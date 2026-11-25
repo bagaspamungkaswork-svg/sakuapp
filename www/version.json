@@ -1,8 +1,8 @@
 {
- "version": "1.17.0",
- "build": 30,
+ "version": "1.18.0",
+ "build": 31,
  "date": "2026-11-25",
  "notes": [
-  "Budget per kategori kini berdasarkan kategori induk (misalnya Makan & Minum, Kendaraan Pribadi). Pengeluaran semua subkategori dijumlahkan ke induknya, dan halaman Anggaran serta Analisis menampilkan induk dengan porsi budget dan pengeluaran terbesar. Budget lama otomatis digabung ke induknya."
+  "Laporan PDF bulanan kini bisa mencakup lebih dari satu periode: 6 bulan, 1 tahun, 2 tahun, atau 3 tahun. Isinya ringkasan total, arus kas per periode, rincian per periode, kategori terbesar, dan pengeluaran terbesar."
  ]
 }
