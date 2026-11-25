@@ -1,8 +1,8 @@
 {
- "version": "1.15.0",
- "build": 26,
+ "version": "1.15.1",
+ "build": 27,
  "date": "2026-11-25",
  "notes": [
-  "Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan"
+  "Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori."
  ]
 }

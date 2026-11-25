@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.15.0', APP_BUILD = 26;
+const APP_VERSION = '1.15.1', APP_BUILD = 27;
 const CHANGELOG = [
+  { v: '1.15.1', d: '2026-11-25', items: ['Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori.'] },
   { v: '1.15.0', d: '2026-11-25', items: ['Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan'] },
   { v: '1.14.2', d: '2026-11-25', items: ['Penulisan \"templat\" diperbaiki menjadi \"template\" di seluruh aplikasi'] },
   { v: '1.14.1', d: '2026-11-25', items: ['Kartu Tunai / Tanpa rekening kini punya tombol Jadikan rekening asli: dibuat rekening Tunai dan semua transaksi tanpa rekening dipindahkan ke sana, sehingga saldonya bisa diubah, dipindah, dan dijadikan bawaan'] },
@@ -937,6 +938,7 @@ function budgetModel(list, A, settings, now) {
     const a = Number(t.amount) || 0, c = cashOf(t); saldo += c;
     if (t.date < ms) open += c;
     else if (t.date <= me) {
+      if (accXf(t)) continue;
       const p = potOf(t) || debtOf(t);
       if (p) { if (p.k === 'setor') setorM += a; else if (p.k === 'tarik') tarikM += a; }
       else if (t.type === 'in') inM += a; else { outM += a; dayOut[t.date] = (dayOut[t.date] || 0) + a; }
@@ -980,7 +982,7 @@ function catBudgetModel(list, A, settings, now) {
   settings = settings || {};
   const bm = budgetModel(list, A, settings, now), cb = settings.catBudgets || {}, rg = cycleOf(A), ms = ymd(rg.start), me = ymd(rg.end), spent = {};
   for (const t of list) {
-    if (t.type === 'in' || t.date < ms || t.date > me || potOf(t) || debtOf(t)) continue;
+    if (t.type === 'in' || t.date < ms || t.date > me || potOf(t) || debtOf(t) || accXf(t)) continue;
     spent[t.cat] = (spent[t.cat] || 0) + (Number(t.amount) || 0);
   }
   const base = bm.base, rows = []; let alloc = 0, inBud = 0;
@@ -6603,6 +6605,7 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori.": "Transfers between accounts and e-wallet top-ups are no longer counted as spending, so they no longer use up the monthly budget or category budgets.",
   "Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan": "Bright blue intro, Account Master Data as a table with search and 5 accounts per page in the Admin submenu, tidier projection chart labels, new Annual Leave and Long Leave Incentive categories, the footer Sign out button removed, and the footer now shows only the update year",
   "Insentif Cuti Besar": "Long Leave Incentive",
   "Insentif Cuti Tahunan": "Annual Leave Incentive",
