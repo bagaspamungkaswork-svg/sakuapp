@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.15.2', APP_BUILD = 28;
+const APP_VERSION = '1.16.0', APP_BUILD = 29;
 const CHANGELOG = [
+  { v: '1.16.0', d: '2026-11-25', items: ['Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu.'] },
   { v: '1.15.2', d: '2026-11-25', items: ['Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah.'] },
   { v: '1.15.1', d: '2026-11-25', items: ['Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori.'] },
   { v: '1.15.0', d: '2026-11-25', items: ['Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan'] },
@@ -3150,7 +3151,19 @@ function leafGroup(view) {
 /* Submenu satu grup: daftar halaman daun, berurutan menurut LEAF */
 function leavesOf(g) { return Object.keys(LEAF).filter(k => LEAF[k].g === g && LEAF[k].sub); }
 /* Gaya submenu dalam halaman berbeda per grup: Tagihan = segmen ikon, Rencana = kartu ikon yang bisa digeser, Kurs = dua kartu besar */
-const SUBSTYLE = { tagihan: 'seg', rencana: 'rail', kurs: 'big' };
+const SUBSTYLE = { tagihan: 'seg', rencana: 'tab', kurs: 'big' };
+/* Angka status singkat untuk submenu Rencana */
+function subVal(k) {
+  if (!S.txLoaded || !S.plan) return '';
+  const n = c => ((S.plan && S.plan[c]) || []).length;
+  if (k === 'anggaran') { const bm = curBudget(); return bm.cap > 0 ? Math.round(bm.used) + '% terpakai' : 'Belum diatur'; }
+  if (k === 'target') return n('target') ? n('target') + ' target' : 'Belum ada';
+  if (k === 'simpanan') { const t = pocketModel(S.tx, new Date(), 1).total; return t > 0 ? rpC(t) : 'Belum ada'; }
+  if (k === 'ramean') return n('ramean') ? n('ramean') + ' acara' : 'Belum ada';
+  if (k === 'perjalanan') return n('trip') ? n('trip') + ' rencana' : 'Belum ada';
+  if (k === 'wishlist') { const w = (S.plan.wish || []).filter(x => !x.done).length; return w ? w + ' item' : 'Belum ada'; }
+  return '';
+}
 function subnavHTML(view) {
   const g = leafGroup(view), ls = leavesOf(g); if (ls.length < 2) return '';
   const st = SUBSTYLE[g] || 'pill', cur = view === 'kategori' ? ((S.catView && S.catView.back) || 'rekap') : view;
@@ -3158,6 +3171,7 @@ function subnavHTML(view) {
     const L = LEAF[k], on = k === cur, bd = k === 'jatuh' ? `<span class="nbadge sm" data-due-badge hidden></span>` : '', tn = L.tone ? ' tone-' + L.tone : '';
     const attrs = `type="button" role="tab" data-act="nav" data-v="${k}" aria-selected="${on}"${k === view ? ' aria-current="page"' : ''}`;
     if (st === 'seg' || st === 'rail') return `<button ${attrs} class="sn-i${tn}"><span class="sn-ic">${ic(L.ico || 'list', st === 'seg' ? 20 : 21)}${bd}</span><span class="sn-l">${esc(L.sub)}</span></button>`;
+    if (st === 'tab') return `<button ${attrs} class="sn-i${tn}"><span class="sn-ic">${ic(L.ico || 'list', 18)}</span><span class="sn-l"><b>${esc(L.sub)}</b><small>${esc(subVal(k))}</small></span></button>`;
     if (st === 'big') return `<button ${attrs} class="sn-i${tn}"><span class="sn-top"><span class="sn-ic">${ic(L.ico || 'list', 21)}</span><span class="sn-ck" aria-hidden="true">${ic('check', 13)}</span></span><span class="sn-l"><b>${esc(L.sub)}</b><small>${esc(L.hint || '')}</small></span></button>`;
     return `<button ${attrs}>${esc(L.sub)}${bd}</button>`;
   };
@@ -6606,6 +6620,15 @@ const I18N_EN = {
   "Tenor {1} bulan{2}{3}": "Tenor {1} months{2}{3}",
   "tentang": "about",
   "Tentang aplikasi": "About this app",
+  "Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu.": "A more compact Plan submenu: each item shows a status figure (budget used, number of goals, savings balance and so on). On phones it is a 3-column grid with no swiping; on the web it spans the page and adapts to the number of submenus.",
+  "{1}% terpakai": "{1}% used",
+  "{1} target": "{1} goals",
+  "{1} acara": "{1} events",
+  "{1} rencana": "{1} plans",
+  "{1} item": "{1} items",
+  "Menu Rencana kini menampilkan angka status di tiap submenu, tersusun 3 kolom tanpa perlu digeser.": "The Plan menu now shows a status figure on each submenu, in 3 columns with no swiping.",
+  "Menu Rencana kini menampilkan angka status di tiap submenu, membentang selebar halaman dan menyesuaikan jumlah submenu.": "The Plan menu now shows a status figure on each submenu, spanning the page and adapting to the number of submenus.",
+  "Submenu": "Submenu",
   "Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah.": "The Record by voice box is now centered: the button and the example sentence are centered.",
   "Pindah saldo antar rekening dan isi saldo e-wallet tidak lagi dihitung sebagai pengeluaran, sehingga tidak mengurangi batas anggaran bulanan maupun budget kategori.": "Transfers between accounts and e-wallet top-ups are no longer counted as spending, so they no longer use up the monthly budget or category budgets.",
   "Intro biru cerah, Master Data Akun berbentuk tabel dengan pencarian dan 5 akun per halaman di submenu Admin, label grafik proyeksi dirapikan, kategori Insentif Cuti Besar dan Insentif Cuti Tahunan, tombol Keluar di footer dihapus, dan footer hanya menampilkan tahun pembaruan": "Bright blue intro, Account Master Data as a table with search and 5 accounts per page in the Admin submenu, tidier projection chart labels, new Annual Leave and Long Leave Incentive categories, the footer Sign out button removed, and the footer now shows only the update year",
@@ -9294,7 +9317,7 @@ Object.assign(ACT, {
    Muncul sekali per akun di perangkat ini, sesudah masuk, hanya untuk pembaruan WN_VER. Dilewati atau diselesaikan, tidak muncul lagi.
    Akun yang belum pernah melihat tampilan lama (baru dibuat dan belum menjalani tur) tidak melihatnya.
    Empat layar: SaKu tampil lebih segar, Beranda ringkas, Analisis tajam, Menu tertata. Animasi mati bila perangkat meminta gerak dikurangi. */
-const WN_VER = '1.15';
+const WN_VER = '1.16';
 const wnStoreKey = () => 'saku.wnew.' + WN_VER + '.' + ((S.me && S.me.id) || 'x');
 function wnSeen() {
   if (S.wnMem && S.wnMem[wnStoreKey()]) return true;
@@ -9311,19 +9334,20 @@ const WN_NAVI = (n, on) => `<span class="wn-ni">${on ? `<span class="on">${ic(n,
 
 function wnIllo(i) {
   if (i === 0) return `<div class="wn-illo wn-i0"><div class="wn-fl f1">${WN_FACET('.34', '0')}</div><div class="wn-fl f2">${WN_FACET('0', '.42')}</div><span class="wn-ring"></span><span class="wn-ring r2"></span><div class="wn-logo">${LOGO}</div>${[[6, 18, 18, 0], [82, 8, 14, .5], [88, 66, 22, 1], [3, 78, 12, 1.4], [42, 2, 10, 1.9], [70, 90, 16, .9]].map(a => WN_SPARK(a[0], a[1], a[2], a[3])).join('')}</div>`;
-  if (i === 1) return `<div class="wn-illo" aria-hidden="true"><div class="wn5-sp wn-up"${wnD(.1)}><div class="wn5-lg">${LOGO}</div><small>SELAMAT DATANG DI</small><b>SaKu</b><i></i></div></div>`;
-  const rw = (n, a, b, c) => `<div class="r"><span>${n}</span><b>${a}</b><span>${b}</span><span>${c}</span></div>`;
-  return `<div class="wn-illo" aria-hidden="true"><div class="wn5-tb wn-up"${wnD(.2)}><div class="q">Cari nama, email, telepon</div><div class="r h"><span>NO</span><span>PENGGUNA</span><span>PERAN</span><span>CATATAN</span></div>${rw(1, 'Bagas P.', 'Pembantu', 128)}${rw(2, 'Salma P.', 'Pengguna', 1)}${rw(3, 'Selvi O.', 'Pengguna', 10)}<div class="p"><small>1 sampai 5 dari 7</small><span>1 / 2</span></div></div></div>`;
+  if (i === 1) {
+    const it = [['Anggaran', '34%'], ['Target', '2'], ['Simpanan', 'Rp 4,2 jt'], ['Jajan Ramean', '1'], ['Perjalanan', '-'], ['Wishlist', '3']];
+    if (S.wnWeb) return `<div class="wn-illo" aria-hidden="true"><div class="wn6-t wn-up"${wnD(.1)}>${it.map((x, j) => `<div class="${j === 0 ? 'on' : ''}"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}</div></div>`;
+    return `<div class="wn-illo" aria-hidden="true"><div class="wn6-g wn-up"${wnD(.1)}>${it.map((x, j) => `<div class="${j === 0 ? 'on' : ''}"><i></i><b>${x[0]}</b><span>${x[1]}</span></div>`).join('')}</div></div>`;
+  }
+  return '';
 }
 const WN_TXT_M = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Tampilan', b: 'lebih segar', p: 'Intro biru cerah, label grafik yang lebih rapi, dua kategori pemasukan baru, dan footer yang lebih ringkas.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Intro', b: 'biru cerah', p: 'Layar sambutan kini berwarna biru cerah dengan latar yang lebih hidup.', cta: 'Lanjut' },
-  { chip: 'Perubahan 2', a: 'Master Data', b: 'Akun jadi tabel', p: 'Di menu Admin ada submenu Master Data Akun: tabel dengan pencarian dan filter, 5 akun per halaman. Geser tabel ke samping untuk kolom lain.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi HP', a: 'Rencana', b: 'lebih ringkas', p: 'Submenu Rencana kini menampilkan angka status dan tersusun rapi tanpa perlu digeser.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Rencana', b: 'lebih ringkas', p: 'Menu Rencana kini menampilkan angka status di tiap submenu, tersusun 3 kolom tanpa perlu digeser.', cta: 'Mulai jelajahi' }
 ];
 const WN_TXT_W = [
-  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Tampilan', b: 'lebih segar', p: 'Intro biru cerah, label grafik yang lebih rapi, dua kategori pemasukan baru, dan footer yang lebih ringkas.', cta: 'Lihat yang baru' },
-  { chip: 'Perubahan 1', a: 'Intro', b: 'biru cerah', p: 'Layar sambutan kini berwarna biru cerah dengan latar yang lebih hidup.', cta: 'Lanjut' },
-  { chip: 'Perubahan 2', a: 'Master Data', b: 'Akun jadi tabel', p: 'Di menu Admin ada submenu Master Data Akun: tabel dengan pencarian dan filter, 5 akun per halaman. Klik Berikutnya untuk halaman lain.', cta: 'Mulai jelajahi' }
+  { chip: 'Pembaruan ' + APP_VERSION + ' · Versi web', a: 'Rencana', b: 'lebih ringkas', p: 'Submenu Rencana kini menampilkan angka status dan membentang selebar halaman.', cta: 'Lihat yang baru' },
+  { chip: 'Perubahan 1', a: 'Rencana', b: 'lebih ringkas', p: 'Menu Rencana kini menampilkan angka status di tiap submenu, membentang selebar halaman dan menyesuaikan jumlah submenu.', cta: 'Mulai jelajahi' }
 ];
 let WN_TXT = WN_TXT_M;
 const wnWebNow = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };

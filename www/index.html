@@ -3392,6 +3392,40 @@ body::before { background: radial-gradient(70vmax 38vmax at 105% -6%, color-mix(
 .voice { justify-items: center; text-align: center; }
 .voice-btn { justify-self: center; }
 .voice-txt { text-align: center; }
+
+/* Rencana: submenu ringkas dengan angka status. HP = grid 3 kolom, web = bar selebar halaman */
+.subnav.sn-tab { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; overflow: visible; padding: 0; margin: 0 0 16px; }
+.subnav.sn-tab .sn-i { min-width: 0; min-height: 78px; padding: 10px; border-radius: 16px; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 6px; background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); text-align: left; white-space: normal; font-size: 13px; }
+.subnav.sn-tab .sn-i:hover { background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent); }
+.sn-tab .sn-ic { width: 30px; height: 30px; border-radius: 10px; background: var(--t-bg, var(--chip-bg)); color: var(--t-ink, var(--chip-ink)); flex: none; }
+.sn-tab .sn-l { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sn-tab .sn-l b { font-size: 13px; font-weight: 800; line-height: 1.15; overflow-wrap: anywhere; }
+.sn-tab .sn-l small { font-size: 12px; font-weight: 600; color: var(--ink-2); line-height: 1.2; }
+:root:root .subnav.sn-tab .sn-i[aria-selected="true"] { background: linear-gradient(160deg, #0A55EA, #0848D8); color: #fff; box-shadow: 0 12px 22px -12px rgba(10, 85, 234, .8); }
+:root:root .subnav.sn-tab .sn-i[aria-selected="true"] .sn-ic { background: rgba(255, 255, 255, .2); color: #fff; }
+:root:root .subnav.sn-tab .sn-i[aria-selected="true"] .sn-l small { color: rgba(255, 255, 255, .88); }
+@media (min-width: 900px) {
+  .subnav.sn-tab { display: flex; gap: 4px; padding: 5px; border-radius: 18px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); width: 100%; }
+  .subnav.sn-tab .sn-i { flex: 1 1 0; flex-direction: row; align-items: center; justify-content: center; gap: 10px; min-height: 0; padding: 9px 10px; border-radius: 14px; background: transparent; box-shadow: none; }
+  .subnav.sn-tab .sn-i:hover { background: var(--sunken); box-shadow: none; }
+  .sn-tab .sn-ic { width: 36px; height: 36px; border-radius: 12px; }
+  .sn-tab .sn-l b { font-size: 14px; }
+  :root:root .subnav.sn-tab .sn-i[aria-selected="true"] { background: var(--ink); color: var(--surface); box-shadow: none; }
+  :root:root .subnav.sn-tab .sn-i[aria-selected="true"] .sn-ic { background: rgba(255, 255, 255, .16); }
+  :root:root .subnav.sn-tab .sn-i[aria-selected="true"] .sn-l small { color: inherit; opacity: .8; }
+}
+.wn6-g { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.wn6-g div { background: var(--surface); box-shadow: var(--shadow-1); border-radius: 12px; padding: 8px; display: grid; gap: 3px; font-size: 10px; color: var(--ink-3); }
+.wn6-g div b { font-size: 11.5px; color: var(--ink); }
+.wn6-g div.on { background: linear-gradient(160deg, #0A55EA, #0848D8); color: #DCE8FF; }
+.wn6-g div.on b { color: #fff; }
+.wn6-g i { width: 18px; height: 18px; border-radius: 6px; background: var(--chip-bg); display: block; }
+.wn6-g div.on i { background: rgba(255, 255, 255, .25); }
+.wn6-t { width: 100%; display: flex; gap: 3px; background: var(--surface); box-shadow: var(--shadow-1); border-radius: 14px; padding: 4px; }
+.wn6-t div { flex: 1 1 0; min-width: 0; border-radius: 10px; padding: 7px 4px; display: grid; gap: 1px; justify-items: center; font-size: 9px; color: var(--ink-3); text-align: center; }
+.wn6-t div b { font-size: 10px; color: var(--ink); white-space: nowrap; }
+.wn6-t div.on { background: var(--ink); color: var(--surface); }
+.wn6-t div.on b { color: var(--surface); }
 </style>
 </head>
 <body>

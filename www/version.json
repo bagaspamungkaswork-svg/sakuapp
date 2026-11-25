@@ -1,8 +1,8 @@
 {
- "version": "1.15.2",
- "build": 28,
+ "version": "1.16.0",
+ "build": 29,
  "date": "2026-11-25",
  "notes": [
-  "Kotak Catat dengan suara kini berada di tengah: tombol dan contoh kalimatnya rata tengah."
+  "Submenu Rencana lebih ringkas: tiap menu menampilkan angka status (anggaran terpakai, jumlah target, saldo simpanan, dan seterusnya). Di HP tersusun grid 3 kolom tanpa geser, di web membentang selebar halaman dengan lebar yang menyesuaikan jumlah submenu."
  ]
 }
