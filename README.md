@@ -85,3 +85,7 @@ Untuk edisi **statis** (data hanya di perangkat, tanpa server), isi `www/` denga
 ## Bot Telegram (segera hadir)
 
 Kode backend sudah ada tetapi tidak aktif sampai `TELEGRAM_BOT_TOKEN` diisi. Di aplikasi, Pengaturan hanya menampilkan kartu "Segera hadir". Panduan aktivasi akan ditulis saat fitur dibuka.
+
+## Patungan (edisi Netlify dan Supabase)
+
+Menu Rencana > Patungan: bayar langganan bersama (IndiHome, Netflix, dan lain-lain) lebih dulu, unggah bukti bayar Anda, lalu kirim tautan WhatsApp ke tiap teman. Teman membuka tautan tanpa masuk, mengunggah bukti transfer (boleh beberapa periode sekaligus), dan Anda menerima atau menolak. Fitur ini butuh server, jadi belum ada di edisi Firebase, statis, dan aplikasi HP.

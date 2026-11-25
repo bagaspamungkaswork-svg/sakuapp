@@ -413,8 +413,8 @@ function createApi(deps) {
     return o;
   }
   /*PLANCLEAN:BEGIN*/
-  const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish'];
-  const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120 };
+  const PLAN_COLS = ['cicilan', 'hutang', 'target', 'ramean', 'trip', 'wish', 'patung'];
+  const PLAN_MAX = { cicilan: 60, hutang: 300, target: 60, ramean: 120, trip: 40, wish: 120, patung: 40 };
   const PLAN_BYTES = 250000;
   const CICILAN_KIND_IDS = ['kpr', 'mobil', 'hp', 'multi'];
   const TARGET_KIND_IDS = ['darurat', 'tabungan', 'investasi', 'haji', 'nikah', 'rumah', 'kendaraan', 'liburan', 'pendidikan', 'lain'];
@@ -516,11 +516,33 @@ function createApi(deps) {
       if (d.done === true) o.done = true;
       return { ok: Object.assign(o, base) };
     }
+    if (c === 'patung') {
+      const name = str(d.name, 40); if (!name) return fail('Isi nama layanan.');
+      const total = int(d.total, 0, 1e10); if (total < 1) return fail('Isi nominal tagihan.');
+      const cycle = [1, 3, 6, 12].indexOf(Number(d.cycle)) >= 0 ? Number(d.cycle) : 1;
+      const start = str(d.start, 7); if (!isMon(start)) return fail('Pilih bulan mulai.');
+      const end = str(d.end, 7); if (end && (!isMon(end) || monN(end) < monN(start))) return fail('Bulan berakhir tidak valid.');
+      const ids = {}, people = [];
+      for (const p0 of (Array.isArray(d.people) ? d.people : []).slice(0, 12)) {
+        const p = p0 && typeof p0 === 'object' ? p0 : {}, id = String(p.id || '');
+        if (!/^[a-z0-9]{6,16}$/.test(id) || ids[id]) return fail('Data teman tidak valid.');
+        const n = str(p.n, 30), a = int(p.a, 0, 1e10); if (!n) return fail('Isi nama setiap teman.'); if (a < 1) return fail('Isi bagian ' + n + '.');
+        ids[id] = 1; people.push({ id, n, a, ph: String(p.ph == null ? '' : p.ph).replace(/[^0-9]/g, '').slice(0, 16) });
+      }
+      if (!people.length) return fail('Tambahkan minimal satu teman.');
+      const accts = (Array.isArray(d.accts) ? d.accts : []).slice(0, 4).map(a => { const o = a && typeof a === 'object' ? a : {}; return { b: str(o.b, 20), no: str(o.no, 30), n: str(o.n, 40) }; }).filter(a => a.b && a.no);
+      if (!accts.length) return fail('Isi minimal satu rekening tujuan transfer.');
+      const bill = {}, bsrc = d.bill && typeof d.bill === 'object' && !Array.isArray(d.bill) ? d.bill : {};
+      Object.keys(bsrc).slice(0, 120).forEach(k => { if (isMon(k)) { const v = bsrc[k] && typeof bsrc[k] === 'object' ? bsrc[k] : {}; bill[k] = { at: str(v.at, 40), ph: /^[a-z0-9]{8,32}$/.test(String(v.ph)) ? String(v.ph) : '' }; } });
+      const pay = {}, psrc = d.pay && typeof d.pay === 'object' && !Array.isArray(d.pay) ? d.pay : {};
+      Object.keys(psrc).forEach(id => { if (ids[id] && Array.isArray(psrc[id])) pay[id] = psrc[id].map(String).filter(isMon).slice(0, 240); });
+      return { ok: Object.assign({ name, ico: ['net', 'tv', 'music', 'game', 'cloud', 'lain'].indexOf(d.ico) >= 0 ? d.ico : 'lain', total, cycle, start, end, day: int(d.day, 1, 28), people, accts, bill, pay, show: d.show !== false, note: str(d.note, 120) }, base) };
+    }
     return fail('Jenis data tidak dikenal.');
   }
   /*PLANCLEAN:END*/
   function cleanPlan(c, d) { const r = planClean(c, d, iso()); if (r.err) throw bad(r.err); return r.ok; }
-  const emptyPlan = () => ({ cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [] });
+  const emptyPlan = () => ({ cicilan: [], hutang: [], target: [], ramean: [], trip: [], wish: [], patung: [] });
   function normPlan(p) { const o = emptyPlan(); if (p && typeof p === 'object') PLAN_COLS.forEach(c => { if (Array.isArray(p[c])) o[c] = p[c].slice(); }); return o; }
 
 
@@ -1451,8 +1473,120 @@ function createApi(deps) {
     }
   });
 
+  /* ---------- Patungan: tagihan bersama teman lewat tautan ---------- */
+  const PAT_TOK_RE = /^[A-Za-z0-9_-]{24,40}$/;
+  const patMonN = s => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1;
+  const patKey = n => Math.floor(n / 12) + '-' + String(n % 12 + 1).padStart(2, '0');
+  const patNowN = () => { const d = new Date(now() + 7 * 3600000); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+  function patKeys(rec, from, to) {
+    const out = [], c = rec.cycle || 1, s = patMonN(rec.start), e = rec.end ? patMonN(rec.end) : Infinity;
+    for (let n = s; n <= to && n <= e && out.length < 240; n += c) if (n >= from) out.push(patKey(n));
+    return out;
+  }
+  const patDocKey = uid => uid + '/pat';
+  const patGet = async uid => { const d = (await ledger.get(patDocKey(uid), { type: 'json' })) || {}; return { subs: Array.isArray(d.subs) ? d.subs : [], ok: d.ok && typeof d.ok === 'object' ? d.ok : {} }; };
+  const patOk = (rec, pd, pe, k) => ((rec.pay && rec.pay[pe]) || []).indexOf(k) >= 0 || (pd.ok[rec.id + '.' + pe] || []).indexOf(k) >= 0;
+  async function patResolve(t, c) {
+    const rk = 'pat-' + c.ipKey, prev = await rlCheck(rk);
+    const lk = PAT_TOK_RE.test(String(t || '')) ? await ledger.get('pat/t/' + sha(t), { type: 'json' }) : null;
+    if (!lk) { await rlFail(rk, prev, 20, 600000, 900000); throw new ApiError(404, 'Tautan tidak berlaku atau sudah dicabut.', 'nolink'); }
+    const bk = await loadBook(lk.uid), rec = ((bk.plan && bk.plan.patung) || []).filter(x => x.id === lk.rid)[0];
+    const per = rec && rec.people.filter(p => p.id === lk.pe)[0];
+    if (!rec || !per) throw new ApiError(404, 'Tautan tidak berlaku atau sudah dicabut.', 'nolink');
+    return { uid: lk.uid, rec, per, pd: await patGet(lk.uid) };
+  }
+  function patState(R) {
+    const { rec, per, pd } = R, n = patNowN(), waitKs = new Set(), wait = [];
+    pd.subs.forEach(s => { if (s.rid === rec.id && s.pe === per.id && s.st === 'wait') s.ks.forEach(k => { waitKs.add(k); }); });
+    pd.subs.filter(s => s.rid === rec.id && s.pe === per.id && s.st === 'wait').forEach(s => wait.push({ ks: s.ks, amt: s.amt, at: s.at }));
+    const free = k => !patOk(rec, pd, per.id, k) && !waitKs.has(k);
+    const due = patKeys(rec, 0, n).filter(k => rec.bill && rec.bill[k] && free(k));
+    const ahead = patKeys(rec, n + 1, n + 12).filter(free).slice(0, 12);
+    const rej = pd.subs.filter(s => s.rid === rec.id && s.pe === per.id && s.st === 'no' && s.ks.some(k => due.indexOf(k) >= 0)).pop();
+    return { due, ahead, wait, rej };
+  }
+  Object.assign(ops, {
+    async 'pat.link'(b, c) {
+      const a = await authed(c.req), uid = a.acc.id, rid = String(b.rid || ''), pe = String(b.pe || '');
+      const bk = await loadBook(uid), rec = ((bk.plan && bk.plan.patung) || []).filter(x => x.id === rid)[0];
+      if (!rec || !rec.people.some(p => p.id === pe)) throw new ApiError(404, 'Patungan atau teman tidak ditemukan. Simpan dulu.', 'nodata');
+      const lk = await ledger.get(uid + '/pat/l/' + rid + '.' + pe, { type: 'json' });
+      if (lk && lk.t) return { t: lk.t };
+      const t = crypto.randomBytes(18).toString('base64url');
+      await ledger.setJSON('pat/t/' + sha(t), { uid, rid, pe, at: iso() });
+      await ledger.setJSON(uid + '/pat/l/' + rid + '.' + pe, { t, at: iso() });
+      return { t };
+    },
+    async 'pat.unlink'(b, c) {
+      const a = await authed(c.req), uid = a.acc.id, key = uid + '/pat/l/' + String(b.rid || '') + '.' + String(b.pe || '');
+      const lk = await ledger.get(key, { type: 'json' });
+      if (lk && lk.t) { await ledger.delete('pat/t/' + sha(lk.t)).catch(() => {}); await ledger.delete(key).catch(() => {}); }
+      return { ok: true };
+    },
+    async 'pat.inbox'(b, c) {
+      const a = await authed(c.req), pd = await patGet(a.acc.id);
+      return { subs: pd.subs.slice(-80), ok: pd.ok };
+    },
+    async 'pat.sproof'(b, c) {
+      const a = await authed(c.req), id = String(b.id || '');
+      if (!ID_RE.test(id)) throw bad('ID tidak valid.');
+      const pd = await patGet(a.acc.id); if (!pd.subs.some(s => s.id === id)) throw new ApiError(404, 'Bukti tidak ditemukan.', 'nodata');
+      const d = await ledger.get(a.acc.id + '/pf/' + id, { type: 'json' });
+      return d ? { data: d.data } : { data: '' };
+    },
+    async 'pat.decide'(b, c) {
+      const a = await authed(c.req), uid = a.acc.id, id = String(b.id || ''), yes = b.ok === true, note = String(b.note || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (!ID_RE.test(id)) throw bad('ID tidak valid.');
+      return await casUpdate(ledger, patDocKey(uid), cur => {
+        const pd = { subs: (cur && Array.isArray(cur.subs)) ? cur.subs.slice() : [], ok: (cur && cur.ok && typeof cur.ok === 'object') ? Object.assign({}, cur.ok) : {} };
+        const s = pd.subs.filter(x => x.id === id)[0];
+        if (!s) throw new ApiError(404, 'Kiriman tidak ditemukan.', 'nodata');
+        if (s.st !== 'wait') return { value: undefined, result: { ok: true, st: s.st } };
+        s.st = yes ? 'ok' : 'no'; s.dat = iso(); if (!yes) s.note = note;
+        if (yes) { const key = s.rid + '.' + s.pe, set = new Set(pd.ok[key] || []); s.ks.forEach(k => set.add(k)); pd.ok[key] = Array.from(set).sort().slice(-400); }
+        while (pd.subs.length > 150) { const i = pd.subs.findIndex(x => x.st !== 'wait'); if (i < 0) break; pd.subs.splice(i, 1); }
+        return { value: pd, result: { ok: true, st: s.st } };
+      });
+    },
+    async 'pat.view'(b, c) {
+      const R = await patResolve(b.t, c), st = patState(R), { rec, per } = R;
+      const acc = (await readAccounts())[R.uid] || {};
+      return {
+        owner: String((acc.name || acc.username || 'Teman Anda')).slice(0, 40), svc: rec.name, ico: rec.ico, person: per.n, share: per.a, cycle: rec.cycle, accts: rec.accts, show: !!rec.show,
+        due: st.due.map(k => ({ k, amt: per.a, pr: !!(rec.show && rec.bill[k] && rec.bill[k].ph) })), ahead: st.ahead.map(k => ({ k, amt: per.a })),
+        wait: st.wait, rej: st.rej ? { note: st.rej.note || '' } : null
+      };
+    },
+    async 'pat.proof'(b, c) {
+      const R = await patResolve(b.t, c), k = String(b.k || '');
+      const bl = R.rec.show && R.rec.bill && R.rec.bill[k];
+      if (!bl || !bl.ph) throw new ApiError(404, 'Bukti tidak tersedia.', 'nodata');
+      const d = await ledger.get(R.uid + '/photo/' + bl.ph, { type: 'json' });
+      return { data: d && d.data ? d.data : '' };
+    },
+    async 'pat.pay'(b, c) {
+      const R = await patResolve(b.t, c), st = patState(R), { rec, per } = R;
+      const ks = Array.from(new Set((Array.isArray(b.ks) ? b.ks : []).map(String))).slice(0, 24);
+      const okKs = new Set(st.due.concat(st.ahead));
+      if (!ks.length || ks.some(k => !okKs.has(k))) throw bad('Pilihan tagihan tidak valid atau sudah dibayar. Muat ulang halaman.');
+      const img = String(b.img || '');
+      if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(img) || img.length > MAX_PHOTO) throw bad('Bukti bayar harus berupa foto yang tidak terlalu besar.');
+      if (st.wait.length >= 3) throw new ApiError(429, 'Sudah ada beberapa bukti yang menunggu konfirmasi. Tunggu dulu ya.', 'limit');
+      const id = crypto.randomBytes(12).toString('hex'), note = String(b.note || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      await ledger.setJSON(R.uid + '/pf/' + id, { data: img, createdAt: iso() });
+      const sub = { id, rid: rec.id, pe: per.id, nm: per.n, rn: rec.name, ks: ks.sort(), amt: per.a * ks.length, at: iso(), st: 'wait', note };
+      await casUpdate(ledger, patDocKey(R.uid), cur => {
+        const pd = { subs: (cur && Array.isArray(cur.subs)) ? cur.subs.slice() : [], ok: (cur && cur.ok) || {} };
+        pd.subs.push(sub);
+        while (pd.subs.length > 150) { const i = pd.subs.findIndex(x => x.st !== 'wait'); if (i < 0) break; pd.subs.splice(i, 1); }
+        return { value: pd, result: true };
+      });
+      return { ok: true, amt: sub.amt, n: ks.length };
+    }
+  });
+
   /* ---------- pintu masuk HTTP ---------- */
-  const PUBLIC = new Set(['status', 'setup', 'login', 'register', 'google', 'forgot', 'reset']);
+  const PUBLIC = new Set(['status', 'setup', 'login', 'register', 'google', 'forgot', 'reset', 'pat.view', 'pat.proof', 'pat.pay']);
   const json = (obj, status) => new Response(JSON.stringify(obj), { status: status || 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
   return async function handle(req, context) {
     try {
