@@ -82,13 +82,6 @@ Untuk edisi **statis** (data hanya di perangkat, tanpa server), isi `www/` denga
 - **Versi:** proyek memakai Capacitor 7. Jika `npm install` mengambil versi yang lebih baru dan ada perintah yang berubah, tetapkan versi di `package.json`.
 
 
-## Bot Telegram (opsional, edisi Netlify dan Supabase)
+## Bot Telegram (segera hadir)
 
-Catat transaksi dengan mengirim pesan seperti `makan siang 35rb gopay` ke bot pribadi Anda.
-
-1. Di Telegram buka @BotFather, kirim `/newbot`, simpan token yang diberikan.
-2. Supabase: tambahkan secret GitHub `TELEGRAM_BOT_TOKEN`, lalu jalankan ulang workflow. Webhook didaftarkan otomatis.
-   Netlify: isi environment variable `TELEGRAM_BOT_TOKEN`, deploy ulang, lalu daftarkan webhook: `https://<situs>/api?tg=1` dengan `secret_token` = HMAC-SHA256 (kunci: token bot) dari teks `saku-webhook`, dalam heksadesimal.
-3. Di SaKu buka Pengaturan > Bot Telegram > Hubungkan, tekan Start di Telegram.
-
-Keamanan: kode hubung sekali pakai (10 menit), hanya chat pribadi, grup diabaikan, bot tidak menampilkan saldo rekening, dan hanya bisa membatalkan transaksi yang ia buat. Obrolan bot Telegram tidak terenkripsi ujung ke ujung.
+Kode backend sudah ada tetapi tidak aktif sampai `TELEGRAM_BOT_TOKEN` diisi. Di aplikasi, Pengaturan hanya menampilkan kartu "Segera hadir". Panduan aktivasi akan ditulis saat fitur dibuka.
