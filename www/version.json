@@ -1,8 +1,8 @@
 {
- "version": "1.20.1",
- "build": 35,
- "date": "2026-11-25",
+ "version": "1.20.2",
+ "build": 36,
+ "date": "2026-11-26",
  "notes": [
-  "Patungan tampil lebih ringkas: ringkasan satu panel, bar progres bayar per periode, jatuh tempo berikutnya, dan status tiap teman lebih jelas."
+  "Halaman bayar teman gaya baru: pilih bulan yang dibayar, status tahunan atau bulanan tetap bisa dibuka, dan intro SaKu muncul setelah bukti terkirim. Pemilik mendapat menu notifikasi bukti bayar, pop up loading saat membuka bukti, dan halaman Patungan bergaya biru."
  ]
 }

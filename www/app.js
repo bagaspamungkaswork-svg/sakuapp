@@ -2,8 +2,9 @@
 'use strict';
 /* ================= Konstanta & util ================= */
 /* Versi aplikasi: naikkan APP_VERSION (MAJOR.MINOR.PATCH) dan APP_BUILD setiap pembaruan, lalu tambah satu butir di CHANGELOG. VERSION di akar proyek harus sama. */
-const APP_VERSION = '1.20.1', APP_BUILD = 35;
+const APP_VERSION = '1.20.2', APP_BUILD = 36;
 const CHANGELOG = [
+  { v: '1.20.2', d: '2026-11-26', items: ["Halaman bayar teman gaya baru: pilih bulan yang dibayar, status tahunan atau bulanan tetap bisa dibuka, dan intro SaKu muncul setelah bukti terkirim. Pemilik mendapat menu notifikasi bukti bayar, pop up loading saat membuka bukti, dan halaman Patungan bergaya biru."] },
   { v: '1.20.1', d: '2026-11-25', items: ['Patungan tampil lebih ringkas: ringkasan satu panel, bar progres bayar per periode, jatuh tempo berikutnya, dan status tiap teman lebih jelas.'] },
   { v: '1.20.0', d: '2026-11-25', items: ['Patungan: tagih teman untuk IndiHome, Netflix, dan layanan digital lain. Unggah bukti bayar Anda dulu, kirim tautan lewat WhatsApp, teman mengunggah bukti transfer sendiri, termasuk bayar sekaligus beberapa periode (bulanan sampai tahunan).'] },
   { v: '1.18.1', d: '2026-11-25', items: ['Tampilan layar lebar dirapikan: daftar saldo rekening di Analisis tidak lagi meluber, ruang kosong di sisi kanan dimanfaatkan (form Rekening, Rincian), label tanggal grafik tidak menumpuk, dan diagram kategori tidak menimpa daftar.'] },
@@ -227,6 +228,7 @@ const ICONS = {
   info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   bulb: '<path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/><path d="M10 21h4"/>',
   trendup: '<path d="M3 17 9 11l4 4 8-8M15 7h6v6"/>',
@@ -7786,6 +7788,7 @@ function paintBadge() {
   const d = S.phase === 'app' && !isAdmin() ? dueCount() : 0;
   $$('[data-due-badge]').forEach(b => { b.hidden = !d; b.textContent = d > 9 ? '9+' : String(d); });
   if (typeof paintFrBadge === 'function') paintFrBadge();
+  if (typeof ntfBadge === 'function') ntfBadge();
 }
 function noticePending(first) {
   if (S.phase !== 'app' || !isStaff()) { S.pendN = -1; return; }
@@ -7850,7 +7853,7 @@ function shellHTML() {
   const DMAIN = isAdmin() ? items.map(i => i[0]) : ['rekap', 'transaksi', 'analisis', 'tagihan', 'rencana', 'laporan'];
   const dmi = items.filter(i => DMAIN.indexOf(i[0]) < 0), dti = i => `<button type="button" class="dt-i" data-act="nav" data-v="${i[0]}" title="${esc(i[1])}">${ic(i[2], 20)}<span>${esc(i[1])}</span>${bdg(i)}</button>`;
   const dtile = (i, cls) => `<button type="button" class="dt-tile ${cls || ''}" data-act="nav" data-v="${i[0]}">${ic(i[2], 22)}<b>${esc(i[1])}</b>${bdg(i)}</button>`;
-  const dtop = `<header class="dtop"><div class="dt-brand"><div class="brand">${LOGO}${WM}</div></div><nav class="dt-nav" aria-label="Navigasi utama">${items.filter(i => DMAIN.indexOf(i[0]) >= 0).map(dti).join('')}<div class="dt-more-wrap"><button type="button" class="dt-i dt-more-b" data-act="dt-more" aria-haspopup="true" aria-expanded="false" data-more="${dmi.map(i => i[0]).join(',')}">${ic('more', 20)}<span>Lainnya</span></button><div class="dt-pop" role="menu" aria-label="Menu lainnya">${dmi.map(i => dtile(i, i[0] === 'asisten' ? 'dt-wide' : '')).join('')}</div></div><button type="button" class="dt-i dt-out" data-act="logout" title="Keluar" aria-label="Keluar">${ic('logout', 20)}</button>${isAdmin() ? '' : `<button type="button" class="dt-add" data-act="add">${ic('plus', 20)}<span>Catat</span></button>`}</nav></header>`;
+  const dtop = `<header class="dtop"><div class="dt-brand"><div class="brand">${LOGO}${WM}</div></div><nav class="dt-nav" aria-label="Navigasi utama">${items.filter(i => DMAIN.indexOf(i[0]) >= 0).map(dti).join('')}<div class="dt-more-wrap"><button type="button" class="dt-i dt-more-b" data-act="dt-more" aria-haspopup="true" aria-expanded="false" data-more="${dmi.map(i => i[0]).join(',')}">${ic('more', 20)}<span>Lainnya</span></button><div class="dt-pop" role="menu" aria-label="Menu lainnya">${dmi.map(i => dtile(i, i[0] === 'asisten' ? 'dt-wide' : '')).join('')}</div></div>${isAdmin() ? '' : `<button type="button" class="dt-i dt-ntf" data-act="ntf-open" title="Notifikasi patungan" aria-label="Notifikasi patungan">${ic('inbox', 20)}<span class="nbadge" data-ntf-badge hidden></span></button>`}<button type="button" class="dt-i dt-out" data-act="logout" title="Keluar" aria-label="Keluar">${ic('logout', 20)}</button>${isAdmin() ? '' : `<button type="button" class="dt-add" data-act="add">${ic('plus', 20)}<span>Catat</span></button>`}</nav></header>`;
   return `<div class="shell${min ? ' side-min' : ''}">
     <aside class="side" aria-label="Menu">
       <div class="side-top"><div class="brand">${LOGO}${WM}</div><button type="button" class="side-toggle" data-act="side-toggle" aria-expanded="${!min}" aria-label="${min ? 'Buka menu' : 'Ciutkan menu'}" title="${min ? 'Buka menu' : 'Ciutkan menu'}">${ic('chevl', 18)}</button></div>
@@ -7863,7 +7866,7 @@ function shellHTML() {
     </aside>
     <div class="main">
       ${dtop}
-      <div class="topbar"><div class="brand">${LOGO}${WM}</div><div class="top-r">${langSwitchHTML('lsw-top')}${isAdmin() ? '' : `<button type="button" class="top-bell" data-act="nav" data-v="jatuh" aria-label="Jatuh tempo" title="Jatuh tempo">${ic('bell', 20)}<span class="nbadge" data-due-badge hidden></span></button>`}<button class="avatar sm" data-act="nav" data-v="akun" aria-label="Pengaturan akun">${esc(initials(m.name))}</button></div></div>
+      <div class="topbar"><div class="brand">${LOGO}${WM}</div><div class="top-r">${langSwitchHTML('lsw-top')}${isAdmin() ? '' : `<button type="button" class="top-bell" data-act="nav" data-v="jatuh" aria-label="Jatuh tempo" title="Jatuh tempo">${ic('bell', 20)}<span class="nbadge" data-due-badge hidden></span></button><button type="button" class="top-bell top-ntf" data-act="ntf-open" aria-label="Notifikasi patungan" title="Notifikasi">${ic('inbox', 20)}<span class="nbadge" data-ntf-badge hidden></span></button>`}<button class="avatar sm" data-act="nav" data-v="akun" aria-label="Pengaturan akun">${esc(initials(m.name))}</button></div></div>
       <div id="netbar" class="netbar" role="status" hidden></div>
       <div id="mailbar" class="netbar mailbar" role="status" hidden></div>
       <div id="view"></div>
@@ -11542,6 +11545,8 @@ async function patInboxLoad(quiet) {
     if (had && now > prev && !quiet) toast('Ada bukti bayar baru dari teman di Patungan');
     if (S.view === 'patungan') VIEWS.patungan.update();
     else if (typeof paintBadge === 'function') paintBadge();
+    if (typeof ntfBadge === 'function') ntfBadge();
+    const nb = $('#ntf'); if (nb && !S.ntfShown) nb.innerHTML = ntfHTML();
   } catch (e) { /* abaikan: server tidak terjangkau */ }
   S.patBusy = false;
 }
@@ -11573,10 +11578,10 @@ function patMsg(r, m, url) {
   return `Halo ${m.p.n}, tagihan patungan ${r.name} (${patLbls(m.due)}) bagian kamu ${fmtRp(m.owe)}.\nTransfer ke ${ac}, lalu unggah bukti bayarnya di sini:\n${url}\nTerima kasih!`;
 }
 function patWa(phone, text) { let p = String(phone || '').replace(/\D/g, ''); if (p.indexOf('0') === 0) p = '62' + p.slice(1); return 'https://wa.me/' + p + '?text=' + encodeURIComponent(text); }
-function patImgOpen(src, title) {
+function patImgOpen(src, title, extra) {
   const old = $('#pt-img'); if (old) old.remove();
   const el = document.createElement('div'); el.id = 'pt-img'; el.className = 'pt-img'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', title || 'Bukti bayar');
-  el.innerHTML = `<div class="pt-img-b" data-act="pt-img-x"><figure><img alt="${esc(title || 'Bukti bayar')}" src="${esc(src)}"><figcaption>${esc(title || '')}</figcaption></figure><button type="button" class="btn btn-ghost" data-act="pt-img-x">Tutup</button></div>`;
+  el.innerHTML = `<div class="pt-img-b" data-act="pt-img-x"><figure><img alt="${esc(title || 'Bukti bayar')}" src="${esc(src)}"><figcaption>${esc(title || '')}</figcaption></figure><button type="button" class="btn btn-ghost" data-act="pt-img-x">Tutup</button>${extra || ''}</div>`;
   document.body.appendChild(el);
 }
 async function patPhoto(id) { const s = await planBase().collection('photos').doc(id).get(); const d = s && s.exists ? s.data() : null; return d && d.data ? d.data : ''; }
@@ -11631,12 +11636,78 @@ VIEWS.patungan = {
     if (!list.length) { v.innerHTML = head + `<section class="card"><div class="empty"><h3>Belum ada patungan</h3><p>Bayar IndiHome, Netflix, atau layanan digital lain lebih dulu, lalu tagih bagian tiap teman. Unggah bukti bayar Anda, kirim tautan lewat WhatsApp, dan teman mengunggah bukti transfernya sendiri.</p><button type="button" class="btn btn-primary" data-act="pt-new">Buat patungan pertama</button></div></section>`; return; }
     const owed = list.reduce((s, r) => s + patModel(r).owed, 0), wn = patWaitN();
     const rng = `<div class="seg pt-rng" role="group" aria-label="Rentang waktu">${PAT_RNG.map(x => `<button type="button" data-act="pt-rng" data-v="${x[0]}" aria-pressed="${N === x[0]}">${x[1]}</button>`).join('')}</div>`;
-    const stat = (k, v, s, c) => `<div class="pt2-st ${c}"><span>${k}</span><b>${v}</b><small>${s}</small></div>`;
-    const tiles = `<section class="card pt2-sum" aria-label="Ringkasan patungan"><div class="pt2-sh"><h2>Ringkasan</h2>${rng}</div><div class="pt2-sg">${stat('Belum dibayar teman', fmtRp(owed), 'sudah ditagih', owed ? 'out' : '')}${stat('Menunggu konfirmasi', String(wn), wn ? 'bukti dari teman' : 'tidak ada', wn ? 'wait' : '')}${stat('Sudah kembali', fmtRp(patBack(N)), N === 1 ? 'bulan ini' : N === 12 ? '12 bulan terakhir' : N + ' bulan terakhir', 'in')}</div></section>`;
-    v.innerHTML = head + tiles + ptInbox() + `<div class="pt-grid">${list.map(ptCard).join('')}</div>`;
+    const hero = `<section class="pt3" aria-label="Ringkasan patungan"><div class="pt3-h"><div><p>Tagih teman untuk langganan bersama</p><h1>Patungan</h1></div><button type="button" class="btn btn-primary" data-act="pt-new">${ic('plus', 18)} Patungan Baru</button></div><div class="pt3-big"><div><small>Belum dibayar teman</small><b>${fmtRp(owed)}</b></div>${rng}</div><div class="pt3-sg"><div class="pt3-s"><span>Menunggu konfirmasi</span><b>${wn}</b><small>${wn ? 'bukti dari teman' : 'tidak ada'}</small></div><div class="pt3-s"><span>Sudah kembali</span><b>${fmtRp(patBack(N))}</b><small>${N === 1 ? 'bulan ini' : N === 12 ? '12 bulan terakhir' : N + ' bulan terakhir'}</small></div></div></section>`;
+    v.innerHTML = subnavHTML('patungan') + hero + ptInbox() + `<div class="pt-grid">${list.map(ptCard).join('')}</div>`;
     patEnsureLinks();
   }
 };
+
+/* ---------- Pop up loading bukti, penampil bukti, dan menu notifikasi (pemilik) ---------- */
+function patLdHide() { const x = $('#pt-ld'); if (x) x.remove(); }
+function patLdShow(s, err) {
+  patLdHide();
+  const el = document.createElement('div'); el.id = 'pt-ld'; el.className = 'pld'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', err ? 'Bukti gagal dimuat' : 'Membuka bukti bayar'); el.setAttribute('aria-busy', err ? 'false' : 'true');
+  const who = s && s.nm ? 'Bukti dari ' + s.nm + (s.amt ? ' · ' + fmtRp(s.amt) : '') : 'Bukti dari teman';
+  el.innerHTML = err
+    ? `<div class="pld-b"><span class="pld-x" aria-hidden="true">!</span><div><b>Gagal memuat bukti</b><p>${esc(err)}</p></div><div class="pld-r"><button type="button" class="btn btn-ghost" data-act="pld-cancel">Tutup</button><button type="button" class="btn btn-primary" data-act="pld-retry">Coba lagi</button></div></div>`
+    : `<div class="pld-b"><span class="pld-sp" role="img" aria-label="Memuat"></span><div><b>Membuka bukti bayar</b><p>${esc(who)}</p></div><div class="pld-sk" aria-hidden="true"></div><div class="pld-in" aria-hidden="true"><i></i></div><p class="pld-n">Foto dimuat dengan aman, sebentar ya.</p><button type="button" class="btn btn-ghost" data-act="pld-cancel">Batal</button></div>`;
+  document.body.appendChild(el);
+  const bt = el.querySelector('button'); if (bt) { try { bt.focus(); } catch (e) { /* abaikan */ } }
+}
+var patLdTok = 0;
+function patSproofOpen(id) {
+  const s = ((S.patInbox && S.patInbox.subs) || []).filter(x => x.id === id)[0] || { id }, tok = ++patLdTok, t0 = Date.now();
+  patLdShow(s); S.pldRetry = () => patSproofOpen(id);
+  const later = fn => setTimeout(() => { if (tok === patLdTok) fn(); }, Math.max(0, 450 - (Date.now() - t0)));
+  api('pat.sproof', { id }).then(x => later(() => { if (x.data) { patLdHide(); patProofOpen(x.data, s); } else patLdShow(s, 'Bukti tidak ditemukan.'); }))
+    .catch(e => later(() => patLdShow(s, e.userMessage || 'Bukti tidak bisa dimuat. Periksa koneksi Anda.')));
+}
+function patProofOpen(src, s) {
+  patImgOpen(src, 'Bukti transfer dari ' + (s.nm || 'teman'), s.st === 'wait' ? `<div class="pt-img-act"><button type="button" class="btn btn-ghost" data-act="pt-vno" data-id="${esc(s.id)}">Tolak</button><button type="button" class="btn btn-primary" data-act="pt-vok" data-id="${esc(s.id)}">Terima</button></div>` : '');
+}
+function ntfKey() { return 'saku.ntf.' + ((me() && (me().username || me().id)) || 'x'); }
+function ntfSeen() { try { return localStorage.getItem(ntfKey()) || ''; } catch (e) { return ''; } }
+function ntfItems() { return ((S.patInbox && S.patInbox.subs) || []).slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30); }
+function ntfUnread() { const seen = ntfSeen(); return ntfItems().filter(x => x.st === 'wait' && String(x.at) > seen).length; }
+function ntfBadge() {
+  const n = S.phase === 'app' && !isAdmin() ? ntfUnread() : 0;
+  $$('[data-ntf-badge]').forEach(b => { b.hidden = !n; b.textContent = n > 9 ? '9+' : String(n); });
+}
+function ntfAgo(iso) {
+  const t = Date.parse(iso); if (isNaN(t)) return '';
+  const m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'baru saja'; if (m < 60) return m + ' mnt lalu';
+  const h = Math.round(m / 60); if (h < 24) return h + ' jam lalu'; const d = Math.round(h / 24); return d < 7 ? d + ' hari lalu' : bwD(iso);
+}
+function ntfHTML() {
+  const items = ntfItems(), seen = S.ntfShown !== undefined ? S.ntfShown : ntfSeen(), nu = items.filter(x => x.st === 'wait' && String(x.at) > seen).length;
+  const rows = items.map(x => {
+    const nw = x.st === 'wait' && String(x.at) > seen, t = x.st === 'wait' ? x.nm + ' mengunggah bukti transfer' : x.st === 'ok' ? 'Bukti ' + x.nm + ' sudah Anda terima' : 'Bukti ' + x.nm + ' Anda tolak';
+    return `<li><button type="button" class="ntf-i${nw ? ' nw' : ''}" data-act="ntf-go" data-id="${esc(x.id)}"><span class="ntf-ic ${x.st}">${ic(x.st === 'ok' ? 'check' : x.st === 'no' ? 'x' : 'receipt', 18)}</span><span class="ntf-t"><b>${esc(t)}</b><small>${fmtRp(x.amt)} · ${esc(x.rn)} · ${esc(patLbls(x.ks))}</small></span><span class="ntf-w">${esc(ntfAgo(x.at))}${nw ? '<i aria-label="Baru"></i>' : ''}</span></button></li>`;
+  }).join('');
+  return `<div class="ntf-b" role="dialog" aria-modal="true" aria-labelledby="ntf-t"><div class="ntf-h"><h2 id="ntf-t">Notifikasi</h2>${nu ? `<span class="stp today">${nu} baru</span>` : ''}<span class="sp"></span><button type="button" class="icon-btn" data-act="ntf-x" aria-label="Tutup">${ic('x', 20)}</button></div>
+    ${rows ? `<ul class="ntf-l">${rows}</ul>` : `<div class="ntf-e"><b>Belum ada notifikasi</b><p>Saat teman mengunggah bukti bayar lewat tautan patungan, kabarnya muncul di sini.</p></div>`}
+    <div class="ntf-f"><button type="button" class="btn btn-ghost btn-sm" data-act="ntf-patungan">Buka Patungan</button></div></div>`;
+}
+function ntfClose() { const x = $('#ntf'); if (x) x.remove(); S.ntfShown = undefined; }
+function ntfOpen() {
+  ntfClose();
+  const el = document.createElement('div'); el.id = 'ntf'; el.className = 'ntf'; el.setAttribute('data-act', 'ntf-bd');
+  S.ntfShown = ntfSeen(); el.innerHTML = ntfHTML(); document.body.appendChild(el);
+  const lat = ntfItems().reduce((m, x) => String(x.at) > m ? String(x.at) : m, '');
+  if (lat) { try { localStorage.setItem(ntfKey(), lat); } catch (e) { /* abaikan */ } } ntfBadge();
+  const c = el.querySelector('[data-act="ntf-x"]'); if (c) { try { c.focus(); } catch (e) { /* abaikan */ } }
+  patInboxLoad(true).then(() => { const o = $('#ntf'); if (o) { o.innerHTML = ntfHTML(); const l2 = ntfItems().reduce((m, x) => String(x.at) > m ? String(x.at) : m, ''); if (l2) { try { localStorage.setItem(ntfKey(), l2); } catch (e) { /* abaikan */ } } ntfBadge(); } });
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.phase === 'app' && !isAdmin() && patList().length) patInboxLoad(true); });
+document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if ($('#pt-ld')) { patLdTok++; patLdHide(); } else if ($('#ntf')) ntfClose(); });
+Object.assign(ACT, {
+  'ntf-open'() { ntfOpen(); }, 'ntf-x'() { ntfClose(); }, 'ntf-bd'(el, ev) { if (!ev || ev.target === el) ntfClose(); },
+  'ntf-go'(el) { const id = el.dataset.id; ntfClose(); patSproofOpen(id); },
+  'ntf-patungan'() { ntfClose(); ACT.nav({ dataset: { v: 'patungan' } }); },
+  'pld-cancel'() { patLdTok++; patLdHide(); }, 'pld-retry'() { if (S.pldRetry) S.pldRetry(); },
+  'pt-vok'(el) { const x = $('#pt-img'); if (x) x.remove(); ptDecide(el.dataset.id, true); },
+  'pt-vno'(el) { const x = $('#pt-img'); if (x) x.remove(); ptDecide(el.dataset.id, false); }
+});
 
 /* ---------- Form patungan ---------- */
 function pfDefault() {
@@ -11749,7 +11820,7 @@ Object.assign(ACT, {
   'pt-copy'(el) { const r = patFind(el.dataset.id); if (!r) return; const m = patModel(r).people.filter(x => x.p.id === el.dataset.pe)[0], t = patTok(r.id, el.dataset.pe); if (!m || !t) return; const txt = patMsg(r, m, patUrl(t)); try { navigator.clipboard.writeText(txt).then(() => toast('Pesan tagihan disalin'), () => toast('Tidak bisa menyalin. Gunakan tombol WhatsApp.')); } catch (e) { toast('Tidak bisa menyalin. Gunakan tombol WhatsApp.'); } },
   'pt-mark'(el) { ptMark(el.dataset.id, el.dataset.pe); },
   'pt-bproof'(el) { const r = patFind(el.dataset.id), b = r && r.bill && r.bill[el.dataset.k]; if (!b || !b.ph) return; patPhoto(b.ph).then(d => { if (d) patImgOpen(d, 'Bukti bayar ' + r.name + ' · ' + patLbl(el.dataset.k)); else toast('Bukti tidak ditemukan'); }).catch(() => toast('Bukti tidak bisa dimuat')); },
-  'pt-sproof'(el) { api('pat.sproof', { id: el.dataset.id }).then(x => { if (x.data) patImgOpen(x.data, 'Bukti transfer dari teman'); else toast('Bukti tidak ditemukan'); }).catch(e => toast(e.userMessage || 'Bukti tidak bisa dimuat')); },
+  'pt-sproof'(el) { patSproofOpen(el.dataset.id); },
   'pt-ok'(el) { ptDecide(el.dataset.id, true); }, 'pt-no'(el) { ptDecide(el.dataset.id, false); },
   'pt-img-x'(el, ev) { if (ev && ev.target && ev.target.closest && ev.target.closest('figure')) return; const x = $('#pt-img'); if (x) x.remove(); },
   'pt-del'(el) { if (el.dataset.armed) { ptDelete(el.dataset.id); return; } el.dataset.armed = '1'; el.textContent = 'Tekan lagi untuk menghapus'; setTimeout(() => { if (el.isConnected) { delete el.dataset.armed; el.innerHTML = ic('trash', 18) + ' Hapus'; } }, 4000); },
@@ -11773,12 +11844,12 @@ async function bwLoad() {
   catch (e) { S.bw.d = null; S.bw.err = e.userMessage || 'Tagihan tidak bisa dimuat.'; }
   bwPaint();
 }
-const bwSaku = () => {
+const bwSaku = full => {
   const P = S.bw || (S.bw = {}), el = (Date.now() - (P.t0 || (P.t0 = Date.now()))) / 1000, done = el > 11.5, home = location.origin + '/';
   const sc = (n, s, inner) => `<div class="bwi-sc s${n}" style="--s:${s}s" aria-hidden="true">${inner}</div>`;
   const bars = [35, 55, 42, 78, 64].map((h, i) => `<i class="${i > 2 ? 'hi' : ''}" style="--h:${h}%;--i:${i}"></i>`).join('');
   const chips = [['Budi', 'Lunas', 'ok'], ['Sari', 'Menunggu', 'wt'], ['Dina', 'Lunas', 'ok']].map((c, i) => `<span class="bwi-chip ${c[2]}" style="--i:${i}"><b>${c[0]}</b>${c[1]}</span>`).join('');
-  return `<section class="bw-card bw-offer bwi${done ? ' done' : ''}" id="bw-intro" style="--o:${(-Math.min(el, 12)).toFixed(2)}s" aria-label="Kenali SaKu">
+  return `<section class="bw-card bw-offer bwi${full ? ' bwb-introc' : ''}${done ? ' done' : ''}" id="bw-intro" style="--o:${(-Math.min(el, 12)).toFixed(2)}s" aria-label="Kenali SaKu">
     <div class="bwi-stage">
       ${sc(1, 0, '<h2 class="bwi-h">Penasaran dengan <b>SaKu</b>?</h2><span class="bwi-pulse"></span>')}
       ${sc(2, 2.6, `<div class="bwi-bars">${bars}</div><p class="bwi-cap">Catat pemasukan dan pengeluaran</p>`)}
@@ -11788,53 +11859,123 @@ const bwSaku = () => {
     </div>
     <div class="bwi-ft"><button type="button" class="bwi-link bwi-skip" data-act="bw-skip">Lewati</button><button type="button" class="bwi-link bwi-rep" data-act="bw-replay">Putar ulang</button></div></section>`;
 };
+const bwD = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.getDate() + ' ' + MONTHS_S[d.getMonth()]; };
+const bwMon = k => MONTHS_S[Number(k.slice(5, 7)) - 1];
 function bwAmt() { const d = S.bw.d; return d ? d.share * S.bw.sel.length : 0; }
+function bwStat(d) {
+  const h = d.hist || [], last = h[h.length - 1];
+  if (d.wait.length) return { t: 'Menunggu konfirmasi', step: 2 };
+  if (d.rej) return { t: 'Bukti ditolak, kirim ulang', step: 0 };
+  if (d.due.length) return { t: 'Ada tagihan untuk Anda', step: 0 };
+  if (last && last.st === 'ok') return { t: 'Pembayaran diterima', step: 3 };
+  return { t: 'Semua sudah lunas', step: 0 };
+}
+function bwSteps(step) {
+  if (!step) return '';
+  const n = [['Dikirim', 1], ['Dicek', 2], ['Diterima', 3]];
+  return `<div class="bwb-stp" aria-label="Tahap pembayaran">${n.map((x, i) => `${i ? `<span class="ln${step > i ? ' on' : ''}"></span>` : ''}<b class="${step > x[1] ? 'dn' : step === x[1] ? 'nw' : ''}"><i>${step > x[1] || (step === 3 && x[1] === 3) ? ic('check', 12) : x[1]}</i>${x[0]}</b>`).join('')}</div>`;
+}
+function bwCells(d) {
+  const n = patNowN(), dueK = d.due.map(x => x.k), set = {};
+  d.mo.forEach(x => { const m = patMonN(x.k); if (dueK.indexOf(x.k) >= 0 || x.st === 'wait' || (m >= n - 3 && m <= n + 12)) set[x.k] = x; });
+  return Object.keys(set).sort().map(k => set[k]);
+}
+function bwHead(P, d, hero) {
+  const logo = `<div class="brand bwb-logo">${LOGO}${WM}</div>`;
+  const nav = (d && (d.hist || []).length && d.due.length + d.ahead.length) ? `<div class="bwb-nav" role="tablist">${[['pay', 'Bayar'], ['status', 'Status']].map(x => `<button type="button" role="tab" aria-selected="${P.view === x[0]}" class="${P.view === x[0] ? 'on' : ''}" data-act="bw-nav" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>` : '';
+  return `<header class="bwb-hero"><div class="bwb-w">${logo}${nav}${hero}</div></header>`;
+}
 function bwPaint() {
   const P = S.bw, d = P.d, app = $('#app'); if (!app) return;
-  const top = `<header class="bw-top brand">${LOGO}${WM}</header>`;
-  if (!d) { app.innerHTML = `<main class="bw">${top}<section class="bw-card"><h1>Tautan tidak bisa dibuka</h1><p>${esc(P.err || '')}</p><p class="muted">Minta teman Anda mengirim tautan yang baru.</p></section>${bwSaku()}</main>`; return; }
+  if (!d) { app.innerHTML = `<main class="bwb">${bwHead(P, null, `<div class="bwb-t"><p class="bwb-k">Tautan patungan</p><h1>Tautan tidak bisa dibuka</h1><p class="bwb-sub">${esc(P.err || '')}</p></div>`)}<div class="bwb-w bwb-body one"><section class="bwb-card"><p>Minta teman Anda mengirim tautan yang baru.</p><a class="btn btn-ghost" href="${esc(location.origin + '/')}">Kenali SaKu</a></section></div></main>`; return; }
+  const canPay = d.due.length + d.ahead.length > 0, hasH = (d.hist || []).length > 0 || d.wait.length > 0;
+  if (!P.view) P.view = (d.wait.length || !canPay || (!d.due.length && hasH)) ? 'status' : 'pay';
+  if (P.view === 'pay' && !canPay) P.view = 'status';
   const per = (PAT_CYC.filter(c => c[0] === d.cycle)[0] || PAT_CYC[0])[1].toLowerCase();
-  const head = `<section class="bw-card bw-h"><span class="chip" style="--c:${planSlot(2)}">${ic(patIco(d.ico), 22)}</span><div><p class="bw-k">Tagihan patungan dari ${esc(d.owner)}</p><h1>${esc(d.svc)}</h1><p class="muted">Bagian ${esc(d.person)}: <b>${fmtRp(d.share)}</b> per periode (${esc(per)})</p></div></section>`;
-  const wait = d.wait.length ? `<section class="bw-card"><h2>Menunggu konfirmasi</h2><ul class="bw-l">${d.wait.map(w => `<li><span>${esc(patLbls(w.ks))}</span><b>${fmtRp(w.amt)}</b></li>`).join('')}</ul><p class="muted">${esc(d.owner)} akan memeriksa bukti transfer Anda. Tagihan ini tidak perlu dibayar lagi.</p></section>` : '';
-  if (P.sent) { app.innerHTML = `<main class="bw">${top}<section class="bw-card bw-ok"><span class="bw-tick">${ic('check', 26)}</span><h1>Bukti terkirim</h1><p>${fmtRp(P.sent.amt)} untuk ${P.sent.n} periode sedang dicek oleh ${esc(d.owner)}. Tagihan ini sudah hilang dari daftar Anda.</p></section>${wait}${bwSaku()}</main>`; return; }
-  if (!d.due.length && !d.ahead.length) { app.innerHTML = `<main class="bw">${top}${head}<section class="bw-card bw-ok"><span class="bw-tick">${ic('check', 26)}</span><h1>Tidak ada tagihan</h1><p>${d.wait.length ? 'Semua sudah Anda bayar dan sedang menunggu konfirmasi.' : 'Terima kasih, semuanya sudah lunas.'}</p></section>${wait}${bwSaku()}</main>`; return; }
-  const sel = new Set(P.sel), row = (x, ahead) => `<li><label class="bw-ck"><input type="checkbox" data-bw-k="${esc(x.k)}"${sel.has(x.k) ? ' checked' : ''}><span><b>${esc(patLbl(x.k))}</b><small>${ahead ? 'Bayar di muka' : 'Jatuh tempo'}${x.pr ? '' : ''}</small></span><em>${fmtRp(x.amt)}</em></label>${x.pr ? `<button type="button" class="bw-link" data-act="bw-proof" data-k="${esc(x.k)}">Lihat bukti bayar ${esc(d.owner)}</button>` : ''}</li>`;
-  const list = d.due.length ? `<h2>Tagihan Anda</h2><ul class="bw-l bw-sel">${d.due.map(x => row(x, false)).join('')}</ul>` : '<h2>Tidak ada tunggakan</h2>';
-  const ahead = d.ahead.length ? `<details class="bw-ahead"${P.aopen ? ' open' : ''}><summary data-act="bw-aopen">Bayar sekaligus di muka</summary><div class="bw-quick"><button type="button" class="btn btn-ghost btn-sm" data-act="bw-q" data-v="0">Hanya tunggakan</button><button type="button" class="btn btn-ghost btn-sm" data-act="bw-q" data-v="3">+ 3 bulan ke depan</button><button type="button" class="btn btn-ghost btn-sm" data-act="bw-q" data-v="12">+ 1 tahun ke depan</button></div><ul class="bw-l bw-sel">${d.ahead.filter((x, i) => i < 6 || sel.has(x.k)).map(x => row(x, true)).join('')}</ul>${d.ahead.filter((x, i) => i >= 6 && !sel.has(x.k)).length ? `<p class="bw-more">Masih ada ${d.ahead.filter((x, i) => i >= 6 && !sel.has(x.k)).length} bulan lainnya. Pilih "+ 1 tahun ke depan" untuk membayar semuanya.</p>` : ''}</details>` : '';
-  const accts = `<h2>Transfer ke</h2><ul class="bw-l bw-ac">${d.accts.map((a, i) => `<li><span><b>${esc(a.b)}</b> ${esc(a.no)}<small>${a.n ? 'a.n. ' + esc(a.n) : ''}</small></span><button type="button" class="btn btn-ghost btn-sm" data-act="bw-copy" data-i="${i}">Salin</button></li>`).join('')}</ul>`;
-  const n = P.sel.length, amt = bwAmt();
-  app.innerHTML = `<main class="bw">${top}${head}${P.rejNote !== undefined ? '' : ''}${d.rej ? `<p class="bw-rej" role="alert">Bukti sebelumnya ditolak${d.rej.note ? ': ' + esc(d.rej.note) : ''}. Silakan kirim ulang.</p>` : ''}${wait}
-    <section class="bw-card">${list}${ahead}
-      <div class="bw-total"><span>Total yang ditransfer${n > 1 ? ' (' + n + ' periode)' : ''}</span><b id="bw-amt">${fmtRp(amt)}</b></div>${accts}
-      <h2>Unggah bukti transfer</h2>
-      <label class="bw-up${P.img ? ' has' : ''}">${P.img ? `<img alt="Pratinjau bukti transfer" src="${esc(P.img)}">` : `<span>${ic('camera', 22)} Pilih foto atau tangkapan layar bukti transfer</span>`}<input type="file" accept="image/*" id="bw-file" hidden></label>
+  if (P.view === 'intro') {
+    const s = P.sent || { amt: 0, n: 0 };
+    app.innerHTML = `<main class="bwb bwb-intro"><div class="bwb-rings" aria-hidden="true"><i></i><i></i><i></i></div><div class="bwb-w bwb-iw"><div class="brand bwb-logo">${LOGO}${WM}</div><span class="bwb-tick">${ic('check', 34)}</span><div class="bwb-it"><h1>Bukti terkirim</h1><p>Terima kasih, ${esc(d.person)}. ${esc(d.owner)} akan mengecek ${s.n ? fmtRp(s.amt) + ' untuk ' + s.n + ' periode' : 'buktinya'}.</p></div>${bwSaku(true)}<button type="button" class="btn bwb-statbtn" data-act="bw-status">Lihat status tagihan saya</button></div></main>`;
+    return;
+  }
+  const dueP = d.due.filter(x => x.pr);
+  if (P.view === 'status') {
+    const st = bwStat(d), n = patNowN(), cells = d.mo, years = Array.from(new Set(cells.map(x => x.k.slice(0, 4)))).sort();
+    if (!P.yr || years.indexOf(P.yr) < 0) P.yr = years.indexOf(String(Math.floor(n / 12))) >= 0 ? String(Math.floor(n / 12)) : years[years.length - 1];
+    if (!P.sv) P.sv = d.cycle === 12 ? 'y' : 'm';
+    const yc = cells.filter(x => x.k.slice(0, 4) === P.yr), okN = yc.filter(x => x.st === 'ok').length, yi = years.indexOf(P.yr);
+    const lab = { ok: 'Lunas', wait: 'Dicek', due: 'Tagihan', new: 'Belum' };
+    const tile = x => `<div class="bwb-c ${x.st}"><b>${bwMon(x.k)}</b><small>${lab[x.st]}</small></div>`;
+    const sub = x => { const s = (d.hist || []).filter(h => (h.ks || []).indexOf(x.k) >= 0 && h.st !== 'no').pop(); return x.st === 'ok' ? (s && s.dat ? 'Diterima ' + bwD(s.dat) : 'Diterima') : x.st === 'wait' ? 'Dikirim ' + (s ? bwD(s.at) : '') + ' · menunggu ' + d.owner : x.st === 'due' ? 'Jatuh tempo, belum dibayar' : 'Belum ditagih'; };
+    const rk = Object.keys(cells.filter(x => { const m = patMonN(x.k); return x.st === 'wait' || x.st === 'due' || (m >= n - 5 && m <= n + 3); }).reduce((o, x) => { o[x.k] = 1; return o; }, {})).sort().reverse();
+    const rows = rk.map(k => { const x = cells.filter(c => c.k === k)[0]; return `<li class="${x.st}"><span class="dot"></span><div><b>${esc(patLbl(k))}</b><small>${esc(sub(x))}</small></div><em>${fmtRp(d.share)}</em><span class="bwb-ch ${x.st}">${lab[x.st]}</span></li>`; }).join('');
+    const offer = hasH ? `<section class="bwb-offer"><div><b>Penasaran dengan SaKu?</b><p>Catat uang, atur anggaran, dan tagih patungan teman. Di web maupun HP.</p></div><div class="bwb-oc"><a class="btn btn-primary" href="${esc(location.origin + '/?daftar=1')}">Daftar</a><a class="btn btn-ghost" href="${esc(location.origin + '/')}">Masuk</a></div></section>` : '';
+    const hero = `<div class="bwb-t"><p class="bwb-k">HALO ${esc(String(d.person).toUpperCase())} · ${esc(String(d.svc).toUpperCase())}</p><h1>${esc(st.t)}</h1>${d.rej ? `<p class="bwb-sub">${d.rej.note ? esc(d.rej.note) : 'Silakan kirim ulang buktinya.'}</p>` : ''}${bwSteps(st.step)}</div>`;
+    app.innerHTML = `<main class="bwb">${bwHead(P, d, hero)}<div class="bwb-w bwb-body">
+      <section class="bwb-card bwb-pane y${P.sv === 'y' ? ' on' : ''}"><div class="bwb-ch2"><button type="button" class="bwb-yb" data-act="bw-yr" data-d="-1" aria-label="Tahun sebelumnya"${yi <= 0 ? ' disabled' : ''}>${ic('chevl', 16)}</button><h2>${esc(P.yr)}</h2><button type="button" class="bwb-yb" data-act="bw-yr" data-d="1" aria-label="Tahun berikutnya"${yi >= years.length - 1 ? ' disabled' : ''}>${ic('chevr', 16)}</button><span class="sp"></span><span class="bwb-mut">${okN} dari ${yc.length} periode diterima</span></div>
+        <div class="bwb-prog" role="img" aria-label="${okN} dari ${yc.length} periode diterima"><i style="width:${yc.length ? Math.round(okN / yc.length * 100) : 0}%"></i></div>
+        <div class="bwb-sum"><span>Sudah diterima</span><b>${fmtRp(okN * d.share)}</b></div><div class="bwb-sum mut"><span>Total tahun ini</span><b>${fmtRp(yc.length * d.share)}</b></div>
+        <div class="bwb-cal">${yc.map(tile).join('')}</div>
+        <div class="bwb-lg"><span class="ok">Lunas</span><span class="wait">Dicek</span><span class="due">Tagihan</span><span class="new">Belum ditagih</span></div></section>
+      <section class="bwb-card bwb-pane m${P.sv === 'm' ? ' on' : ''}"><h2>Bulan demi bulan</h2><ul class="bwb-tl">${rows || '<li class="new"><div><small>Belum ada periode.</small></div></li>'}</ul>
+        ${canPay ? `<button type="button" class="btn btn-primary bwb-go" data-act="bw-topay">${d.due.length ? 'Bayar tagihan' : 'Bayar di muka'}</button>` : ''}</section>
+      <div class="bwb-tabs" role="tablist"><button type="button" role="tab" aria-selected="${P.sv === 'y'}" class="${P.sv === 'y' ? 'on' : ''}" data-act="bw-sv" data-v="y">Tahunan</button><button type="button" role="tab" aria-selected="${P.sv === 'm'}" class="${P.sv === 'm' ? 'on' : ''}" data-act="bw-sv" data-v="m">Bulanan</button></div>
+      ${offer}</div></main>`;
+    return;
+  }
+  /* tampilan bayar */
+  const sel = new Set(P.sel), n0 = patNowN(), aheadK = d.ahead.map(x => x.k), dueK = d.due.map(x => x.k);
+  const exp = m => dueK.concat(m ? aheadK.filter(k => patMonN(k) <= n0 + m) : (dueK.length ? [] : aheadK.slice(0, 1)));
+  const same = (a, b) => a.length === b.length && a.every(k => b.indexOf(k) >= 0), cur = P.sel.slice();
+  const act = [0, 3, 6, 12].filter(m => same(cur, exp(m)))[0];
+  const seg = [[0, d.due.length ? 'Tagihan' : 'Bulan ini'], [3, '+3 bln'], [6, '+6 bln'], [12, '+1 thn']].map(x => `<button type="button" class="${act === x[0] ? 'on' : ''}" data-act="bw-q" data-v="${x[0]}">${x[1]}</button>`).join('');
+  const n = P.sel.length, amt = bwAmt(), my = new Set(bwCells(d).map(x => x.k.slice(0, 4))).size > 1;
+  const tiles = bwCells(d).map(x => {
+    const nm = bwMon(x.k) + (my ? ' ' + x.k.slice(2, 4) : ''), on = sel.has(x.k);
+    if (x.st === 'ok') return `<div class="bwb-c ok"><b>${nm}</b><small>Lunas</small></div>`;
+    if (x.st === 'wait') return `<div class="bwb-c wait"><b>${nm}</b><small>Dicek</small></div>`;
+    const can = dueK.indexOf(x.k) >= 0 || aheadK.indexOf(x.k) >= 0;
+    if (!can) return `<div class="bwb-c new"><b>${nm}</b><small>Belum</small></div>`;
+    return `<button type="button" class="bwb-c ${x.st === 'due' ? 'due' : 'fut'}${on ? ' on' : ''}" aria-pressed="${on}" data-act="bw-tog" data-k="${esc(x.k)}"><b>${nm}</b><small>${x.st === 'due' ? 'Tagihan' : 'Di muka'}</small></button>`;
+  }).join('');
+  const proofs = dueP.slice(0, 3).map(x => `<button type="button" class="bwb-link" data-act="bw-proof" data-k="${esc(x.k)}">Lihat bukti bayar ${esc(d.owner)} · ${esc(patLbl(x.k))}</button>`).join('');
+  const accts = d.accts.map((a, i) => `<li><span><b>${esc(a.b)} ${esc(a.no)}</b><small>${a.n ? 'a.n. ' + esc(a.n) : ''}</small></span><button type="button" class="btn btn-ghost btn-sm" data-act="bw-copy" data-i="${i}">Salin</button></li>`).join('');
+  const hero = `<div class="bwb-t bwb-pay"><div><p class="bwb-k">TAGIHAN DARI ${esc(String(d.owner).toUpperCase())} · ${esc(String(d.svc).toUpperCase())}</p><div class="bwb-amt" id="bw-amt">${fmtRp(amt)}</div><p class="bwb-sub">Bagian ${esc(d.person)} · ${esc(per)} · <span id="bw-cnt">${n} periode dipilih</span></p></div><div class="bwb-seg" role="group" aria-label="Pilih cepat">${seg}</div></div>`;
+  app.innerHTML = `<main class="bwb">${bwHead(P, d, hero)}<div class="bwb-w bwb-body">
+    <section class="bwb-card"><h2>Pilih bulan yang dibayar</h2><div class="bwb-cal">${tiles}</div><p class="bwb-mut">Ketuk bulan untuk memilih atau membatalkan. Satu bukti untuk semua bulan yang dipilih.</p>${proofs ? `<div class="bwb-links">${proofs}</div>` : ''}
+      <h2>Transfer ke</h2><ul class="bwb-ac">${accts}</ul></section>
+    <section class="bwb-card">${d.rej ? `<p class="bw-rej" role="alert">Bukti sebelumnya ditolak${d.rej.note ? ': ' + esc(d.rej.note) : ''}. Silakan kirim ulang.</p>` : ''}<h2>Unggah bukti transfer</h2>
+      <label class="bw-up bwb-up${P.img ? ' has' : ''}">${P.img ? `<img alt="Pratinjau bukti transfer" src="${esc(P.img)}">` : `<span>${ic('camera', 22)} Pilih foto atau tangkapan layar bukti transfer</span>`}<input type="file" accept="image/*" id="bw-file" hidden></label>
       <input class="input" id="bw-note" maxlength="120" placeholder="Catatan untuk ${esc(d.owner)} (opsional)" value="${esc(P.note || '')}">
       <p class="form-err" id="bw-err" role="alert" hidden></p>
-      <button type="button" class="btn btn-primary bw-send" id="bw-send" data-act="bw-send"${n && P.img ? '' : ' disabled'}>Kirim bukti ${n ? fmtRp(amt) : ''}</button></section>
-    ${bwSaku()}</main>`;
+      <button type="button" class="btn btn-primary bw-send" id="bw-send" data-act="bw-send"${n && P.img ? '' : ' disabled'}>Kirim bukti ${n ? fmtRp(amt) : ''}</button>
+      <p class="bwb-mut c">Tanpa daftar. Bukti hanya terlihat oleh ${esc(d.owner)}.</p></section></div></main>`;
 }
 document.addEventListener('change', async e => {
   const el = e.target; if (!el || !S.bw) return;
-  if (el.dataset && el.dataset.bwK) { const k = el.dataset.bwK, s = S.bw.sel, i = s.indexOf(k); if (el.checked && i < 0) s.push(k); else if (!el.checked && i >= 0) s.splice(i, 1); const a = $('#bw-amt'); if (a) a.textContent = fmtRp(bwAmt()); const b = $('#bw-send'); if (b) { b.disabled = !(s.length && S.bw.img); b.textContent = 'Kirim bukti ' + (s.length ? fmtRp(bwAmt()) : ''); } }
-  else if (el.id === 'bw-file' && el.files && el.files[0]) {
+  if (el.id === 'bw-file' && el.files && el.files[0]) {
     const er = $('#bw-err'); if (er) er.hidden = true;
     try { const c = await compressImage(el.files[0]); S.bw.img = c.dataUrl; S.bw.note = ($('#bw-note') || {}).value || ''; bwPaint(); } catch (x) { if (er) { er.textContent = 'Foto tidak bisa dibaca. Coba foto lain.'; er.hidden = false; } }
   }
 });
 Object.assign(ACT, {
-  'bw-aopen'() { S.bw.aopen = true; },
-  'bw-skip'() { S.bw.t0 = Date.now() - 20000; const e = $('#bw-intro'); if (e) e.outerHTML = bwSaku(); },
-  'bw-replay'() { S.bw.t0 = Date.now(); const e = $('#bw-intro'); if (e) e.outerHTML = bwSaku(); },
+  'bw-skip'() { S.bw.t0 = Date.now() - 20000; const e = $('#bw-intro'); if (e) e.outerHTML = bwSaku(S.bw.view === 'intro'); },
+  'bw-replay'() { S.bw.t0 = Date.now(); const e = $('#bw-intro'); if (e) e.outerHTML = bwSaku(S.bw.view === 'intro'); },
+  'bw-tog'(el) { const P = S.bw, k = el.dataset.k, i = P.sel.indexOf(k); if (i >= 0) P.sel.splice(i, 1); else P.sel.push(k); P.note = ($('#bw-note') || {}).value || ''; bwPaint(); },
   'bw-q'(el) {
     const d = S.bw.d, m = Number(el.dataset.v) || 0, n = patNowN(), base0 = d.due.map(x => x.k);
-    S.bw.sel = base0.concat(m ? d.ahead.filter(x => patMonN(x.k) <= n + m).map(x => x.k) : []); S.bw.aopen = true; S.bw.note = ($('#bw-note') || {}).value || ''; bwPaint();
+    S.bw.sel = base0.concat(m ? d.ahead.filter(x => patMonN(x.k) <= n + m).map(x => x.k) : (base0.length ? [] : d.ahead.slice(0, 1).map(x => x.k))); S.bw.note = ($('#bw-note') || {}).value || ''; bwPaint();
   },
+  'bw-nav'(el) { S.bw.view = el.dataset.v === 'status' ? 'status' : 'pay'; bwPaint(); try { window.scrollTo(0, 0); } catch (e) { /* abaikan */ } },
+  'bw-status'() { S.bw.view = 'status'; bwPaint(); try { window.scrollTo(0, 0); } catch (e) { /* abaikan */ } },
+  'bw-topay'() { const P = S.bw; P.view = 'pay'; if (!P.sel.length) P.sel = P.d.due.map(x => x.k); bwPaint(); try { window.scrollTo(0, 0); } catch (e) { /* abaikan */ } },
+  'bw-sv'(el) { S.bw.sv = el.dataset.v === 'm' ? 'm' : 'y'; bwPaint(); },
+  'bw-yr'(el) { const P = S.bw, ys = Array.from(new Set(P.d.mo.map(x => x.k.slice(0, 4)))).sort(), i = ys.indexOf(P.yr) + (Number(el.dataset.d) || 0); if (i >= 0 && i < ys.length) { P.yr = ys[i]; bwPaint(); } },
   'bw-copy'(el) { const a = S.bw.d.accts[Number(el.dataset.i)]; if (!a) return; try { navigator.clipboard.writeText(a.no).then(() => toast('Nomor rekening disalin'), () => toast('Salin manual nomor rekening')); } catch (e) { toast('Salin manual nomor rekening'); } },
   'bw-proof'(el) { api('pat.proof', { t: S.bw.t, k: el.dataset.k }).then(x => { if (x.data) patImgOpen(x.data, 'Bukti bayar ' + S.bw.d.owner); else toast('Bukti tidak tersedia'); }).catch(e => toast(e.userMessage || 'Bukti tidak tersedia')); },
   async 'bw-send'(el) {
     const P = S.bw, er = $('#bw-err'); if (!P.sel.length || !P.img || el.disabled) return;
     el.disabled = true; el.textContent = 'Mengirim…'; if (er) er.hidden = true;
-    try { const r = await api('pat.pay', { t: P.t, ks: P.sel, img: P.img, note: ($('#bw-note') || {}).value || '' }); P.sent = { amt: r.amt, n: r.n }; P.img = ''; await bwLoad(); }
+    try { const r = await api('pat.pay', { t: P.t, ks: P.sel, img: P.img, note: ($('#bw-note') || {}).value || '' }); P.sent = { amt: r.amt, n: r.n }; P.img = ''; P.note = ''; P.view = 'intro'; P.t0 = Date.now(); await bwLoad(); try { window.scrollTo(0, 0); } catch (x) { /* abaikan */ } }
     catch (e) { if (er) { er.textContent = e.userMessage || 'Gagal mengirim. Coba lagi.'; er.hidden = false; } el.disabled = false; el.textContent = 'Kirim bukti ' + fmtRp(bwAmt()); if (e.code === 'nolink' || e.status === 400) bwLoad(); }
   }
 });
